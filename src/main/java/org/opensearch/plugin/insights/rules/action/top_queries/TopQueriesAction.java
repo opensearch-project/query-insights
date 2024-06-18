@@ -12,8 +12,6 @@ import org.opensearch.action.ActionType;
 
 /**
  * Transport action for cluster/node level top queries information.
- *
- * @opensearch.internal
  */
 public class TopQueriesAction extends ActionType<TopQueriesResponse> {
 

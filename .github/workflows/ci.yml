@@ -1,0 +1,134 @@
+name: Build and Test
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches:
+      - "*"
+jobs:
+  Get-CI-Image-Tag:
+    uses: opensearch-project/opensearch-build/.github/workflows/get-ci-image-tag.yml@main
+    with:
+      product: opensearch
+
+  build-linux:
+    needs: Get-CI-Image-Tag
+    strategy:
+      matrix:
+        java: [11, 17, 21]
+        os: [ ubuntu-latest ]
+    name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    container:
+      # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
+      # this image tag is subject to change as more dependencies and updates will arrive over time
+      image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
+      # need to switch to root so that github actions can install runner binary on container without permission issues.
+      options: --user root
+
+    steps:
+      # This step uses the checkout Github action: https://github.com/actions/checkout
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+
+      # This step uses the setup-java Github action: https://github.com/actions/setup-java
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+
+      - name: Build and Test
+        run: |
+          chown -R 1000:1000 `pwd`
+          su `id -un 1000` -c "java -version && ./gradlew build"
+          plugin=`basename $(ls build/distributions/*.zip)`
+          echo plugin $plugin
+
+      - name: Create Artifact Path
+        run: |
+          mkdir -p query-insights-artifacts
+          cp ./build/distributions/*.zip query-insights-artifacts
+
+      - name: Upload Coverage Report
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: logs-ubuntu
+          path: build/testclusters/integTest-*/logs/*
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: query-insights-plugin-${{ matrix.os }}
+          path: query-insights-artifacts
+
+  build-windows-macos:
+    env:
+      BUILD_ARGS: ${{ matrix.os_build_args }}
+      WORKING_DIR: ${{ matrix.working_directory }}.
+    strategy:
+      matrix:
+        java: [11, 17]
+        os: [ windows-latest, macos-latest ]
+        include:
+          - os: windows-latest
+            os_build_args: -x integTest
+            working_directory: X:\
+            os_java_options: -Xmx4096M
+          - os: macos-latest
+            os_build_args: -x jacocoTestReport
+
+    name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+
+      # This is a hack, but this step creates a link to the X: mounted drive, which makes the path
+      # short enough to work on Windows
+      - name: Shorten Path
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: subst 'X:' .
+
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+
+      - name: Build and Test
+        working-directory: ${{ env.WORKING_DIR }}
+        run: ./gradlew build ${{ env.BUILD_ARGS }}
+        env:
+          _JAVA_OPTIONS: ${{ matrix.os_java_options }}
+
+      - name: Create Artifact Path
+        run: |
+          mkdir -p query-insights-artifacts
+          cp ./build/distributions/*.zip query-insights-artifacts
+
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: ${{ failure() && matrix.os == 'macos-latest' }}
+        with:
+          name: logs-mac
+          path: build/testclusters/integTest-*/logs/*
+
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: ${{ failure() && matrix.os == 'windows-latest' }}
+        with:
+          name: logs-windows
+          path: build\testclusters\integTest-*\logs\*
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v1
+        with:
+          name: query-insights-plugin-${{ matrix.os }}
+          path: query-insights-artifacts

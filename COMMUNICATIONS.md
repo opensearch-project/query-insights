@@ -1,10 +1,11 @@
 # OpenSearch Project Communication
 
-- [Overview](#overview)
-- [Slack](#slack)
-  - [Getting Started](#getting-started)
-  - [Workspace Channels](#workspace-channels)
-  - [Tips](#tips)
+- [OpenSearch Project Communication](#opensearch-project-communication)
+  - [Overview](#overview)
+  - [Slack](#slack)
+    - [Getting Started](#getting-started)
+    - [Workspace Channels](#workspace-channels)
+    - [Tips](#tips)
 
 ## Overview
 

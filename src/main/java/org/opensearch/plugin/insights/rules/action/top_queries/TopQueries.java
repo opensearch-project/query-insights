@@ -22,8 +22,6 @@ import java.util.List;
 /**
  * Holds all top queries records by resource usage or latency on a node
  * Mainly used in the top N queries node response workflow.
- *
- * @opensearch.internal
  */
 public class TopQueries extends BaseNodeResponse implements ToXContentObject {
     /** The store to keep the top queries records */

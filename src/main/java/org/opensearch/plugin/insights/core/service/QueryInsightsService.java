@@ -34,8 +34,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getE
 /**
  * Service responsible for gathering, analyzing, storing and exporting
  * information related to search queries
- *
- * @opensearch.internal
  */
 public class QueryInsightsService extends AbstractLifecycleComponent {
     /**

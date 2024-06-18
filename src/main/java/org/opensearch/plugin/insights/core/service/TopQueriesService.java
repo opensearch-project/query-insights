@@ -44,8 +44,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUER
 /**
  * Service responsible for gathering and storing top N queries
  * with high latency or resource usage
- *
- * @opensearch.internal
  */
 public class TopQueriesService {
     /**

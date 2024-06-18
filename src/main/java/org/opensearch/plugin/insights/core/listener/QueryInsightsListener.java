@@ -40,8 +40,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
  * The listener for query insights services.
  * It forwards query-related data to the appropriate query insights stores,
  * either for each request or for each phase.
- *
- * @opensearch.internal
  */
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
     private static final ToXContent.Params FORMAT_PARAMS = new ToXContent.MapParams(Collections.singletonMap("pretty", "false"));
