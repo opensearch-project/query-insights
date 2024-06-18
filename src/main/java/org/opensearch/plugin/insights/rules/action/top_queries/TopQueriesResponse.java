@@ -27,8 +27,6 @@ import java.util.stream.Collectors;
 
 /**
  * Transport response for cluster/node level top queries information.
- *
- * @opensearch.internal
  */
 public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements ToXContentFragment {
 

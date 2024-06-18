@@ -17,8 +17,6 @@ import java.io.IOException;
 
 /**
  * A request to get cluster/node level top queries information.
- *
- * @opensearch.internal
  */
 public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
 

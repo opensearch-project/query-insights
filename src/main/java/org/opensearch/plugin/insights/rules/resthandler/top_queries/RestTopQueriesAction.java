@@ -34,8 +34,6 @@ import static org.opensearch.rest.RestRequest.Method.GET;
 
 /**
  * Rest action to get Top N queries by certain metric type
- *
- * @opensearch.api
  */
 public class RestTopQueriesAction extends BaseRestHandler {
     /** The metric types that are allowed in top N queries */

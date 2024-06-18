@@ -21,9 +21,6 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Settings for Query Insights Plugin
- *
- * @opensearch.api
- * @opensearch.experimental
  */
 public class QueryInsightsSettings {
     /**

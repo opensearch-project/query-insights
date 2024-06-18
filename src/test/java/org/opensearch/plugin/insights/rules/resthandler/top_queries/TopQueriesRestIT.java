@@ -6,13 +6,14 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights;
+package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
 import org.junit.Assert;
 
@@ -48,7 +49,7 @@ public class TopQueriesRestIT extends OpenSearchRestTestCase {
      * test enabling top queries
      * @throws IOException IOException
      */
-    public void testTopQueriesResponses() throws IOException {
+    public void testTopQueriesResponses() throws IOException, InterruptedException {
         // Enable Top N Queries feature
         Request request = new Request("PUT", "/_cluster/settings");
         request.setJsonEntity(defaultTopQueriesSettings());
@@ -71,22 +72,29 @@ public class TopQueriesRestIT extends OpenSearchRestTestCase {
         response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
 
-        // Get Top Queries
-        request = new Request("GET", "/_insights/top_queries?pretty");
-        response = client().performRequest(request);
-
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-        String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        Assert.assertTrue(top_requests.contains("top_queries"));
-        Assert.assertEquals(2, top_requests.split("searchType", -1).length - 1);
+        // run five times to make sure the records are drained to the top queries services
+        for (int i = 0; i < 5; i++) {
+            // Get Top Queries
+            request = new Request("GET", "/_insights/top_queries?pretty");
+            response = client().performRequest(request);
+            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            Assert.assertTrue(top_requests.contains("top_queries"));
+            int top_n_array_size = top_requests.split("timestamp", -1).length - 1;
+            if (top_n_array_size == 0) {
+                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+                continue;
+            }
+            Assert.assertEquals(2, top_n_array_size);
+        }
     }
 
     private String defaultTopQueriesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
-            + "        \"search.top_n_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.top_n_queries.latency.window_size\" : \"600s\",\n"
-            + "        \"search.top_n_queries.latency.top_n_size\" : 5\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"600s\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 5\n"
             + "    }\n"
             + "}";
     }

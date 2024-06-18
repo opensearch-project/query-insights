@@ -20,8 +20,6 @@ import java.util.stream.Collectors;
 
 /**
  * Valid metric types for a search query record
- *
- * @opensearch.internal
  */
 public enum MetricType implements Comparator<Number> {
     /**

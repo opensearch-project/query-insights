@@ -25,8 +25,6 @@ import java.util.Objects;
 /**
  * SearchQueryRecord represents a minimal atomic record stored in the Query Insight Framework,
  * which contains extensive information related to a search query.
- *
- * @opensearch.internal
  */
 public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final long timestamp;

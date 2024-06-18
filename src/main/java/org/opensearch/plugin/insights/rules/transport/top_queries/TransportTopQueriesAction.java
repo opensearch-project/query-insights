@@ -30,8 +30,6 @@ import java.util.List;
 
 /**
  * Transport action for cluster/node level top queries information.
- *
- * @opensearch.internal
  */
 public class TransportTopQueriesAction extends TransportNodesAction<
     TopQueriesRequest,
@@ -113,8 +111,6 @@ public class TransportTopQueriesAction extends TransportNodesAction<
 
     /**
      * Inner Node Top Queries Request
-     *
-     * @opensearch.internal
      */
     public static class NodeRequest extends TransportRequest {
 

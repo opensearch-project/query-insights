@@ -16,8 +16,6 @@ import java.util.Locale;
 
 /**
  * Valid attributes for a search query record
- *
- * @opensearch.internal
  */
 public enum Attribute {
     /**
