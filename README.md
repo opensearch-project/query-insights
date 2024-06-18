@@ -1,33 +1,89 @@
-- [Welcome!](#welcome)
-- [Project Resources](#project-resources)
-- [Project Style Guidelines](#project-style-guidelines)
-- [Code of Conduct](#code-of-conduct)
-- [License](#license)
-- [Copyright](#copyright)
+# OpenSearch Query Insights
 
-## Welcome!
+## Introduction
+OpenSearch stands as a versatile, scalable, open-source solution designed for diverse data exploration needs, ranging from interactive log analytics to real-time application monitoring. Despite its capabilities, OpenSearch users and administrators often encounter challenges in ensuring optimal search performance due to limited expertise or OpenSearch's current constraints in providing comprehensive data points on query executions. Common questions include:
 
-**OpenSearch** is [a community-driven, open source fork](https://aws.amazon.com/blogs/opensource/introducing-opensearch/) of [Elasticsearch](https://en.wikipedia.org/wiki/Elasticsearch) and [Kibana](https://en.wikipedia.org/wiki/Kibana) licensed under the [Apache v2.0 License](LICENSE.txt). For more information, see [opensearch.org](https://opensearch.org/).
+* “What are the top queries with highest latency/CPU usages in the last 1 hour” (Identification of top queries by certain resource usages within a specific timeframe).
+* “How do I associate queries to users” (Profiling users with the highest search query volumes).
+* “Why my search queries are so slow” (Concerns about slow search queries).
+* “Why there was a spike in my search latency chart” (Spikes in query latency).
 
-## Project Resources
+The overarching objective of the Query Insights initiative is to address these issues by building frameworks, APIs, and dashboards, with minimal performance impact, to offer profound insights, metrics and recommendations into query executions, empowering users to better understand search query characteristics, patterns, and system behavior during query execution stages. Query Insights will facilitate enhanced detection, diagnosis, and prevention of query performance issues, ultimately improving query processing performance, user experience, and overall system resilience.
 
-* [Project Website](https://opensearch.org/)
-* [Downloads](https://opensearch.org/downloads.html)
-* [Documentation](https://opensearch.org/docs/latest/)
-* Need help? Try [Forums](https://forum.opensearch.org/)
-* [Project Principles](https://opensearch.org/about.html#principles-for-development)
-* [Contributing to OpenSearch](CONTRIBUTING.md)
-* [Onboarding Guide](ONBOARDING.md)
-* [Maintainer Responsibilities](RESPONSIBILITIES.md)
-* [Release Management](RELEASING.md)
-* [Organization Admins](ADMINS.md)
-* [Repo Maintainers](MAINTAINERS.md)
-* [Issue Triage](TRIAGING.md)
-* [Security](SECURITY.md)
+Query Insights and this plugin project was originally proposed in the [OpenSearch Query Insights RFC](https://github.com/opensearch-project/OpenSearch/issues/11429).
+
+## Get Started
+### Installing the Plugin
+
+To get started, install the plugin into OpenSearch with the following command:
+
+```
+bin/opensearch-plugin install query-insights
+```
+For information about installing plugins, see [Installing plugins](https://opensearch.org/docs/latest/install-and-configure/plugins/).
+
+### Enabling top N query monitoring
+
+When you install the `query-insights` plugin, top N query monitoring is disabled by default. To enable top N query monitoring, update the dynamic settings for the desired monitoring types. These settings enable the corresponding collectors and aggregators in the running cluster. For example, to enable monitoring top N queries by latency, update the `search.insights.top_queries.latency.enabled` setting:
+
+```
+PUT _cluster/settings
+{
+  "persistent" : {
+    "search.insights.top_queries.latency.enabled" : true
+  }
+}
+```
+### Monitoring the top N queries
+
+You can use the Insights API endpoint to obtain top N queries:
+
+```
+GET /_insights/top_queries
+```
+
+### Export top N query data
+
+You can configure your desired exporter to export top N query data to different sinks, allowing for better monitoring and analysis of your OpenSearch queries.
+
+A local index exporter allows you to export the top N queries to local OpenSearch indexes. To configure the local index exporter for the top N queiries by latency, send the following request:
+
+```
+PUT _cluster/settings
+{
+  "persistent" : {
+    "search.insights.top_queries.latency.exporter.type" : "local_index",
+    "search.insights.top_queries.latency.exporter.config.index" : "YYYY.MM.dd"
+  }
+}
+```
+You can refer to the [official document](https://opensearch.org/docs/latest/observing-your-data/query-insights/index/) for more detailed usage of query-insights plugin.
+
+## Development
+If you find bugs or want to request a feature, please create [a new issue](https://github.com/opensearch-project/query-insights/issues/new/choose). For questions or to discuss how Query Insights works, please find us in the [OpenSearch Slack](https://opensearch.org/slack.html) in the `#plugins` channel.
+
+### Building and Testing
+
+The plugin can be built using Gradle:
+
+```
+./gradlew build
+```
+
+To test and debug, run the plugin with OpenSearch in debug mode:
+
+```
+./gradlew run --debug-jvm
+```
 
 ## Project Style Guidelines
 
 The [OpenSearch Project style guidelines](https://github.com/opensearch-project/documentation-website/blob/main/STYLE_GUIDE.md) and [OpenSearch terms](https://github.com/opensearch-project/documentation-website/blob/main/TERMS.md) documents provide style standards and terminology to be observed when creating OpenSearch Project content.
+
+## Getting Help
+
+* For questions or help getting started, please find us in the [OpenSearch Slack](https://opensearch.org/slack.html) in the `#plugins` channel.
+* For bugs or feature requests, please create [a new issue](https://github.com/opensearch-project/query-insights/issues/new/choose).
 
 ## Code of Conduct
 
