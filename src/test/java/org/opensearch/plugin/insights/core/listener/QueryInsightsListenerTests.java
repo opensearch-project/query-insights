@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
+import org.junit.Before;
+import org.mockito.ArgumentCaptor;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
@@ -36,7 +38,6 @@ import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
-import org.junit.Before;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,8 +48,6 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
-
-import org.mockito.ArgumentCaptor;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -136,7 +135,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
-        assertEquals(searchSourceBuilder.toString(), generatedRecord.getAttributes().get(Attribute.SOURCE));
+        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
     }

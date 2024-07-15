@@ -94,18 +94,20 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * @param enabled    boolean
      */
     public void setEnableTopQueries(final MetricType metricType, final boolean enabled) {
-        boolean isAllMetricsDisabled = !queryInsightsService.isEnabled();
-        this.queryInsightsService.enableCollection(metricType, enabled);
+        boolean isInsightsServiceDisabled = !queryInsightsService.isEnabled();
+
         if (!enabled) {
-            // disable QueryInsightsListener only if all metrics collections are disabled now.
-            if (!queryInsightsService.isEnabled()) {
+            // disable QueryInsightsListener only if all metrics collections are disabled now
+            // and search query metrics is disabled.
+            if (isInsightsServiceDisabled) {
                 super.setEnabled(false);
                 this.queryInsightsService.stop();
             }
         } else {
             super.setEnabled(true);
-            // restart QueryInsightsListener only if none of metrics collections is enabled before.
-            if (isAllMetricsDisabled) {
+            // restart QueryInsightsListener only if none of metrics collections is enabled before and
+            // search query metrics is disabled before.
+            if (isInsightsServiceDisabled) {
                 this.queryInsightsService.stop();
                 this.queryInsightsService.start();
             }
@@ -176,7 +178,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source().toString(FORMAT_PARAMS));
+            attributes.put(Attribute.SOURCE, request.source());
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());

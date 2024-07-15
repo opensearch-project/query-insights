@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
@@ -15,9 +16,9 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
-import org.junit.Before;
 
 import static org.mockito.Mockito.mock;
 
@@ -35,7 +36,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
-        queryInsightsService = new QueryInsightsService(clusterSettings, threadPool, client);
+        queryInsightsService = new QueryInsightsService(clusterSettings, threadPool, client, NoopMetricsRegistry.INSTANCE);
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
@@ -61,5 +62,26 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("No exception expected when closing query insights service");
         }
+    }
+
+    public void testSearchQueryMetricsEnabled() {
+        // Initially, searchQueryMetricsEnabled should be false and searchQueryCategorizer should be null
+        assertFalse(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertNull(queryInsightsService.getSearchQueryCategorizer());
+
+        // Enable search query metrics
+        queryInsightsService.setSearchQueryMetricsEnabled(true);
+
+        // Assert that searchQueryMetricsEnabled is true and searchQueryCategorizer is initialized
+        assertTrue(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertNotNull(queryInsightsService.getSearchQueryCategorizer());
+
+        // Disable search query metrics
+        queryInsightsService.setSearchQueryMetricsEnabled(false);
+
+        // Assert that searchQueryMetricsEnabled is false and searchQueryCategorizer is not null
+        assertFalse(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertNotNull(queryInsightsService.getSearchQueryCategorizer());
+
     }
 }

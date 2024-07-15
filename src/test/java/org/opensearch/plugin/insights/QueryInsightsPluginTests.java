@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights;
 
+import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.service.ClusterService;
@@ -18,6 +19,7 @@ import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
 import org.opensearch.rest.RestHandler;
@@ -26,7 +28,6 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
-import org.junit.Before;
 
 import java.util.Arrays;
 import java.util.List;
@@ -65,7 +66,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
-                QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS
+                QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS,
+                QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING
             ),
             queryInsightsPlugin.getSettings()
         );
@@ -76,6 +78,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             client,
             clusterService,
             threadPool,
+            null,
+            null,
             null,
             null,
             null,
