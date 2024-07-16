@@ -129,4 +129,11 @@ public final class SearchQueryCategorizer {
     public SearchQueryCounters getSearchQueryCounters() {
         return this.searchQueryCounters;
     }
+
+    /**
+     * Reset the search query categorizer and its counters
+     */
+    public void reset() {
+        instance = null;
+    }
 }

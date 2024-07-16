@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.service.categorizor;
 
+import org.junit.After;
+import org.mockito.Mockito;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -59,6 +61,11 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
             invocation -> mock(Counter.class)
         );
         searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
+    }
+
+    @After
+    public void cleanup() {
+        searchQueryCategorizer.reset();
     }
 
     public void testAggregationsQuery() {
