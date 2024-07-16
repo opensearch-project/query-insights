@@ -52,7 +52,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     /**
      * Constructor for QueryInsightsListener
      *
-     * @param clusterService The Node's cluster service.
+     * @param clusterService       The Node's cluster service.
      * @param queryInsightsService The topQueriesByLatencyService associated with this listener
      */
     @Inject
@@ -91,7 +91,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * and query insights services.
      *
      * @param metricType {@link MetricType}
-     * @param enabled boolean
+     * @param enabled    boolean
      */
     public void setEnableTopQueries(final MetricType metricType, final boolean enabled) {
         boolean isAllMetricsDisabled = !queryInsightsService.isEnabled();
