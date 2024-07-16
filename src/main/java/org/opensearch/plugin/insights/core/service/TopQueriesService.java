@@ -136,17 +136,15 @@ public class TopQueriesService {
      * @param size the wanted top N size
      */
     public void validateTopNSize(final int size) {
-        if (size > QueryInsightsSettings.MAX_N_SIZE) {
+        if (size < 1 || size > QueryInsightsSettings.MAX_N_SIZE) {
             throw new IllegalArgumentException(
                 "Top N size setting for ["
                     + metricType
                     + "]"
-                    + " should be smaller than max top N size ["
+                    + " should be between 1 and "
                     + QueryInsightsSettings.MAX_N_SIZE
-                    + "was ("
+                    + ", was ("
                     + size
-                    + " > "
-                    + QueryInsightsSettings.MAX_N_SIZE
                     + ")"
             );
         }
@@ -154,6 +152,7 @@ public class TopQueriesService {
 
     /**
      * Set enable flag for the service
+     *
      * @param enabled boolean
      */
     public void setEnabled(final boolean enabled) {
@@ -251,7 +250,7 @@ public class TopQueriesService {
     /**
      * Get all top queries records that are in the current top n queries store
      * Optionally include top N records from the last window.
-     *
+     * <p>
      * By default, return the records in sorted order.
      *
      * @param includeLastWindow if the top N queries from the last window should be included
