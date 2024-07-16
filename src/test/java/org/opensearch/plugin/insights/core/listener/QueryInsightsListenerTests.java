@@ -108,7 +108,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
         );
 
-        String[] indices = new String[] { "index-1", "index-2" };
+        String[] indices = new String[]{"index-1", "index-2"};
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         phaseLatencyMap.put("expand", 0L);
@@ -157,7 +157,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
         );
 
-        String[] indices = new String[] { "index-1", "index-2" };
+        String[] indices = new String[]{"index-1", "index-2"};
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         phaseLatencyMap.put("expand", 0L);
