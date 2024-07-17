@@ -9,7 +9,9 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
 import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 
@@ -22,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class SearchQueryCounters {
     private static final String LEVEL_TAG = "level";
+    private static final String TYPE_TAG = "type";
     private static final String UNIT = "1";
     private final MetricsRegistry metricsRegistry;
     /**
@@ -36,6 +39,20 @@ public final class SearchQueryCounters {
      * Counter for sort
      */
     private final Counter sortCounter;
+
+    /**
+     * Histogram for latency per query type
+     */
+    private final Histogram queryTypeLatencyHistogram;
+    /**
+     * Histogram for cpu per query type
+     */
+    private final Histogram queryTypeCpuHistogram;
+    /**
+     * Histogram for memory per query type
+     */
+    private final Histogram queryTypeMemoryHistogram;
+
     private final Map<Class<? extends QueryBuilder>, Counter> queryHandlers;
     /**
      * Counter name to Counter object map
@@ -64,8 +81,22 @@ public final class SearchQueryCounters {
             "Counter for the number of top level sort search queries",
             UNIT
         );
+        this.queryTypeLatencyHistogram = metricsRegistry.createHistogram(
+            "search.query.type.latency.histogram",
+            "Histogram for the latency per query type",
+            UNIT
+        );
+        this.queryTypeCpuHistogram = metricsRegistry.createHistogram(
+            "search.query.type.cpu.histogram",
+            "Histogram for the cpu per query type",
+            UNIT
+        );
+        this.queryTypeMemoryHistogram = metricsRegistry.createHistogram(
+            "search.query.type.memory.histogram",
+            "Histogram for the memory per query type",
+            UNIT
+        );
         this.queryHandlers = new HashMap<>();
-
     }
 
     /**
@@ -73,11 +104,12 @@ public final class SearchQueryCounters {
      * @param queryBuilder query builder
      * @param level level of query builder, 0 being highest level
      */
-    public void incrementCounter(QueryBuilder queryBuilder, int level) {
+    public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Number> measurements) {
         String uniqueQueryCounterName = queryBuilder.getName();
 
         Counter counter = nameToQueryTypeCounters.computeIfAbsent(uniqueQueryCounterName, k -> createQueryCounter(k));
         counter.add(1, Tags.create().addTag(LEVEL_TAG, level));
+        incrementAllHistograms(Tags.create().addTag(LEVEL_TAG, level).addTag(TYPE_TAG, uniqueQueryCounterName), measurements);
     }
 
     /**
@@ -85,8 +117,9 @@ public final class SearchQueryCounters {
      * @param value value to increment
      * @param tags tags
      */
-    public void incrementAggCounter(double value, Tags tags) {
+    public void incrementAggCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
         aggCounter.add(value, tags);
+        incrementAllHistograms(tags, measurements);
     }
 
     /**
@@ -94,8 +127,15 @@ public final class SearchQueryCounters {
      * @param value value to increment
      * @param tags tags
      */
-    public void incrementSortCounter(double value, Tags tags) {
+    public void incrementSortCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
         sortCounter.add(value, tags);
+        incrementAllHistograms(tags, measurements);
+    }
+
+    private void incrementAllHistograms(Tags tags, Map<MetricType, Number> measurements) {
+        queryTypeLatencyHistogram.record(measurements.get(MetricType.LATENCY).doubleValue(), tags);
+        queryTypeCpuHistogram.record(measurements.get(MetricType.CPU).doubleValue(), tags);
+        queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).doubleValue(), tags);
     }
 
     /**
@@ -130,5 +170,29 @@ public final class SearchQueryCounters {
             UNIT
         );
         return counter;
+    }
+
+    /**
+     * Get Query type latency histogram
+     * @return histogram
+     */
+    public Histogram getQueryTypeLatencyHistogram() {
+        return queryTypeLatencyHistogram;
+    }
+
+    /**
+     * Get Query type cpu histogram
+     * @return histogram
+     */
+    public Histogram getQueryTypeCpuHistogram() {
+        return queryTypeCpuHistogram;
+    }
+
+    /**
+     * Get Query type memory histogram
+     * @return histogram
+     */
+    public Histogram getQueryTypeMemoryHistogram() {
+        return queryTypeMemoryHistogram;
     }
 }

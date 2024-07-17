@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -21,6 +22,7 @@ import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Class to categorize the search queries based on the type and increment the relevant counters.
@@ -64,50 +66,53 @@ public final class SearchQueryCategorizer {
     }
 
     /**
-     * Consume records and increment counters for the records
+     * Consume records and increment counters for the records including latency, cpu and memory histograms.
      * @param records records to consume
      */
     public void consumeRecords(List<SearchQueryRecord> records) {
         for (SearchQueryRecord record : records) {
-            SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
-            categorize(source);
+            categorize(record);
         }
     }
 
     /**
-     * Increment categorizations counters for the given source search query
-     * @param source search query source
+     * Increment categorizations counters for the given source search query and
+     * also increment latency, cpu and memory related histograms.
+     * @param record search query source
      */
-    public void categorize(SearchSourceBuilder source) {
+    public void categorize(SearchQueryRecord record) {
+        SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
+        Map<MetricType, Number> measurements = record.getMeasurements();
+
         QueryBuilder topLevelQueryBuilder = source.query();
         logQueryShape(topLevelQueryBuilder);
-        incrementQueryTypeCounters(topLevelQueryBuilder);
-        incrementQueryAggregationCounters(source.aggregations());
-        incrementQuerySortCounters(source.sorts());
+        incrementQueryTypeCounters(topLevelQueryBuilder, measurements);
+        incrementQueryAggregationCounters(source.aggregations(), measurements);
+        incrementQuerySortCounters(source.sorts(), measurements);
     }
 
-    private void incrementQuerySortCounters(List<SortBuilder<?>> sorts) {
+    private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Number> measurements) {
         if (sorts != null && sorts.size() > 0) {
             for (SortBuilder<?> sortBuilder : sorts) {
                 String sortOrder = sortBuilder.order().toString();
-                searchQueryCounters.incrementSortCounter(1, Tags.create().addTag("sort_order", sortOrder));
+                searchQueryCounters.incrementSortCounter(1, Tags.create().addTag("sort_order", sortOrder), measurements);
             }
         }
     }
 
-    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations) {
+    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations, Map<MetricType, Number> measurements) {
         if (aggregations == null) {
             return;
         }
 
-        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(aggregations.getAggregatorFactories());
+        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(aggregations.getAggregatorFactories(), measurements);
     }
 
-    private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder) {
+    private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Number> measurements) {
         if (topLevelQueryBuilder == null) {
             return;
         }
-        QueryBuilderVisitor searchQueryVisitor = new SearchQueryCategorizingVisitor(searchQueryCounters);
+        QueryBuilderVisitor searchQueryVisitor = new SearchQueryCategorizingVisitor(searchQueryCounters, measurements);
         topLevelQueryBuilder.visit(searchQueryVisitor);
     }
 
