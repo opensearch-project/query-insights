@@ -21,6 +21,10 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.
@@ -29,6 +33,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final ThreadPool threadPool = mock(ThreadPool.class);
     private final Client client = mock(Client.class);
     private QueryInsightsService queryInsightsService;
+    private QueryInsightsService queryInsightsServiceSpy;
 
     @Before
     public void setup() {
@@ -40,6 +45,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
+        queryInsightsServiceSpy = spy(queryInsightsService);
     }
 
     public void testAddRecordToLimitAndDrain() {
@@ -83,5 +89,25 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertFalse(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
+    }
+
+    public void testFeaturesEnableDisable() {
+        // Test case 1: All metric type collection disabled and search query metrics disabled, enable search query metrics
+        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
+        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
+        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
+        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
+
+        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
+        verify(queryInsightsServiceSpy).checkAndRestartQueryInsights();
+
+        // Test case 2: All metric type collection disabled and search query metrics enabled, disable search query metrics
+        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
+        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
+        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
+        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
+
+        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
+        verify(queryInsightsServiceSpy).checkAndStopQueryInsights();
     }
 }

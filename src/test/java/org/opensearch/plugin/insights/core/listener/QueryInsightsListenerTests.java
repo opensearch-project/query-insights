@@ -10,12 +10,15 @@ package org.opensearch.plugin.insights.core.listener;
 
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockitoAnnotations;
+import org.mockito.MockitoSession;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.action.support.replication.ClusterStateCreationUtils;
+import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.collect.Tuple;
@@ -34,6 +37,8 @@ import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
@@ -50,7 +55,10 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -201,16 +209,62 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         verify(queryInsightsService, times(numRequests)).addRecord(any());
     }
 
-    public void testSetEnabled() {
-        when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
-        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
-        assertTrue(queryInsightsListener.isEnabled());
+    public void testTopNFeatureEnabledDisabled() {
+        // Test case 1: Only latency enabled initially, disable latency and verify expected behavior
+        QueryInsightsService queryInsightsService1 = mock(QueryInsightsService.class);
+        QueryInsightsListener queryInsightsListener1 = new QueryInsightsListener(clusterService, queryInsightsService1);
 
-        when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
-        when(queryInsightsService.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
-        when(queryInsightsService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
-        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
-        assertFalse(queryInsightsListener.isEnabled());
+        when(queryInsightsService1.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
+        when(queryInsightsService1.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(queryInsightsService1.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(queryInsightsService1.isTopNFeatureEnabled()).thenReturn(true).thenReturn(false);
+
+        queryInsightsListener1.setEnableTopQueries(MetricType.LATENCY, false);
+        assertFalse(queryInsightsListener1.isEnabled());
+        verify(queryInsightsService1).checkAndStopQueryInsights();
+        verify(queryInsightsService1, never()).checkAndRestartQueryInsights();
+
+        // Test case 2: All disabled initially, enable latency and verify expected behavior
+        QueryInsightsService queryInsightsService2 = mock(QueryInsightsService.class);
+        QueryInsightsListener queryInsightsListener2 = new QueryInsightsListener(clusterService, queryInsightsService2);
+
+        when(queryInsightsService2.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(queryInsightsService2.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(queryInsightsService2.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(queryInsightsService2.isTopNFeatureEnabled()).thenReturn(false).thenReturn(true);
+
+        queryInsightsListener2.setEnableTopQueries(MetricType.LATENCY, true);
+        assertTrue(queryInsightsListener2.isEnabled());
+        verify(queryInsightsService2).checkAndRestartQueryInsights();
+        verify(queryInsightsService2, never()).checkAndStopQueryInsights();
+
+        // Test case 3: latency and CPU enabled initially, disable latency and verify expected behavior
+        QueryInsightsService queryInsightsService3 = mock(QueryInsightsService.class);
+        QueryInsightsListener queryInsightsListener3 = new QueryInsightsListener(clusterService, queryInsightsService3);
+
+        when(queryInsightsService3.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
+        when(queryInsightsService3.isCollectionEnabled(MetricType.CPU)).thenReturn(true);
+        when(queryInsightsService3.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(queryInsightsService3.isTopNFeatureEnabled()).thenReturn(true).thenReturn(true);
+
+        queryInsightsListener3.setEnableTopQueries(MetricType.LATENCY, false);
+        assertTrue(queryInsightsListener3.isEnabled());
+        verify(queryInsightsService3, never()).checkAndStopQueryInsights();
+        verify(queryInsightsService3, never()).checkAndRestartQueryInsights();
+
+
+        // Test case 4: Only CPU enabled initially, enable latency and verify expected behavior
+        QueryInsightsService queryInsightsService4 = mock(QueryInsightsService.class);
+        QueryInsightsListener queryInsightsListener4 = new QueryInsightsListener(clusterService, queryInsightsService4);
+
+        when(queryInsightsService4.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(queryInsightsService4.isCollectionEnabled(MetricType.CPU)).thenReturn(true);
+        when(queryInsightsService4.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(queryInsightsService4.isTopNFeatureEnabled()).thenReturn(true).thenReturn(true);
+
+        queryInsightsListener4.setEnableTopQueries(MetricType.LATENCY, true);
+        assertTrue(queryInsightsListener4.isEnabled());
+        verify(queryInsightsService4, never()).checkAndRestartQueryInsights();
+        verify(queryInsightsService4, never()).checkAndStopQueryInsights();
     }
 }

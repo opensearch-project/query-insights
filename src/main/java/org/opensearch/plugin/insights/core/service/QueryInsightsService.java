@@ -310,14 +310,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param searchQueryMetricsEnabled boolean flag
      */
     public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
-        boolean oldsearchQueryMetricsEnabled = isSearchQueryMetricsFeatureEnabled();
+        boolean oldSearchQueryMetricsEnabled = isSearchQueryMetricsFeatureEnabled();
         this.searchQueryMetricsEnabled = searchQueryMetricsEnabled;
         if (searchQueryMetricsEnabled) {
-            if (!oldsearchQueryMetricsEnabled) {
+            if (!oldSearchQueryMetricsEnabled) {
                 checkAndRestartQueryInsights();
             }
         } else {
-            if (oldsearchQueryMetricsEnabled) {
+            if (oldSearchQueryMetricsEnabled) {
                 checkAndStopQueryInsights();
             }
         }
