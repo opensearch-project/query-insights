@@ -200,13 +200,49 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      *
      * @return if query insights service is enabled
      */
-    public boolean isEnabled() {
+    public boolean isAnyFeatureEnabled() {
+        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled();
+    }
+
+    /**
+     * Check if top N enabled for any metric type
+     *
+     * @return if top N feature is enabled
+     */
+    public boolean isTopNFeatureEnabled() {
         for (MetricType t : MetricType.allMetricTypes()) {
             if (isCollectionEnabled(t)) {
                 return true;
             }
         }
+        return false;
+    }
+
+    /**
+     * Is search query metrics feature enabled.
+     * @return boolean flag
+     */
+    public boolean isSearchQueryMetricsFeatureEnabled() {
         return this.searchQueryMetricsEnabled;
+    }
+
+    /**
+     * Stops query insights service if no features enabled
+     */
+    public void checkAndStopQueryInsights() {
+        if (!isAnyFeatureEnabled()) {
+            this.stop();
+        }
+    }
+
+    /**
+     * Restarts query insights service if any feature enabled
+     */
+    public void checkAndRestartQueryInsights() {
+        if (isAnyFeatureEnabled()) {
+            this.stop();
+            this.start();
+        }
     }
 
     /**
@@ -274,15 +310,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param searchQueryMetricsEnabled boolean flag
      */
     public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
+        boolean oldsearchQueryMetricsEnabled = isSearchQueryMetricsFeatureEnabled();
         this.searchQueryMetricsEnabled = searchQueryMetricsEnabled;
-    }
-
-    /**
-     * Is search query metrics feature enabled.
-     * @return boolean flag
-     */
-    public boolean isSearchQueryMetricsEnabled() {
-        return this.searchQueryMetricsEnabled;
+        if (searchQueryMetricsEnabled) {
+            if (!oldsearchQueryMetricsEnabled) {
+                checkAndRestartQueryInsights();
+            }
+        } else {
+            if (oldsearchQueryMetricsEnabled) {
+                checkAndStopQueryInsights();
+            }
+        }
     }
 
     /**
@@ -307,7 +345,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStart() {
-        if (isEnabled()) {
+        if (isAnyFeatureEnabled()) {
             scheduledFuture = threadPool.scheduleWithFixedDelay(
                 this::drainRecords,
                 QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL,

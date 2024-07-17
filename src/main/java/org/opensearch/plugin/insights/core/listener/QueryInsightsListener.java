@@ -91,28 +91,27 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * and query insights services.
      *
      * @param metricType {@link MetricType}
-     * @param enabled    boolean
+     * @param isCurrentMetricEnabled boolean
      */
-    public void setEnableTopQueries(final MetricType metricType, final boolean enabled) {
-        boolean isInsightsServiceDisabled = !queryInsightsService.isEnabled();
+    public void setEnableTopQueries(final MetricType metricType, final boolean isCurrentMetricEnabled) {
+        boolean isTopNFeatureDisabled = !queryInsightsService.isTopNFeatureEnabled();
+        this.queryInsightsService.enableCollection(metricType, isCurrentMetricEnabled);
 
-        if (!enabled) {
+        if (!isCurrentMetricEnabled) {
             // disable QueryInsightsListener only if all metrics collections are disabled now
             // and search query metrics is disabled.
-            if (isInsightsServiceDisabled) {
+            if (isTopNFeatureDisabled) {
                 super.setEnabled(false);
-                this.queryInsightsService.stop();
+                queryInsightsService.checkAndStopQueryInsights();
             }
         } else {
             super.setEnabled(true);
             // restart QueryInsightsListener only if none of metrics collections is enabled before and
             // search query metrics is disabled before.
-            if (isInsightsServiceDisabled) {
-                this.queryInsightsService.stop();
-                this.queryInsightsService.start();
+            if (isTopNFeatureDisabled) {
+                queryInsightsService.checkAndRestartQueryInsights();
             }
         }
-
     }
 
     @Override

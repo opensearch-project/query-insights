@@ -66,21 +66,21 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
     public void testSearchQueryMetricsEnabled() {
         // Initially, searchQueryMetricsEnabled should be false and searchQueryCategorizer should be null
-        assertFalse(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertFalse(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
         // Enable search query metrics
         queryInsightsService.setSearchQueryMetricsEnabled(true);
 
         // Assert that searchQueryMetricsEnabled is true and searchQueryCategorizer is initialized
-        assertTrue(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertTrue(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
         // Disable search query metrics
         queryInsightsService.setSearchQueryMetricsEnabled(false);
 
         // Assert that searchQueryMetricsEnabled is false and searchQueryCategorizer is not null
-        assertFalse(queryInsightsService.isSearchQueryMetricsEnabled());
+        assertFalse(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
     }
