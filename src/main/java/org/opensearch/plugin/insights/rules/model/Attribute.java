@@ -13,6 +13,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.search.builder.SearchSourceBuilder;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -90,6 +91,8 @@ public enum Attribute {
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {
         if (attributeValue instanceof List) {
             out.writeList((List<? extends Writeable>) attributeValue);
+        } else if (attributeValue instanceof SearchSourceBuilder) {
+            ((SearchSourceBuilder) attributeValue).writeTo(out);
         } else {
             out.writeGenericValue(attributeValue);
         }
@@ -106,6 +109,9 @@ public enum Attribute {
     public static Object readAttributeValue(StreamInput in, Attribute attribute) throws IOException {
         if (attribute == Attribute.TASK_RESOURCE_USAGES) {
             return in.readList(TaskResourceInfo::readFromStream);
+        } else if (attribute == Attribute.SOURCE) {
+            SearchSourceBuilder builder = new SearchSourceBuilder(in);
+            return builder;
         } else {
             return in.readGenericValue();
         }
