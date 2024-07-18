@@ -8,11 +8,13 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.PipelineAggregationBuilder;
 import org.opensearch.telemetry.metrics.tags.Tags;
 
 import java.util.Collection;
+import java.util.Map;
 
 /**
  * Increments the counters related to Aggregation Search Queries.
@@ -32,24 +34,26 @@ public class SearchQueryAggregationCategorizer {
 
     /**
      * Increment aggregation related counters
+     *
      * @param aggregatorFactories input aggregations
+     * @param measurements latency, cpu, memory measurements
      */
-    public void incrementSearchQueryAggregationCounters(Collection<AggregationBuilder> aggregatorFactories) {
+    public void incrementSearchQueryAggregationCounters(Collection<AggregationBuilder> aggregatorFactories, Map<MetricType, Number> measurements) {
         for (AggregationBuilder aggregationBuilder : aggregatorFactories) {
-            incrementCountersRecursively(aggregationBuilder);
+            incrementCountersRecursively(aggregationBuilder, measurements);
         }
     }
 
-    private void incrementCountersRecursively(AggregationBuilder aggregationBuilder) {
+    private void incrementCountersRecursively(AggregationBuilder aggregationBuilder, Map<MetricType, Number> measurements) {
         // Increment counters for the current aggregation
         String aggregationType = aggregationBuilder.getType();
-        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, aggregationType));
+        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, aggregationType), measurements);
 
         // Recursively process sub-aggregations if any
         Collection<AggregationBuilder> subAggregations = aggregationBuilder.getSubAggregations();
         if (subAggregations != null && !subAggregations.isEmpty()) {
             for (AggregationBuilder subAggregation : subAggregations) {
-                incrementCountersRecursively(subAggregation);
+                incrementCountersRecursively(subAggregation, measurements);
             }
         }
 
@@ -57,7 +61,7 @@ public class SearchQueryAggregationCategorizer {
         Collection<PipelineAggregationBuilder> pipelineAggregations = aggregationBuilder.getPipelineAggregations();
         for (PipelineAggregationBuilder pipelineAggregation : pipelineAggregations) {
             String pipelineAggregationType = pipelineAggregation.getType();
-            searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, pipelineAggregationType));
+            searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, pipelineAggregationType), measurements);
         }
     }
 }
