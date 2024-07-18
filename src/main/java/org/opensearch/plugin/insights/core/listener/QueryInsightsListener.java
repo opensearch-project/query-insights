@@ -91,26 +91,24 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * and query insights services.
      *
      * @param metricType {@link MetricType}
-     * @param enabled    boolean
+     * @param isCurrentMetricEnabled boolean
      */
-    public void setEnableTopQueries(final MetricType metricType, final boolean enabled) {
-        boolean isAllMetricsDisabled = !queryInsightsService.isEnabled();
-        this.queryInsightsService.enableCollection(metricType, enabled);
-        if (!enabled) {
-            // disable QueryInsightsListener only if all metrics collections are disabled now.
-            if (!queryInsightsService.isEnabled()) {
-                super.setEnabled(false);
-                this.queryInsightsService.stop();
+    public void setEnableTopQueries(final MetricType metricType, final boolean isCurrentMetricEnabled) {
+        boolean isTopNFeaturePreviouslyDisabled = !queryInsightsService.isTopNFeatureEnabled();
+        this.queryInsightsService.enableCollection(metricType, isCurrentMetricEnabled);
+        boolean isTopNFeatureCurrentlyDisabled = !queryInsightsService.isTopNFeatureEnabled();
+
+        if (isTopNFeatureCurrentlyDisabled) {
+            super.setEnabled(false);
+            if (!isTopNFeaturePreviouslyDisabled) {
+                queryInsightsService.checkAndStopQueryInsights();
             }
         } else {
             super.setEnabled(true);
-            // restart QueryInsightsListener only if none of metrics collections is enabled before.
-            if (isAllMetricsDisabled) {
-                this.queryInsightsService.stop();
-                this.queryInsightsService.start();
+            if (isTopNFeaturePreviouslyDisabled) {
+                queryInsightsService.checkAndRestartQueryInsights();
             }
         }
-
     }
 
     @Override
@@ -176,7 +174,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source().toString(FORMAT_PARAMS));
+            attributes.put(Attribute.SOURCE, request.source());
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
