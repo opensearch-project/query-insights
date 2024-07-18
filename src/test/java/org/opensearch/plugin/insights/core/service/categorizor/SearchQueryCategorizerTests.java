@@ -59,10 +59,9 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
 
     private SearchQueryCategorizer searchQueryCategorizer;
 
-    private Map<MetricType, Number> measurements;
-
     @Before
     public void setup() {
+        SearchQueryCategorizer.getInstance(mock(MetricsRegistry.class)).reset();
         metricsRegistry = mock(MetricsRegistry.class);
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
             invocation -> mock(Counter.class)

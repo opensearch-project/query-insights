@@ -66,7 +66,7 @@ public final class SearchQueryCategorizer {
     }
 
     /**
-     * Consume records and increment counters for the records including latency, cpu and memory histograms.
+     * Consume records and increment categorization counters and histograms for the records including latency, cpu and memory.
      * @param records records to consume
      */
     public void consumeRecords(List<SearchQueryRecord> records) {
@@ -76,9 +76,9 @@ public final class SearchQueryCategorizer {
     }
 
     /**
-     * Increment categorizations counters for the given source search query and
+     * Increment categorizations counters for the given search query record and
      * also increment latency, cpu and memory related histograms.
-     * @param record search query source
+     * @param record search query record
      */
     public void categorize(SearchQueryRecord record) {
         SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
@@ -139,6 +139,8 @@ public final class SearchQueryCategorizer {
      * Reset the search query categorizer and its counters
      */
     public void reset() {
-        instance = null;
+        synchronized (SearchQueryCategorizer.class) {
+            instance = null;
+        }
     }
 }
