@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights;
 
+import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.service.ClusterService;
@@ -18,20 +19,24 @@ import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
 import org.opensearch.rest.RestHandler;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
-import org.junit.Before;
 
 import java.util.Arrays;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
@@ -40,6 +45,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
     private final Client client = mock(Client.class);
     private ClusterService clusterService;
     private final ThreadPool threadPool = mock(ThreadPool.class);
+    private MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
 
     @Before
     public void setup() {
@@ -49,6 +55,10 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
         clusterService = ClusterServiceUtils.createClusterService(settings, clusterSettings, threadPool);
+
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
+            invocation -> mock(Counter.class)
+        );
     }
 
     public void testGetSettings() {
@@ -65,7 +75,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
-                QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS
+                QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS,
+                QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING
             ),
             queryInsightsPlugin.getSettings()
         );
@@ -83,7 +94,9 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             null,
             null,
-            null
+            null,
+            null,
+            metricsRegistry
         );
         assertEquals(2, components.size());
         assertTrue(components.get(0) instanceof QueryInsightsService);
