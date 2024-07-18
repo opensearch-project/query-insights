@@ -9,7 +9,8 @@
 package org.opensearch.plugin.insights.core.service.categorizor;
 
 import org.junit.After;
-import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -23,6 +24,8 @@ import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.index.query.WildcardQueryBuilder;
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.aggregations.bucket.range.RangeAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.terms.MultiTermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.MultiTermsValuesSourceConfig;
@@ -30,12 +33,15 @@ import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.ScoreSortBuilder;
 import org.opensearch.search.sort.SortOrder;
 import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.OpenSearchTestCase;
 import org.junit.Before;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.mockito.ArgumentCaptor;
 
@@ -45,6 +51,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
 
 public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
 
@@ -54,12 +61,29 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
 
     private SearchQueryCategorizer searchQueryCategorizer;
 
+    private Map<String, Histogram> histogramMap = new HashMap<>();
+
     @Before
     public void setup() {
+        SearchQueryCategorizer.getInstance(mock(MetricsRegistry.class)).reset();
         metricsRegistry = mock(MetricsRegistry.class);
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
             invocation -> mock(Counter.class)
         );
+
+        when(metricsRegistry.createHistogram(any(String.class), any(String.class), any(String.class)))
+            .thenAnswer(new Answer<Histogram>() {
+                @Override
+                public Histogram answer(InvocationOnMock invocation) throws Throwable {
+                    // Extract arguments to identify which histogram is being created
+                    String name = invocation.getArgument(0);
+                    // Create a mock histogram
+                    Histogram histogram = mock(Histogram.class);
+                    // Store histogram in map for lookup
+                    histogramMap.put(name, histogram);
+                    return histogram;
+                }
+            });
         searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
     }
 
@@ -80,7 +104,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         );
         sourceBuilder.size(0);
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
 
@@ -101,7 +128,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(new BoolQueryBuilder().must(new MatchQueryBuilder("searchText", "fox")));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 2);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("bool")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match")).add(eq(1.0d), any(Tags.class));
@@ -112,7 +142,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(new FunctionScoreQueryBuilder(QueryBuilders.prefixQuery("text", "bro")));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("function_score")).add(
             eq(1.0d),
@@ -125,7 +158,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(QueryBuilders.matchQuery("tags", "php"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match")).add(eq(1.0d), any(Tags.class));
     }
@@ -135,7 +171,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(QueryBuilders.matchPhraseQuery("tags", "php"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match_phrase")).add(eq(1.0d), any(Tags.class));
     }
@@ -145,7 +184,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(new MultiMatchQueryBuilder("foo bar", "myField"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("multi_match")).add(eq(1.0d), any(Tags.class));
     }
@@ -159,7 +201,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         );
         sourceBuilder.query(queryBuilder);
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 3);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("boosting")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match_none")).add(eq(1.0d), any(Tags.class));
@@ -172,7 +217,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         QueryStringQueryBuilder queryBuilder = new QueryStringQueryBuilder("foo:*");
         sourceBuilder.query(queryBuilder);
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("query_string")).add(eq(1.0d), any(Tags.class));
     }
@@ -184,7 +232,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         rangeQuery.lt("1982-01-01");
         sourceBuilder.query(rangeQuery);
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("range")).add(eq(1.0d), any(Tags.class));
     }
@@ -193,7 +244,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.query(new RegexpQueryBuilder("field", "text"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("regexp")).add(eq(1.0d), any(Tags.class));
     }
@@ -204,7 +258,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.sort("creationDate", SortOrder.DESC);
         sourceBuilder.sort(new ScoreSortBuilder());
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 3);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getSortCounter(), times(2)).add(eq(1.0d), any(Tags.class));
@@ -215,7 +272,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(QueryBuilders.termQuery("field", "value2"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("term")).add(eq(1.0d), any(Tags.class));
     }
@@ -225,7 +285,10 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(50);
         sourceBuilder.query(new WildcardQueryBuilder("field", "text"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("wildcard")).add(eq(1.0d), any(Tags.class));
     }
@@ -243,12 +306,30 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.query(boolQueryBuilder);
         sourceBuilder.aggregation(new RangeAggregationBuilder("agg1").field("num"));
 
-        searchQueryCategorizer.categorize(sourceBuilder);
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 5);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("term")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("match")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("regexp")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("bool")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
+    }
+
+    private void verifyMeasurementHistogramsIncremented(SearchQueryRecord record, int times) {
+        Double expectedLatency = record.getMeasurement(MetricType.LATENCY).doubleValue();
+        Double expectedCpu = record.getMeasurement(MetricType.CPU).doubleValue();
+        Double expectedMemory = record.getMeasurement(MetricType.MEMORY).doubleValue();
+
+        Histogram queryTypeLatencyHistogram = histogramMap.get("search.query.type.latency.histogram");
+        Histogram queryTypeCpuHistogram = histogramMap.get("search.query.type.cpu.histogram");
+        Histogram queryTypeMemoryHistogram = histogramMap.get("search.query.type.memory.histogram");
+
+
+        verify(queryTypeLatencyHistogram, times(times)).record(eq(expectedLatency), any(Tags.class));
+        verify(queryTypeCpuHistogram, times(times)).record(eq(expectedCpu), any(Tags.class));
+        verify(queryTypeMemoryHistogram, times(times)).record(eq(expectedMemory), any(Tags.class));
     }
 }
