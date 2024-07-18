@@ -171,28 +171,4 @@ public final class SearchQueryCounters {
         );
         return counter;
     }
-
-    /**
-     * Get Query type latency histogram
-     * @return histogram
-     */
-    public Histogram getQueryTypeLatencyHistogram() {
-        return queryTypeLatencyHistogram;
-    }
-
-    /**
-     * Get Query type cpu histogram
-     * @return histogram
-     */
-    public Histogram getQueryTypeCpuHistogram() {
-        return queryTypeCpuHistogram;
-    }
-
-    /**
-     * Get Query type memory histogram
-     * @return histogram
-     */
-    public Histogram getQueryTypeMemoryHistogram() {
-        return queryTypeMemoryHistogram;
-    }
 }
