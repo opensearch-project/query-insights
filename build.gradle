@@ -53,6 +53,8 @@ validateNebulaPom.enabled = false
 buildscript {
     ext {
         opensearch_version = System.getProperty("opensearch.version", "2.16.0-SNAPSHOT")
+        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
+        buildVersionQualifier = System.getProperty("build.version_qualifier", "")
     }
 
     repositories {
@@ -64,6 +66,17 @@ buildscript {
 
     dependencies {
         classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
+    }
+}
+
+allprojects {
+    group 'org.opensearch'
+    version = opensearch_version.tokenize('-')[0] + '.0'
+    if (buildVersionQualifier) {
+        version += "-${buildVersionQualifier}"
+    }
+    if (isSnapshot) {
+        version += "-SNAPSHOT"
     }
 }
 
