@@ -52,8 +52,27 @@ final public class QueryInsightsTestUtils {
 
     public QueryInsightsTestUtils() {}
 
+    /**
+     * Returns list of randomly generated search query records.
+     * @param count number of records
+     * @return List of records
+     */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count) {
         return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0);
+    }
+
+    /**
+     * Returns list of randomly generated search query records.
+     * @param count number of records
+     * @param searchSourceBuilder source
+     * @return List of records
+     */
+    public static List<SearchQueryRecord> generateQueryInsightRecords(int count, SearchSourceBuilder searchSourceBuilder) {
+        List<SearchQueryRecord> records = generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0);
+        for (SearchQueryRecord record : records) {
+            record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
+        }
+        return records;
     }
 
     /**

@@ -11,6 +11,9 @@ package org.opensearch.plugin.insights.core.service.categorizer;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+
+import java.util.Map;
 
 /**
  * Class to visit the query builder tree and also track the level information.
@@ -19,21 +22,23 @@ import org.opensearch.index.query.QueryBuilderVisitor;
 final class SearchQueryCategorizingVisitor implements QueryBuilderVisitor {
     private final int level;
     private final SearchQueryCounters searchQueryCounters;
+    private final Map<MetricType, Number> measurements;
 
-    public SearchQueryCategorizingVisitor(SearchQueryCounters searchQueryCounters) {
-        this(searchQueryCounters, 0);
+    public SearchQueryCategorizingVisitor(SearchQueryCounters searchQueryCounters, Map<MetricType, Number> measurements) {
+        this(searchQueryCounters, 0, measurements);
     }
 
-    private SearchQueryCategorizingVisitor(SearchQueryCounters counters, int level) {
+    private SearchQueryCategorizingVisitor(SearchQueryCounters counters, int level, Map<MetricType, Number> measurements) {
         this.searchQueryCounters = counters;
         this.level = level;
+        this.measurements = measurements;
     }
 
     public void accept(QueryBuilder qb) {
-        searchQueryCounters.incrementCounter(qb, level);
+        searchQueryCounters.incrementCounter(qb, level, measurements);
     }
 
     public QueryBuilderVisitor getChildVisitor(BooleanClause.Occur occur) {
-        return new SearchQueryCategorizingVisitor(searchQueryCounters, level + 1);
+        return new SearchQueryCategorizingVisitor(searchQueryCounters, level + 1, measurements);
     }
 }
