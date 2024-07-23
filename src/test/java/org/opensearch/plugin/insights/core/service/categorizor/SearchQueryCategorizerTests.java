@@ -8,9 +8,6 @@
 
 package org.opensearch.plugin.insights.core.service.categorizor;
 
-import org.junit.After;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -37,6 +34,7 @@ import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.OpenSearchTestCase;
+import org.junit.After;
 import org.junit.Before;
 
 import java.util.Arrays;
@@ -44,14 +42,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
+import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
 
 public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
 
@@ -71,19 +71,18 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
             invocation -> mock(Counter.class)
         );
 
-        when(metricsRegistry.createHistogram(any(String.class), any(String.class), any(String.class)))
-            .thenAnswer(new Answer<Histogram>() {
-                @Override
-                public Histogram answer(InvocationOnMock invocation) throws Throwable {
-                    // Extract arguments to identify which histogram is being created
-                    String name = invocation.getArgument(0);
-                    // Create a mock histogram
-                    Histogram histogram = mock(Histogram.class);
-                    // Store histogram in map for lookup
-                    histogramMap.put(name, histogram);
-                    return histogram;
-                }
-            });
+        when(metricsRegistry.createHistogram(any(String.class), any(String.class), any(String.class))).thenAnswer(new Answer<Histogram>() {
+            @Override
+            public Histogram answer(InvocationOnMock invocation) throws Throwable {
+                // Extract arguments to identify which histogram is being created
+                String name = invocation.getArgument(0);
+                // Create a mock histogram
+                Histogram histogram = mock(Histogram.class);
+                // Store histogram in map for lookup
+                histogramMap.put(name, histogram);
+                return histogram;
+            }
+        });
         searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
     }
 
@@ -326,7 +325,6 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         Histogram queryTypeLatencyHistogram = histogramMap.get("search.query.type.latency.histogram");
         Histogram queryTypeCpuHistogram = histogramMap.get("search.query.type.cpu.histogram");
         Histogram queryTypeMemoryHistogram = histogramMap.get("search.query.type.memory.histogram");
-
 
         verify(queryTypeLatencyHistogram, times(times)).record(eq(expectedLatency), any(Tags.class));
         verify(queryTypeCpuHistogram, times(times)).record(eq(expectedCpu), any(Tags.class));

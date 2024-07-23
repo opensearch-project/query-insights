@@ -75,22 +75,16 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateTopNSize(QueryInsightsSettings.MAX_N_SIZE + 1);
-        });
+        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(QueryInsightsSettings.MAX_N_SIZE + 1); });
     }
 
     public void testValidateNegativeTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateTopNSize(-1);
-        });
+        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(-1); });
     }
 
     public void testGetTopQueriesWhenNotEnabled() {
         topQueriesService.setEnabled(false);
-        assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.getTopQueriesRecords(false);
-        });
+        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.getTopQueriesRecords(false); });
     }
 
     public void testValidateWindowSize() {
@@ -100,12 +94,8 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertThrows(IllegalArgumentException.class, () -> {
             topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MIN_WINDOW_SIZE.getSeconds() - 1, TimeUnit.SECONDS));
         });
-        assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(2, TimeUnit.DAYS));
-        });
-        assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(7, TimeUnit.MINUTES));
-        });
+        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(2, TimeUnit.DAYS)); });
+        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(7, TimeUnit.MINUTES)); });
     }
 
     private static void runUntilTimeoutOrFinish(DeterministicTaskQueue deterministicTaskQueue, long duration) {

@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights;
 
-import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.service.ClusterService;
@@ -30,6 +29,7 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
+import org.junit.Before;
 
 import java.util.Arrays;
 import java.util.List;

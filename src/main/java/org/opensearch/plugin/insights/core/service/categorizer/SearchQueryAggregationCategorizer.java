@@ -38,7 +38,10 @@ public class SearchQueryAggregationCategorizer {
      * @param aggregatorFactories input aggregations
      * @param measurements latency, cpu, memory measurements
      */
-    public void incrementSearchQueryAggregationCounters(Collection<AggregationBuilder> aggregatorFactories, Map<MetricType, Number> measurements) {
+    public void incrementSearchQueryAggregationCounters(
+        Collection<AggregationBuilder> aggregatorFactories,
+        Map<MetricType, Number> measurements
+    ) {
         for (AggregationBuilder aggregationBuilder : aggregatorFactories) {
             incrementCountersRecursively(aggregationBuilder, measurements);
         }

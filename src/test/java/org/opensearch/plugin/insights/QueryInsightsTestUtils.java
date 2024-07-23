@@ -37,8 +37,6 @@ import java.util.TreeSet;
 
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
 import static org.opensearch.test.OpenSearchTestCase.random;
@@ -47,6 +45,8 @@ import static org.opensearch.test.OpenSearchTestCase.randomArray;
 import static org.opensearch.test.OpenSearchTestCase.randomIntBetween;
 import static org.opensearch.test.OpenSearchTestCase.randomLong;
 import static org.opensearch.test.OpenSearchTestCase.randomLongBetween;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 final public class QueryInsightsTestUtils {
 
@@ -209,8 +209,8 @@ final public class QueryInsightsTestUtils {
                     return false;
                 } else if (value instanceof Map
                     && !Maps.deepEquals((Map<Object, Object>) value, (Map<Object, Object>) attributes2.get(attribute))) {
-                    return false;
-                }
+                        return false;
+                    }
             }
         }
         return true;
