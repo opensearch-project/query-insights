@@ -103,6 +103,7 @@ public final class SearchQueryCounters {
      * Increment counter
      * @param queryBuilder query builder
      * @param level level of query builder, 0 being highest level
+     * @param measurements metrics measurements
      */
     public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Number> measurements) {
         String uniqueQueryCounterName = queryBuilder.getName();
@@ -116,6 +117,7 @@ public final class SearchQueryCounters {
      * Increment aggregate counter
      * @param value value to increment
      * @param tags tags
+     * @param measurements metrics measurements
      */
     public void incrementAggCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
         aggCounter.add(value, tags);
@@ -126,6 +128,7 @@ public final class SearchQueryCounters {
      * Increment sort counter
      * @param value value to increment
      * @param tags tags
+     * @param measurements metrics measurements
      */
     public void incrementSortCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
         sortCounter.add(value, tags);
