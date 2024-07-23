@@ -138,6 +138,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         constructSearchQueryRecord(context, searchRequestContext);
     }
 
+    private boolean shouldCollect(MetricType metricType) {
+        return queryInsightsService.isSearchQueryMetricsFeatureEnabled() || queryInsightsService.isCollectionEnabled(metricType);
+    }
+
     private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         SearchTask searchTask = context.getTask();
         List<TaskResourceInfo> tasksResourceUsages = searchRequestContext.getPhaseResourceUsage();
@@ -154,19 +158,19 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final SearchRequest request = context.getRequest();
         try {
             Map<MetricType, Number> measurements = new HashMap<>();
-            if (queryInsightsService.isCollectionEnabled(MetricType.LATENCY)) {
+            if (shouldCollect(MetricType.LATENCY)) {
                 measurements.put(
                     MetricType.LATENCY,
                     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos())
                 );
             }
-            if (queryInsightsService.isCollectionEnabled(MetricType.CPU)) {
+            if (shouldCollect(MetricType.CPU)) {
                 measurements.put(
                     MetricType.CPU,
                     tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum()
                 );
             }
-            if (queryInsightsService.isCollectionEnabled(MetricType.MEMORY)) {
+            if (shouldCollect(MetricType.MEMORY)) {
                 measurements.put(
                     MetricType.MEMORY,
                     tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
