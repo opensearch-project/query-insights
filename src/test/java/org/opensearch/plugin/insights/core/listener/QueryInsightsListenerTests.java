@@ -8,17 +8,12 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
-import org.junit.Before;
-import org.mockito.ArgumentCaptor;
-import org.mockito.MockitoAnnotations;
-import org.mockito.MockitoSession;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.action.support.replication.ClusterStateCreationUtils;
-import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.collect.Tuple;
@@ -37,12 +32,11 @@ import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
-import org.opensearch.telemetry.metrics.MetricsRegistry;
-import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.junit.Before;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,11 +48,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,7 +109,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
         );
 
-        String[] indices = new String[]{"index-1", "index-2"};
+        String[] indices = new String[] { "index-1", "index-2" };
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         phaseLatencyMap.put("expand", 0L);
@@ -164,7 +158,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
         );
 
-        String[] indices = new String[]{"index-1", "index-2"};
+        String[] indices = new String[] { "index-1", "index-2" };
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         phaseLatencyMap.put("expand", 0L);
@@ -251,7 +245,6 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertTrue(queryInsightsListener3.isEnabled());
         verify(queryInsightsService3, never()).checkAndStopQueryInsights();
         verify(queryInsightsService3, never()).checkAndRestartQueryInsights();
-
 
         // Test case 4: Only CPU enabled initially, enable latency and verify expected behavior
         QueryInsightsService queryInsightsService4 = mock(QueryInsightsService.class);
