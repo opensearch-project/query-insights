@@ -123,17 +123,19 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param record the record to ingest
      */
     public boolean addRecord(final SearchQueryRecord record) {
-        boolean shouldAdd = false;
-        for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
-            if (!enableCollect.get(entry.getKey())) {
-                continue;
-            }
-            List<SearchQueryRecord> currentSnapshot = entry.getValue().getTopQueriesCurrentSnapshot();
-            // skip add to top N queries store if the incoming record is smaller than the Nth record
-            if (currentSnapshot.size() < entry.getValue().getTopNSize()
-                || SearchQueryRecord.compare(record, currentSnapshot.get(0), entry.getKey()) > 0) {
-                shouldAdd = true;
-                break;
+        boolean shouldAdd = searchQueryMetricsEnabled;
+        if (!shouldAdd) {
+            for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
+                if (!enableCollect.get(entry.getKey())) {
+                    continue;
+                }
+                List<SearchQueryRecord> currentSnapshot = entry.getValue().getTopQueriesCurrentSnapshot();
+                // skip add to top N queries store if the incoming record is smaller than the Nth record
+                if (currentSnapshot.size() < entry.getValue().getTopNSize()
+                    || SearchQueryRecord.compare(record, currentSnapshot.get(0), entry.getKey()) > 0) {
+                    shouldAdd = true;
+                    break;
+                }
             }
         }
         if (shouldAdd) {

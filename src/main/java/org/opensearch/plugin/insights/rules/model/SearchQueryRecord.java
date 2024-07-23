@@ -133,9 +133,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         out.writeLong(timestamp);
         out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
         out.writeMap(
-                attributes,
-                (stream, attribute) -> Attribute.writeTo(out, attribute),
-                (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
+            attributes,
+            (stream, attribute) -> Attribute.writeTo(out, attribute),
+            (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
         );
     }
 
