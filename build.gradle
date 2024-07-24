@@ -1,16 +1,62 @@
 import org.opensearch.gradle.test.RestIntegTestTask
+import org.opensearch.gradle.testclusters.OpenSearchCluster
+
+import groovy.xml.XmlParser
+import java.nio.file.Paths
+import java.util.concurrent.Callable
+import java.util.stream.Collectors
+
+buildscript {
+  ext {
+    opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
+    isSnapshot = "true" == System.getProperty("build.snapshot", "true")
+    buildVersionQualifier = System.getProperty("build.version_qualifier", "")
+    version_tokens = opensearch_version.tokenize('-')
+    opensearch_build = version_tokens[0] + '.0'
+    if (buildVersionQualifier) {
+      opensearch_build += "-${buildVersionQualifier}"
+    }
+    opensearch_build_snapshot = opensearch_build + '-SNAPSHOT'
+    if (isSnapshot) {
+      opensearch_build += "-SNAPSHOT"
+    }
+  }
+
+  repositories {
+    mavenLocal()
+    maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
+    mavenCentral()
+    maven { url "https://plugins.gradle.org/m2/" }
+  }
+
+  dependencies {
+    classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
+  }
+}
+
+
+plugins {
+  id "de.undercouch.download" version "5.3.0"
+  id 'com.diffplug.spotless' version '6.25.0'
+}
 
 apply plugin: 'java'
 apply plugin: 'idea'
 apply plugin: 'eclipse'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.pluginzip'
+apply plugin: 'opensearch.rest-test'
+apply plugin: 'opensearch.repositories'
 
 def pluginName = 'query-insights'
 def pluginDescription = 'OpenSearch Query Insights plugin'
 def projectPath = 'org.opensearch'
 def pathToPlugin = 'plugin.insights'
 def pluginClassName = 'QueryInsightsPlugin'
+
+configurations {
+  zipArchive
+}
 
 publishing {
     publications {
@@ -50,25 +96,6 @@ loggerUsageCheck.enabled = false
 // No need to validate pom, as we do not upload to maven/sonatype
 validateNebulaPom.enabled = false
 
-buildscript {
-    ext {
-        opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
-        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        buildVersionQualifier = System.getProperty("build.version_qualifier", "")
-    }
-
-    repositories {
-        mavenLocal()
-        maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
-        mavenCentral()
-        maven { url "https://plugins.gradle.org/m2/" }
-    }
-
-    dependencies {
-        classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
-    }
-}
-
 allprojects {
   group 'org.opensearch'
   version = opensearch_version.tokenize('-')[0] + '.0'
@@ -87,33 +114,219 @@ repositories {
     maven { url "https://plugins.gradle.org/m2/" }
 }
 
+ext {
+  getSecurityPluginDownloadLink = { ->
+    var repo = "https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/" +
+      "opensearch-security/$opensearch_build_snapshot/"
+    var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
+    download.run {
+      src repo + "maven-metadata.xml"
+      dest metadataFile
+    }
+    def metadata = new XmlParser().parse(metadataFile)
+    def securitySnapshotVersion = metadata.versioning.snapshotVersions[0].snapshotVersion[0].value[0].text()
+
+    return repo + "opensearch-security-${securitySnapshotVersion}.zip"
+  }
+
+  var projectAbsPath = projectDir.getAbsolutePath()
+  File downloadedSecurityPlugin = Paths.get(projectAbsPath, 'bin', 'opensearch-security-snapshot.zip').toFile()
+
+  configureSecurityPlugin = { OpenSearchCluster cluster ->
+
+    cluster.getNodes().forEach { node ->
+      var creds = node.getCredentials()
+      if (creds.isEmpty()) {
+        creds.add(Map.of('useradd', 'admin', '-p', 'admin'))
+      } else {
+        creds.get(0).putAll(Map.of('useradd', 'admin', '-p', 'admin'))
+      }
+    }
+
+    // add a check to avoid re-downloading multiple times during single test run
+    if (!downloadedSecurityPlugin.exists()) {
+      download.run {
+        src getSecurityPluginDownloadLink()
+        dest downloadedSecurityPlugin
+      }
+    } else {
+      println "Security Plugin File Already Exists"
+    }
+
+    // Config below including files are copied from security demo configuration
+    ['esnode.pem', 'esnode-key.pem', 'root-ca.pem'].forEach { file ->
+      File local = Paths.get(projectAbsPath, 'bin', file).toFile()
+      download.run {
+        src "https://raw.githubusercontent.com/opensearch-project/security/main/bwc-test/src/test/resources/security/" + file
+        dest local
+        overwrite false
+      }
+      cluster.extraConfigFile file, local
+    }
+    [
+      // config copied from security plugin demo configuration
+      'plugins.security.ssl.transport.pemcert_filepath' : 'esnode.pem',
+      'plugins.security.ssl.transport.pemkey_filepath' : 'esnode-key.pem',
+      'plugins.security.ssl.transport.pemtrustedcas_filepath' : 'root-ca.pem',
+      'plugins.security.ssl.transport.enforce_hostname_verification' : 'false',
+      // https is disabled to simplify test debugging
+      'plugins.security.ssl.http.enabled' : 'false',
+      'plugins.security.ssl.http.pemcert_filepath' : 'esnode.pem',
+      'plugins.security.ssl.http.pemkey_filepath' : 'esnode-key.pem',
+      'plugins.security.ssl.http.pemtrustedcas_filepath' : 'root-ca.pem',
+      'plugins.security.allow_unsafe_democertificates' : 'true',
+      'plugins.security.unsupported.inject_user.enabled': 'true',
+      'plugins.security.allow_default_init_securityindex' : 'true',
+      'plugins.security.authcz.admin_dn' : 'CN=kirk,OU=client,O=client,L=test,C=de',
+      'plugins.security.audit.type' : 'internal_opensearch',
+      'plugins.security.enable_snapshot_restore_privilege' : 'true',
+      'plugins.security.check_snapshot_restore_write_privileges' : 'true',
+      'plugins.security.restapi.roles_enabled' : '["all_access", "security_rest_api_access", "query_insights_full_access"]',
+      'plugins.security.system_indices.enabled' : 'true'
+    ].forEach { name, value ->
+      cluster.setting name, value
+    }
+
+    cluster.plugin provider((Callable<RegularFile>) (() -> (RegularFile) (() -> downloadedSecurityPlugin)))
+  }
+}
+
 test {
     include '**/*Tests.class'
 }
 
-task integTest(type: RestIntegTestTask) {
-    description = "Run tests against a cluster"
-    testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath
-}
 tasks.named("check").configure { dependsOn(integTest) }
 
 integTest {
-    // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
-    if (System.getProperty("test.debug") != null) {
-        jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
+  if (System.getProperty("test.debug") != null) {
+    jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  }
+  systemProperty "cluster.names",
+    getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
+
+  dependsOn project.tasks.bundlePlugin
+  testLogging {
+    events "passed", "skipped", "failed"
+  }
+  afterTest { desc, result ->
+    logger.quiet "${desc.className}.${desc.name}: ${result.resultType} ${(result.getEndTime() - result.getStartTime())/1000}s"
+  }
+  systemProperty 'tests.security.manager', 'false'
+  systemProperty 'project.root', project.projectDir.absolutePath
+  // Set default query size limit
+  systemProperty 'defaultQuerySizeLimit', '10000'
+  // Tell the test JVM if the cluster JVM is running under a debugger so that tests can use longer timeouts for
+  // requests. The 'doFirst' delays reading the debug setting on the cluster till execution time.
+  doFirst {
+    systemProperty 'cluster.debug', getDebug()
+    getClusters().forEach { cluster ->
+
+      String allTransportSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllTransportPortURI().stream()
+      }.collect(Collectors.joining(","))
+      String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllHttpSocketURI().stream()
+      }.collect(Collectors.joining(","))
+
+      systemProperty "tests.rest.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+      systemProperty "tests.rest.${cluster.name}.transport_hosts", "${-> allTransportSocketURI}"
     }
+
+    systemProperty "https", "false"
+  }
+  if (System.getProperty("test.debug") != null) {
+    jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  }
+  // NOTE: this IT config discovers only junit5 (jupiter) tests.
+  // https://github.com/opensearch-project/sql/issues/1974
+  filter {
+    includeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRestIT'
+  }
+  if (System.getProperty("security.enabled") == "true") {
+    useCluster testClusters.integTestWithSecurity
+    getClusters().forEach { cluster ->
+      configureSecurityPlugin(cluster)
+    }
+    systemProperty "user", "admin"
+    systemProperty "password", "admin"
+  } else {
+    useCluster testClusters.integTest
+  }
 }
 
-testClusters.integTest {
-    testDistribution = "INTEG_TEST"
+tasks.named("integTest").configure {
+  it.dependsOn(project.tasks.named("bundlePlugin"))
+}
 
+testClusters.all {
+    testDistribution = "INTEG_TEST"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
 }
 
 run {
     useCluster testClusters.integTest
+}
+
+check.dependsOn spotlessCheck
+check.dependsOn jacocoTestReport
+
+task integTestWithSecurity(type: RestIntegTestTask) {
+  useCluster testClusters.integTestWithSecurity
+
+  systemProperty "cluster.names",
+    getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
+
+  getClusters().forEach { cluster ->
+    configureSecurityPlugin(cluster)
+  }
+
+  dependsOn project.tasks.bundlePlugin
+  testLogging {
+    events "passed", "skipped", "failed"
+  }
+  afterTest { desc, result ->
+    logger.quiet "${desc.className}.${desc.name}: ${result.resultType} ${(result.getEndTime() - result.getStartTime())/1000}s"
+  }
+
+  systemProperty 'tests.security.manager', 'false'
+  systemProperty 'project.root', project.projectDir.absolutePath
+
+  // Set default query size limit
+  systemProperty 'defaultQuerySizeLimit', '10000'
+
+  // Tell the test JVM if the cluster JVM is running under a debugger so that tests can use longer timeouts for
+  // requests. The 'doFirst' delays reading the debug setting on the cluster till execution time.
+  doFirst {
+    systemProperty 'cluster.debug', getDebug()
+    getClusters().forEach { cluster ->
+
+      String allTransportSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllTransportPortURI().stream()
+      }.collect(Collectors.joining(","))
+      String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllHttpSocketURI().stream()
+      }.collect(Collectors.joining(","))
+
+      systemProperty "tests.rest.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+      systemProperty "tests.rest.${cluster.name}.transport_hosts", "${-> allTransportSocketURI}"
+    }
+
+    systemProperty "https", "false"
+    systemProperty "user", "admin"
+    systemProperty "password", "admin"
+  }
+
+  if (System.getProperty("test.debug") != null) {
+    jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  }
+
+  // NOTE: this IT config discovers only junit5 (jupiter) tests.
+  // https://github.com/opensearch-project/sql/issues/1974
+  filter {
+    includeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRestIT'
+  }
 }
 
 // updateVersion: Task to auto update version to the next development iteration

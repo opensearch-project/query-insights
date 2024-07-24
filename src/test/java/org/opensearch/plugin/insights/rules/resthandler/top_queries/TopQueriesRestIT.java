@@ -8,6 +8,13 @@
 
 package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
 import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
@@ -22,6 +29,8 @@ import org.apache.hc.core5.http.nio.ssl.TlsStrategy;
 import org.apache.hc.core5.reactor.ssl.TlsDetails;
 import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.util.Timeout;
+import org.junit.After;
+import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.RestClient;
@@ -31,21 +40,17 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.MediaType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
-import org.junit.Assert;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-/**
- * Rest Action tests for Query Insights
- */
+/** Rest Action tests for Query Insights */
 public class TopQueriesRestIT extends OpenSearchRestTestCase {
+    private static String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
+
     protected boolean isHttps() {
         return Optional.ofNullable(System.getProperty("https")).map("true"::equalsIgnoreCase).orElse(false);
     }
@@ -68,10 +73,25 @@ public class TopQueriesRestIT extends OpenSearchRestTestCase {
         return builder.build();
     }
 
+    protected static void configureClient(RestClientBuilder builder, Settings settings) throws IOException {
+        String userName = System.getProperty("user");
+        String password = System.getProperty("password");
+        if (userName != null && password != null) {
+            builder.setHttpClientConfigCallback(httpClientBuilder -> {
+                BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+                credentialsProvider.setCredentials(
+                    new AuthScope(null, -1),
+                    new UsernamePasswordCredentials(userName, password.toCharArray())
+                );
+                return httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider);
+            });
+        }
+        OpenSearchRestTestCase.configureClient(builder, settings);
+    }
+
     protected static void configureHttpsClient(RestClientBuilder builder, Settings settings) throws IOException {
         // Similar to client configuration with OpenSearch:
         // https://github.com/opensearch-project/OpenSearch/blob/2.15.1/test/framework/src/main/java/org/opensearch/test/rest/OpenSearchRestTestCase.java#L841-L863
-        // except we set the user name and password
         builder.setHttpClientConfigCallback(httpClientBuilder -> {
             String userName = Optional.ofNullable(System.getProperty("user"))
                 .orElseThrow(() -> new RuntimeException("user name is missing"));
@@ -116,7 +136,47 @@ public class TopQueriesRestIT extends OpenSearchRestTestCase {
     }
 
     /**
+     * wipeAllIndices won't work since it cannot delete security index. Use
+     * wipeAllQueryInsightsIndices instead.
+     */
+    @Override
+    protected boolean preserveIndicesUponCompletion() {
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    @After
+    public void wipeAllQueryInsightsIndices() throws Exception {
+        Response response = adminClient().performRequest(new Request("GET", "/_cat/indices?format=json&expand_wildcards=all"));
+        MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
+        try (
+            XContentParser parser = mediaType.xContent()
+                .createParser(
+                    NamedXContentRegistry.EMPTY,
+                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                    response.getEntity().getContent()
+                )
+        ) {
+            XContentParser.Token token = parser.nextToken();
+            List<Map<String, Object>> parserList = null;
+            if (token == XContentParser.Token.START_ARRAY) {
+                parserList = parser.listOrderedMap().stream().map(obj -> (Map<String, Object>) obj).collect(Collectors.toList());
+            } else {
+                parserList = Collections.singletonList(parser.mapOrdered());
+            }
+
+            for (Map<String, Object> index : parserList) {
+                final String indexName = (String) index.get("index");
+                if (indexName.startsWith(QUERY_INSIGHTS_INDICES_PREFIX)) {
+                    adminClient().performRequest(new Request("DELETE", "/" + indexName));
+                }
+            }
+        }
+    }
+
+    /**
      * test Query Insights is installed
+     *
      * @throws IOException IOException
      */
     @SuppressWarnings("unchecked")
@@ -135,6 +195,7 @@ public class TopQueriesRestIT extends OpenSearchRestTestCase {
 
     /**
      * test enabling top queries
+     *
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
