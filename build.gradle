@@ -198,6 +198,7 @@ test {
 tasks.named("check").configure { dependsOn(integTest) }
 
 integTest {
+  useCluster testClusters.integTest
   // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
   if (System.getProperty("test.debug") != null) {
     jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
@@ -243,15 +244,13 @@ integTest {
   filter {
     includeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRestIT'
   }
+
   if (System.getProperty("security.enabled") == "true") {
-    useCluster testClusters.integTestWithSecurity
     getClusters().forEach { cluster ->
       configureSecurityPlugin(cluster)
     }
     systemProperty "user", "admin"
     systemProperty "password", "admin"
-  } else {
-    useCluster testClusters.integTest
   }
 }
 
