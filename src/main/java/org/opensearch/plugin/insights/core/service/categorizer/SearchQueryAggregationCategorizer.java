@@ -8,13 +8,12 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.Collection;
+import java.util.Map;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.PipelineAggregationBuilder;
 import org.opensearch.telemetry.metrics.tags.Tags;
-
-import java.util.Collection;
-import java.util.Map;
 
 /**
  * Increments the counters related to Aggregation Search Queries.

@@ -8,6 +8,10 @@
 
 package org.opensearch.plugin.insights.rules.transport.top_queries;
 
+import static org.mockito.Mockito.mock;
+
+import java.util.List;
+import org.junit.Before;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
@@ -21,11 +25,6 @@ import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
-import org.junit.Before;
-
-import java.util.List;
-
-import static org.mockito.Mockito.mock;
 
 public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 

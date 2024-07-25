@@ -8,16 +8,15 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Class contains all the Counters related to search query types.

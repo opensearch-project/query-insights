@@ -8,6 +8,16 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.search.SearchPhaseContext;
@@ -24,17 +34,6 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.Task;
-
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
 /**
  * The listener for query insights services.

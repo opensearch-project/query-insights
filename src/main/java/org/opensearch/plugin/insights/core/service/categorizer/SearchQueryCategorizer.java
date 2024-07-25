@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.List;
+import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.index.query.QueryBuilder;
@@ -20,9 +22,6 @@ import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.SortBuilder;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * Class to categorize the search queries based on the type and increment the relevant counters.
