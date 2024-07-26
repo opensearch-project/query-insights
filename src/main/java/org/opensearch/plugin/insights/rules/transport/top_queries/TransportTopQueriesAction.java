@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.rules.transport.top_queries;
 
+import java.io.IOException;
+import java.util.List;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.BaseNodeRequest;
@@ -24,9 +26,6 @@ import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRespons
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
-
-import java.io.IOException;
-import java.util.List;
 
 /**
  * Transport action for cluster/node level top queries information.

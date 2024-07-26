@@ -8,6 +8,11 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.mockito.Mockito.mock;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.junit.Before;
 import org.opensearch.cluster.coordination.DeterministicTaskQueue;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
@@ -17,12 +22,6 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
-import org.junit.Before;
-
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
-import static org.mockito.Mockito.mock;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.

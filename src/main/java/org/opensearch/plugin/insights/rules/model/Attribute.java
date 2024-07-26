@@ -8,19 +8,18 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
-import org.apache.lucene.util.ArrayUtil;
-import org.opensearch.core.common.io.stream.StreamInput;
-import org.opensearch.core.common.io.stream.StreamOutput;
-import org.opensearch.core.common.io.stream.Writeable;
-import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.search.builder.SearchSourceBuilder;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.apache.lucene.util.ArrayUtil;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.search.builder.SearchSourceBuilder;
 
 /**
  * Valid attributes for a search query record
