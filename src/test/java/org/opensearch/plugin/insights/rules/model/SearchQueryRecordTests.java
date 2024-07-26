@@ -8,16 +8,15 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
-import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.core.common.io.stream.StreamInput;
-import org.opensearch.plugin.insights.QueryInsightsTestUtils;
-import org.opensearch.test.OpenSearchTestCase;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.test.OpenSearchTestCase;
 
 /**
  * Granular tests for the {@link SearchQueryRecord} class.
