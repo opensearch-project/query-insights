@@ -8,12 +8,11 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.Map;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.plugin.insights.rules.model.MetricType;
-
-import java.util.Map;
 
 /**
  * Class to visit the query builder tree and also track the level information.

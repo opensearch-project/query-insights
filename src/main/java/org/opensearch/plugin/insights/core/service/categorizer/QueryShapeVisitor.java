@@ -8,16 +8,15 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
-import org.apache.lucene.search.BooleanClause;
-import org.opensearch.common.SetOnce;
-import org.opensearch.index.query.QueryBuilder;
-import org.opensearch.index.query.QueryBuilderVisitor;
-
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.apache.lucene.search.BooleanClause;
+import org.opensearch.common.SetOnce;
+import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.index.query.QueryBuilderVisitor;
 
 /**
  * Class to traverse the QueryBuilder tree and capture the query shape

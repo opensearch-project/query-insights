@@ -8,6 +8,9 @@
 
 package org.opensearch.plugin.insights;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Supplier;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
@@ -45,10 +48,6 @@ import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.watcher.ResourceWatcherService;
-
-import java.util.Collection;
-import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * Plugin class for Query Insights.

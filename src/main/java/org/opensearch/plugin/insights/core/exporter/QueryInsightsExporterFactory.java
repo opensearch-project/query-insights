@@ -8,21 +8,20 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.opensearch.client.Client;
-import org.opensearch.common.settings.Settings;
-import org.joda.time.format.DateTimeFormat;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
-
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.joda.time.format.DateTimeFormat;
+import org.opensearch.client.Client;
+import org.opensearch.common.settings.Settings;
 
 /**
  * Factory class for validating and creating exporters based on provided settings

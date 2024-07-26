@@ -8,16 +8,15 @@
 
 package org.opensearch.plugin.insights.settings;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
-
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Settings for Query Insights Plugin

@@ -8,6 +8,28 @@
 
 package org.opensearch.plugin.insights;
 
+import static java.util.Collections.emptyMap;
+import static java.util.Collections.emptySet;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
+import static org.opensearch.test.OpenSearchTestCase.random;
+import static org.opensearch.test.OpenSearchTestCase.randomAlphaOfLengthBetween;
+import static org.opensearch.test.OpenSearchTestCase.randomArray;
+import static org.opensearch.test.OpenSearchTestCase.randomIntBetween;
+import static org.opensearch.test.OpenSearchTestCase.randomLong;
+import static org.opensearch.test.OpenSearchTestCase.randomLongBetween;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
@@ -24,29 +46,6 @@ import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.VersionUtils;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
-
-import static java.util.Collections.emptyMap;
-import static java.util.Collections.emptySet;
-import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
-import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
-import static org.opensearch.test.OpenSearchTestCase.random;
-import static org.opensearch.test.OpenSearchTestCase.randomAlphaOfLengthBetween;
-import static org.opensearch.test.OpenSearchTestCase.randomArray;
-import static org.opensearch.test.OpenSearchTestCase.randomIntBetween;
-import static org.opensearch.test.OpenSearchTestCase.randomLong;
-import static org.opensearch.test.OpenSearchTestCase.randomLongBetween;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
 final public class QueryInsightsTestUtils {
 

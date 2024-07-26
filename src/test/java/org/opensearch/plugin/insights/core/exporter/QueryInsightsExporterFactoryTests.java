@@ -8,16 +8,16 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import org.opensearch.client.Client;
-import org.opensearch.common.settings.Settings;
-import org.opensearch.test.OpenSearchTestCase;
-import org.joda.time.format.DateTimeFormat;
-import org.junit.Before;
-
+import static org.mockito.Mockito.mock;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
-import static org.mockito.Mockito.mock;
+
+import org.joda.time.format.DateTimeFormat;
+import org.junit.Before;
+import org.opensearch.client.Client;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.test.OpenSearchTestCase;
 
 /**
  * Granular tests for the {@link QueryInsightsExporterFactoryTests} class.
