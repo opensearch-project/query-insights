@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.rules.action.top_queries;
 
+import java.io.IOException;
+import java.util.List;
 import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -15,9 +17,6 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-
-import java.io.IOException;
-import java.util.List;
 
 /**
  * Holds all top queries records by resource usage or latency on a node

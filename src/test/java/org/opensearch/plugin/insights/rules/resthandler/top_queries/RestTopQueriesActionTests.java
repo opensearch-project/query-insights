@@ -8,18 +8,17 @@
 
 package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 
-import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
-import org.opensearch.rest.RestHandler;
-import org.opensearch.rest.RestRequest;
-import org.opensearch.test.OpenSearchTestCase;
-import org.opensearch.test.rest.FakeRestRequest;
+import static org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction.ALLOWED_METRICS;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
-import static org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction.ALLOWED_METRICS;
+import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
+import org.opensearch.rest.RestHandler;
+import org.opensearch.rest.RestRequest;
+import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.test.rest.FakeRestRequest;
 
 public class RestTopQueriesActionTests extends OpenSearchTestCase {
 

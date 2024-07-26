@@ -8,17 +8,11 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.opensearch.common.settings.Settings;
-import org.opensearch.common.unit.TimeValue;
-import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
-import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
-import org.opensearch.plugin.insights.core.exporter.SinkType;
-import org.opensearch.plugin.insights.rules.model.MetricType;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
-import org.opensearch.threadpool.ThreadPool;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -34,12 +28,17 @@ import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
+import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.threadpool.ThreadPool;
 
 /**
  * Service responsible for gathering and storing top N queries

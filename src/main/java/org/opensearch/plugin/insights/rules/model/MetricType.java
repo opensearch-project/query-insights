@@ -8,15 +8,14 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
-import org.opensearch.core.common.io.stream.StreamInput;
-import org.opensearch.core.common.io.stream.StreamOutput;
-
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 
 /**
  * Valid metric types for a search query record

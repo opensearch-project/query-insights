@@ -8,6 +8,22 @@
 
 package org.opensearch.plugin.insights.core.service.categorizor;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import org.junit.After;
+import org.junit.Before;
+import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -34,24 +50,6 @@ import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.OpenSearchTestCase;
-import org.junit.After;
-import org.junit.Before;
-
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-
-import org.mockito.ArgumentCaptor;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
-
-import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
 

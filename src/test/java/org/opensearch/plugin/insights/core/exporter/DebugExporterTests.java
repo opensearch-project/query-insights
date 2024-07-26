@@ -8,12 +8,11 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
+import java.util.List;
+import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.OpenSearchTestCase;
-import org.junit.Before;
-
-import java.util.List;
 
 /**
  * Granular tests for the {@link DebugExporterTests} class.
