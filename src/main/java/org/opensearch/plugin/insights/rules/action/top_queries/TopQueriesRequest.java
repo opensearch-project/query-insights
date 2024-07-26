@@ -8,12 +8,11 @@
 
 package org.opensearch.plugin.insights.rules.action.top_queries;
 
+import java.io.IOException;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.plugin.insights.rules.model.MetricType;
-
-import java.io.IOException;
 
 /**
  * A request to get cluster/node level top queries information.
