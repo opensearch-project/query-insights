@@ -84,6 +84,7 @@ publishing {
 }
 
 checkstyle {
+  toolVersion = '10.12.1'
   showViolations true
   configDirectory.set(rootProject.file("config/checkstyle/"))
 }
