@@ -29,7 +29,7 @@ import org.opensearch.telemetry.metrics.tags.Tags;
  */
 public final class SearchQueryCategorizer {
 
-    private static final Logger log = LogManager.getLogger(SearchQueryCategorizer.class);
+    private static final Logger logger = LogManager.getLogger(SearchQueryCategorizer.class);
 
     /**
      * Contains all the search query counters
@@ -83,11 +83,14 @@ public final class SearchQueryCategorizer {
         SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
         Map<MetricType, Number> measurements = record.getMeasurements();
 
-        QueryBuilder topLevelQueryBuilder = source.query();
-        logQueryShape(topLevelQueryBuilder);
-        incrementQueryTypeCounters(topLevelQueryBuilder, measurements);
+        incrementQueryTypeCounters(source.query(), measurements);
         incrementQueryAggregationCounters(source.aggregations(), measurements);
         incrementQuerySortCounters(source.sorts(), measurements);
+
+        if (logger.isTraceEnabled()) {
+            String searchShape = QueryShapeGenerator.buildShape(source, true);
+            logger.trace(searchShape);
+        }
     }
 
     private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Number> measurements) {
@@ -113,17 +116,6 @@ public final class SearchQueryCategorizer {
         }
         QueryBuilderVisitor searchQueryVisitor = new SearchQueryCategorizingVisitor(searchQueryCounters, measurements);
         topLevelQueryBuilder.visit(searchQueryVisitor);
-    }
-
-    private void logQueryShape(QueryBuilder topLevelQueryBuilder) {
-        if (log.isTraceEnabled()) {
-            if (topLevelQueryBuilder == null) {
-                return;
-            }
-            QueryShapeVisitor shapeVisitor = new QueryShapeVisitor();
-            topLevelQueryBuilder.visit(shapeVisitor);
-            log.trace("Query shape : {}", shapeVisitor.prettyPrintTree("  "));
-        }
     }
 
     /**
