@@ -194,11 +194,18 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Set grouping based on the given GroupingType setting for the given metric type
-     *
-     * @param groupingTypeSetting grouping type setting
+     * Validate grouping
+     * @param groupingTypeSetting grouping
      */
-    public void validateAndSetGrouping(final String groupingTypeSetting) {
+    public void validateGrouping(final String groupingTypeSetting) {
+        GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+    }
+
+    /**
+     * Set grouping
+     * @param groupingTypeSetting grouping
+     */
+    public void setGrouping(final String groupingTypeSetting) {
         GroupingType newGroupingType = GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
         GroupingType oldGroupingType = groupingType;
 

@@ -119,7 +119,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             5
         );
 
-        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        queryInsightsService.setGrouping(GroupingType.SIMILARITY.getValue());
         assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
 
         for (int i = 0; i < numberOfRecordsRequired; i++) {
@@ -145,7 +145,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         );
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
 
-        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        queryInsightsService.setGrouping(GroupingType.SIMILARITY.getValue());
         assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
 
         for (int i = 0; i < numberOfRecordsRequired; i++) {
@@ -165,7 +165,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
         QueryInsightsTestUtils.populateHashcode(records2, 2);
 
-        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        queryInsightsService.setGrouping(GroupingType.SIMILARITY.getValue());
         assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
 
         for (int i = 0; i < 2; i++) {
