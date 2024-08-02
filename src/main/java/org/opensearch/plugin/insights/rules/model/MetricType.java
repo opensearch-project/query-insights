@@ -113,7 +113,7 @@ public enum MetricType implements Comparator<Number> {
             case LATENCY:
             case MEMORY:
             case CPU:
-                return total.longValue()/count;
+                return total.longValue() / count;
             default:
                 throw new IllegalArgumentException("Unsupported metric type: " + metricType);
         }

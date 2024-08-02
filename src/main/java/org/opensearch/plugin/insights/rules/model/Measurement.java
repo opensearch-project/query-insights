@@ -8,17 +8,15 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
+import java.io.IOException;
+import java.util.Locale;
+import java.util.Objects;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.core.xcontent.XContentParser;
-
-import java.io.IOException;
-import java.util.Locale;
-import java.util.Objects;
 
 /**
  * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific DimensionType and MetricType
@@ -77,7 +75,7 @@ public class Measurement implements ToXContentObject, Writeable {
                 setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
                 break;
             case AVERAGE:
-                count+=1;
+                count += 1;
                 setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
                 break;
             default:
@@ -149,10 +147,10 @@ public class Measurement implements ToXContentObject, Writeable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Measurement that = (Measurement) o;
-        return count == that.count &&
-            metricType == that.metricType &&
-            Objects.equals(number, that.number) &&
-            dimensionType == that.dimensionType;
+        return count == that.count
+            && metricType == that.metricType
+            && Objects.equals(number, that.number)
+            && dimensionType == that.dimensionType;
     }
 
     @Override

@@ -9,8 +9,8 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
 import java.util.ArrayList;

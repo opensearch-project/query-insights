@@ -8,10 +8,10 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -86,10 +86,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_QUERIES_GROUP_BY,
-                v -> this.queryInsightsService.validateAndSetGrouping(v)
-            );
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUP_BY, v -> this.queryInsightsService.validateAndSetGrouping(v));
         this.queryInsightsService.validateAndSetGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
     }
 
@@ -169,22 +166,28 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             if (shouldCollect(MetricType.LATENCY)) {
                 measurements.put(
                     MetricType.LATENCY,
-                    new Measurement(MetricType.LATENCY,
-                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos()))
+                    new Measurement(
+                        MetricType.LATENCY,
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos())
+                    )
                 );
             }
             if (shouldCollect(MetricType.CPU)) {
                 measurements.put(
                     MetricType.CPU,
-                    new Measurement(MetricType.CPU,
-                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum())
+                    new Measurement(
+                        MetricType.CPU,
+                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum()
+                    )
                 );
             }
             if (shouldCollect(MetricType.MEMORY)) {
                 measurements.put(
                     MetricType.MEMORY,
-                    new Measurement(MetricType.MEMORY,
-                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum())
+                    new Measurement(
+                        MetricType.MEMORY,
+                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
+                    )
                 );
             }
             // TODO: Use David's QueryShape library to get the query shape hashcode

@@ -154,7 +154,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
-        out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), (stream, measurement) -> measurement.writeTo(out));
+        out.writeMap(
+            measurements,
+            (stream, metricType) -> MetricType.writeTo(out, metricType),
+            (stream, measurement) -> measurement.writeTo(out)
+        );
         out.writeMap(
             attributes,
             (stream, attribute) -> Attribute.writeTo(out, attribute),

@@ -111,7 +111,13 @@ public class TopQueriesService {
         topQueriesStore = new PriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
-        queryGroupingService = new QueryGroupingService(metricType, QueryInsightsSettings.DEFAULT_GROUPING_TYPE, DimensionType.AVERAGE, topQueriesStore, topNSize);
+        queryGroupingService = new QueryGroupingService(
+            metricType,
+            QueryInsightsSettings.DEFAULT_GROUPING_TYPE,
+            DimensionType.AVERAGE,
+            topQueriesStore,
+            topNSize
+        );
     }
 
     /**
