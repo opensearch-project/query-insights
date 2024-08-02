@@ -86,8 +86,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUP_BY, v -> this.queryInsightsService.validateAndSetGrouping(v));
-        this.queryInsightsService.validateAndSetGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+            .addSettingsUpdateConsumer(
+                TOP_N_QUERIES_GROUP_BY,
+                v -> this.queryInsightsService.setGrouping(v),
+                v -> this.queryInsightsService.validateGrouping(v)
+            );
+        this.queryInsightsService.validateGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+        this.queryInsightsService.setGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
     }
 
     /**
