@@ -71,7 +71,13 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count, SearchSourceBuilder searchSourceBuilder) {
-        List<SearchQueryRecord> records = generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, DimensionType.DEFUALT_DIMENSION_TYPE);
+        List<SearchQueryRecord> records = generateQueryInsightRecords(
+            count,
+            count,
+            System.currentTimeMillis(),
+            0,
+            DimensionType.DEFUALT_DIMENSION_TYPE
+        );
         for (SearchQueryRecord record : records) {
             record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
         }
@@ -98,7 +104,13 @@ final public class QueryInsightsTestUtils {
     /**
      * Creates a List of random Query Insight Records for testing purpose with dimenstion type specified
      */
-    public static List<SearchQueryRecord> generateQueryInsightRecords(int lower, int upper, long startTimeStamp, long interval, DimensionType dimensionType) {
+    public static List<SearchQueryRecord> generateQueryInsightRecords(
+        int lower,
+        int upper,
+        long startTimeStamp,
+        long interval,
+        DimensionType dimensionType
+    ) {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
         long timestamp = startTimeStamp;
@@ -153,7 +165,11 @@ final public class QueryInsightsTestUtils {
         return records;
     }
 
-    public static List<SearchQueryRecord> generateQueryInsightsRecordsWithMeasurement(int count, MetricType metricType, Number measurement) {
+    public static List<SearchQueryRecord> generateQueryInsightsRecordsWithMeasurement(
+        int count,
+        MetricType metricType,
+        Number measurement
+    ) {
         List<SearchQueryRecord> records = generateQueryInsightRecords(count);
 
         for (SearchQueryRecord record : records) {

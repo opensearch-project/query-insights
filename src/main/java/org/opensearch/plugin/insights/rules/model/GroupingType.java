@@ -50,12 +50,7 @@ public enum GroupingType {
             return GroupingType.valueOf(settingValue.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
-                String.format(
-                    Locale.ROOT,
-                    "Invalid exporter type [%s], type should be one of %s",
-                    settingValue,
-                    allGroupingTypes()
-                )
+                String.format(Locale.ROOT, "Invalid exporter type [%s], type should be one of %s", settingValue, allGroupingTypes())
             );
         }
     }

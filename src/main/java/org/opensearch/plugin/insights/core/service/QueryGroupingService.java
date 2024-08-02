@@ -8,6 +8,9 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.PriorityQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
@@ -16,11 +19,6 @@ import org.opensearch.plugin.insights.rules.model.DimensionType;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.PriorityQueue;
 
 /**
  * Handles grouping of search queries based on the GroupingType for the MetricType
@@ -38,7 +36,13 @@ public class QueryGroupingService {
 
     private int topNSize;
 
-    public QueryGroupingService(MetricType metricType, GroupingType groupingType, DimensionType dimensionType, PriorityQueue<SearchQueryRecord> topQueriesStore, int topNSize) {
+    public QueryGroupingService(
+        MetricType metricType,
+        GroupingType groupingType,
+        DimensionType dimensionType,
+        PriorityQueue<SearchQueryRecord> topQueriesStore,
+        int topNSize
+    ) {
         this.groupingType = groupingType;
         this.metricType = metricType;
         this.dimensionType = dimensionType;
@@ -190,11 +194,3 @@ public class QueryGroupingService {
         this.topNSize = newSize;
     }
 }
-
-
-
-
-
-
-
-

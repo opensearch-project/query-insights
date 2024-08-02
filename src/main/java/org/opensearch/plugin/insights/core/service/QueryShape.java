@@ -8,13 +8,12 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import java.util.List;
+import java.util.Objects;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.SortBuilder;
-
-import java.util.List;
-import java.util.Objects;
 
 public class QueryShape {
     QueryBuilder query;
