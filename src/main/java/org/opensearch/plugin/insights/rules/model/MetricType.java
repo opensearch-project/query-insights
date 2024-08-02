@@ -97,13 +97,35 @@ public enum MetricType implements Comparator<Number> {
         return -1;
     }
 
+    public static Number addMeasurements(Number a, Number b, MetricType metricType) {
+        switch (metricType) {
+            case LATENCY:
+            case MEMORY:
+            case CPU:
+                return a.longValue() + b.longValue();
+            default:
+                throw new IllegalArgumentException("Unsupported metric type: " + metricType);
+        }
+    }
+
+    public static Number getAverageMeasurement(Number total, int count, MetricType metricType) {
+        switch (metricType) {
+            case LATENCY:
+            case MEMORY:
+            case CPU:
+                return total.longValue()/count;
+            default:
+                throw new IllegalArgumentException("Unsupported metric type: " + metricType);
+        }
+    }
+
     /**
      * Parse a value with the correct type based on MetricType
      *
      * @param o the generic object to parse
      * @return {@link Number}
      */
-    Number parseValue(final Object o) {
+    public Number parseValue(final Object o) {
         switch (this) {
             case LATENCY:
             case CPU:

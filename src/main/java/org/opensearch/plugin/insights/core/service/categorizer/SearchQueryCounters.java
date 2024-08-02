@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.Histogram;
@@ -108,7 +109,7 @@ public final class SearchQueryCounters {
      * @param level level of query builder, 0 being highest level
      * @param measurements metrics measurements
      */
-    public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Number> measurements) {
+    public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Measurement> measurements) {
         String uniqueQueryCounterName = queryBuilder.getName();
 
         Counter counter = nameToQueryTypeCounters.computeIfAbsent(uniqueQueryCounterName, k -> createQueryCounter(k));
@@ -122,7 +123,7 @@ public final class SearchQueryCounters {
      * @param tags tags
      * @param measurements metrics measurements
      */
-    public void incrementAggCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
+    public void incrementAggCounter(double value, Tags tags, Map<MetricType, Measurement> measurements) {
         aggCounter.add(value, tags);
         incrementAllHistograms(tags, measurements);
     }
@@ -133,15 +134,15 @@ public final class SearchQueryCounters {
      * @param tags tags
      * @param measurements metrics measurements
      */
-    public void incrementSortCounter(double value, Tags tags, Map<MetricType, Number> measurements) {
+    public void incrementSortCounter(double value, Tags tags, Map<MetricType, Measurement> measurements) {
         sortCounter.add(value, tags);
         incrementAllHistograms(tags, measurements);
     }
 
-    private void incrementAllHistograms(Tags tags, Map<MetricType, Number> measurements) {
-        queryTypeLatencyHistogram.record(measurements.get(MetricType.LATENCY).doubleValue(), tags);
-        queryTypeCpuHistogram.record(measurements.get(MetricType.CPU).doubleValue(), tags);
-        queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).doubleValue(), tags);
+    private void incrementAllHistograms(Tags tags, Map<MetricType, Measurement> measurements) {
+        queryTypeLatencyHistogram.record(measurements.get(MetricType.LATENCY).getMeasurement().doubleValue(), tags);
+        queryTypeCpuHistogram.record(measurements.get(MetricType.CPU).getMeasurement().doubleValue(), tags);
+        queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).getMeasurement().doubleValue(), tags);
     }
 
     /**

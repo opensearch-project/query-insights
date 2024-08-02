@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -73,6 +75,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     final QueryInsightsExporterFactory queryInsightsExporterFactory;
 
+    /**
+     * Flags for enabling insight data grouping for different metric types
+     */
+    private GroupingType groupingType;
+
     private volatile boolean searchQueryMetricsEnabled;
 
     private SearchQueryCategorizer searchQueryCategorizer;
@@ -112,16 +119,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
+        this.groupingType = DEFAULT_GROUPING_TYPE;
     }
 
     /**
      * Ingest the query data into in-memory stores
      *
      * @param record the record to ingest
-     * @return SearchQueryRecord
+     * @return true/false
      */
     public boolean addRecord(final SearchQueryRecord record) {
-        boolean shouldAdd = searchQueryMetricsEnabled;
+        boolean shouldAdd = isSearchQueryMetricsFeatureEnabled() || isGroupingEnabled();
         if (!shouldAdd) {
             for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
                 if (!enableCollect.get(entry.getKey())) {
@@ -186,6 +194,33 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set grouping based on the given GroupingType setting for the given metric type
+     *
+     * @param groupingTypeSetting grouping type setting
+     */
+    public void validateAndSetGrouping(final String groupingTypeSetting) {
+        GroupingType newGroupingType = GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+        GroupingType oldGroupingType = groupingType;
+
+        if (oldGroupingType != newGroupingType) {
+            groupingType = newGroupingType;
+
+            for (MetricType metricType : MetricType.allMetricTypes()) {
+                this.topQueriesServices.get(metricType).setGrouping(newGroupingType);
+            }
+        }
+    }
+
+    /**
+     * Get the grouping type based on the metricType
+     * @return GroupingType
+     */
+
+    public GroupingType getGrouping() {
+        return groupingType;
+    }
+
+    /**
      * Get if the Query Insights data collection is enabled for a MetricType
      *
      * @param metricType {@link MetricType}
@@ -227,8 +262,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Is grouping feature enabled and grouping not NONE
+     * @return boolean
+     */
+    public boolean isGroupingEnabled() {
+        return this.groupingType != GroupingType.NONE;
+    }
+
+    /**
      * Enable/Disable search query metrics feature.
      * @param enable enable/disable search query metrics feature
+     * Stops query insights service if no features enabled
      */
     public void enableSearchQueryMetricsFeature(boolean enable) {
         searchQueryMetricsEnabled = enable;
