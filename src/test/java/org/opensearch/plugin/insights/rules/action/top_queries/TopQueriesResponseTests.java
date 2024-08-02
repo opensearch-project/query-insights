@@ -41,7 +41,7 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
 
     public void testToXContent() throws IOException {
         char[] expectedXcontent =
-            "{\"top_queries\":[{\"timestamp\":1706574180000,\"node_id\":\"node_for_top_queries_test\",\"search_type\":\"query_then_fetch\",\"latency\":1}]}"
+            "{\"top_queries\":[{\"timestamp\":1706574180000,\"node_id\":\"node_for_top_queries_test\",\"search_type\":\"query_then_fetch\",\"measurements\":{\"latency\":{\"metricType\":\"latency\",\"number\":1,\"count\":1,\"dimensionType\":\"NONE\"}}}]}"
                 .toCharArray();
         TopQueries topQueries = QueryInsightsTestUtils.createFixedTopQueries();
         ClusterName clusterName = new ClusterName("test-cluster");

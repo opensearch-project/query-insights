@@ -17,12 +17,14 @@ import org.opensearch.client.Client;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
+import java.util.List;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.
@@ -107,5 +109,70 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
         queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
         verify(queryInsightsServiceSpy).checkAndStopQueryInsights();
+    }
+
+    public void testAddRecordGroupBySimilarityWithDifferentGroups() {
+
+        int numberOfRecordsRequired = 10;
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(numberOfRecordsRequired, MetricType.LATENCY, 5);
+
+        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
+
+        for (int i = 0; i < numberOfRecordsRequired; i++) {
+            assertTrue(queryInsightsService.addRecord(records.get(i)));
+        }
+        // exceed capacity but handoff to grouping
+        assertTrue(queryInsightsService.addRecord(records.get(numberOfRecordsRequired-1)));
+
+        queryInsightsService.drainRecords();
+
+        assertEquals(
+            QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false).size()
+        );
+    }
+
+    public void testAddRecordGroupBySimilarityWithOneGroup() {
+        int numberOfRecordsRequired = 10;
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(numberOfRecordsRequired, MetricType.LATENCY, 5);
+        QueryInsightsTestUtils.populateSameQueryHashcodes(records);
+
+        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
+
+        for (int i = 0; i < numberOfRecordsRequired; i++) {
+            assertTrue(queryInsightsService.addRecord(records.get(i)));
+        }
+        // exceed capacity but handoff to grouping service
+        assertTrue(queryInsightsService.addRecord(records.get(numberOfRecordsRequired-1)));
+
+        queryInsightsService.drainRecords();
+        assertEquals(
+            1,
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false).size()
+        );
+    }
+
+    public void testAddRecordGroupBySimilarityWithTwoGroups() {
+        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        QueryInsightsTestUtils.populateHashcode(records1, 1);
+
+        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        QueryInsightsTestUtils.populateHashcode(records2, 2);
+
+        queryInsightsService.validateAndSetGrouping(GroupingType.SIMILARITY.getValue());
+        assertEquals(queryInsightsService.getGrouping(), GroupingType.SIMILARITY);
+
+        for (int i = 0; i < 2; i++) {
+            assertTrue(queryInsightsService.addRecord(records1.get(i)));
+            assertTrue(queryInsightsService.addRecord(records2.get(i)));
+        }
+
+        queryInsightsService.drainRecords();
+        assertEquals(
+            2,
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false).size()
+        );
     }
 }
