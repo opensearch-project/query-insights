@@ -35,7 +35,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
-import org.opensearch.plugin.insights.rules.model.DimensionType;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -116,7 +116,7 @@ public class TopQueriesService {
         queryGroupingService = new QueryGroupingService(
             metricType,
             QueryInsightsSettings.DEFAULT_GROUPING_TYPE,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             topNSize
         );

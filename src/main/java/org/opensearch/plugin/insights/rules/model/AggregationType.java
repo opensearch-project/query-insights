@@ -9,12 +9,12 @@
 package org.opensearch.plugin.insights.rules.model;
 
 /**
- * Dimension type for a measurement. Default is NONE and average is used for grouping Top N queries by similarity.
+ * Aggregation type for a measurement. Default is NONE and average is used for grouping Top N queries by similarity.
  */
-public enum DimensionType {
+public enum AggregationType {
     NONE,
     AVERAGE,
     SUM;
 
-    public static DimensionType DEFUALT_DIMENSION_TYPE = NONE;
+    public static AggregationType DEFUALT_AGGREGATION_TYPE = NONE;
 }

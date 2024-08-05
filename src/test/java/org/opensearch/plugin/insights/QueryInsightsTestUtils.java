@@ -41,8 +41,8 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.DimensionType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -61,7 +61,7 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, DimensionType.DEFUALT_DIMENSION_TYPE);
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFUALT_AGGREGATION_TYPE);
     }
 
     /**
@@ -76,7 +76,7 @@ final public class QueryInsightsTestUtils {
             count,
             System.currentTimeMillis(),
             0,
-            DimensionType.DEFUALT_DIMENSION_TYPE
+            AggregationType.DEFUALT_AGGREGATION_TYPE
         );
         for (SearchQueryRecord record : records) {
             record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
@@ -85,20 +85,20 @@ final public class QueryInsightsTestUtils {
     }
 
     /**
-     * Returns list of randomly generated search query records with specific dimension type for measurements
+     * Returns list of randomly generated search query records with specific aggregation type for measurements
      * @param count number of records
-     * @param dimensionType source
+     * @param aggregationType source
      * @return List of records
      */
-    public static List<SearchQueryRecord> generateQueryInsightRecords(int count, DimensionType dimensionType) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, dimensionType);
+    public static List<SearchQueryRecord> generateQueryInsightRecords(int count, AggregationType aggregationType) {
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, aggregationType);
     }
 
     /**
      * Creates a List of random Query Insight Records for testing purpose
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int lower, int upper, long startTimeStamp, long interval) {
-        return generateQueryInsightRecords(lower, upper, startTimeStamp, interval, DimensionType.NONE);
+        return generateQueryInsightRecords(lower, upper, startTimeStamp, interval, AggregationType.NONE);
     }
 
     /**
@@ -109,7 +109,7 @@ final public class QueryInsightsTestUtils {
         int upper,
         long startTimeStamp,
         long interval,
-        DimensionType dimensionType
+        AggregationType aggregationType
     ) {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
@@ -119,9 +119,9 @@ final public class QueryInsightsTestUtils {
             long cpuValue = randomLongBetween(1000, 10000);
             long memoryValue = randomLongBetween(1000, 10000);
             Map<MetricType, Measurement> measurements = new LinkedHashMap<>();
-            measurements.put(MetricType.LATENCY, new Measurement(MetricType.LATENCY, latencyValue, dimensionType));
-            measurements.put(MetricType.CPU, new Measurement(MetricType.CPU, cpuValue, dimensionType));
-            measurements.put(MetricType.MEMORY, new Measurement(MetricType.MEMORY, memoryValue, dimensionType));
+            measurements.put(MetricType.LATENCY, new Measurement(MetricType.LATENCY, latencyValue, aggregationType));
+            measurements.put(MetricType.CPU, new Measurement(MetricType.CPU, cpuValue, aggregationType));
+            measurements.put(MetricType.MEMORY, new Measurement(MetricType.MEMORY, memoryValue, aggregationType));
 
             Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
             int countOfPhases = randomIntBetween(2, 5);

@@ -18,8 +18,7 @@ import java.util.stream.Collectors;
  */
 public enum GroupingType {
     NONE("none"),
-    SIMILARITY("similarity"),
-    USER_ID("userid");
+    SIMILARITY("similarity");
 
     private final String stringValue;
 

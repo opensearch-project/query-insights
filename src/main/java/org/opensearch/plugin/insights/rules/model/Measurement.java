@@ -19,11 +19,11 @@ import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 /**
- * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific DimensionType and MetricType
+ * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific AggregationType and MetricType
  */
 public class Measurement implements ToXContentObject, Writeable {
     private static int DEFAULT_COUNT = 1;
-    private DimensionType dimensionType;
+    private AggregationType aggregationType;
     private MetricType metricType;
     private Number number;
     private int count;
@@ -33,23 +33,23 @@ public class Measurement implements ToXContentObject, Writeable {
      * @param metricType metricType
      * @param number number
      * @param count count
-     * @param dimensionType dimensionType
+     * @param aggregationType aggregationType
      */
-    public Measurement(MetricType metricType, Number number, int count, DimensionType dimensionType) {
+    public Measurement(MetricType metricType, Number number, int count, AggregationType aggregationType) {
         this.metricType = metricType;
         this.number = number;
         this.count = count;
-        this.dimensionType = dimensionType;
+        this.aggregationType = aggregationType;
     }
 
     /**
      * Constructor
      * @param metricType metricType
      * @param number number
-     * @param dimensionType dimensionType
+     * @param aggregationType aggregationType
      */
-    public Measurement(MetricType metricType, Number number, DimensionType dimensionType) {
-        this(metricType, number, DEFAULT_COUNT, dimensionType);
+    public Measurement(MetricType metricType, Number number, AggregationType aggregationType) {
+        this(metricType, number, DEFAULT_COUNT, aggregationType);
     }
 
     /**
@@ -58,17 +58,17 @@ public class Measurement implements ToXContentObject, Writeable {
      * @param number number
      */
     public Measurement(MetricType metricType, Number number) {
-        this(metricType, number, DEFAULT_COUNT, DimensionType.DEFUALT_DIMENSION_TYPE);
+        this(metricType, number, DEFAULT_COUNT, AggregationType.DEFUALT_AGGREGATION_TYPE);
     }
 
     /**
-     * Add measurement number to the current number based on the dimension type
+     * Add measurement number to the current number based on the aggregationType
      * @param toAdd number to add
      */
     public void addMeasurement(Number toAdd) {
-        switch (dimensionType) {
+        switch (aggregationType) {
             case NONE:
-                dimensionType = DimensionType.SUM;
+                aggregationType = AggregationType.SUM;
                 setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
                 break;
             case SUM:
@@ -79,23 +79,23 @@ public class Measurement implements ToXContentObject, Writeable {
                 setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
                 break;
             default:
-                throw new IllegalArgumentException("The following dimension type is not supported : " + dimensionType);
+                throw new IllegalArgumentException("The following aggregation type is not supported : " + aggregationType);
         }
     }
 
     /**
-     * Get measurement number based on the dimension type
+     * Get measurement number based on the aggragation type
      * @return measurement number
      */
     public Number getMeasurement() {
-        switch (dimensionType) {
+        switch (aggregationType) {
             case NONE:
             case SUM:
                 return number;
             case AVERAGE:
                 return MetricType.getAverageMeasurement(number, count, metricType);
             default:
-                throw new IllegalArgumentException("Dimension Type should be set for measurement.");
+                throw new IllegalArgumentException("Aggregation Type should be set for measurement.");
         }
     }
 
@@ -108,11 +108,11 @@ public class Measurement implements ToXContentObject, Writeable {
     }
 
     /**
-     * Set dimension type
-     * @param dimensionType dimension type
+     * Set aggregation type
+     * @param aggregationType aggregation type
      */
-    public void setDimensionType(DimensionType dimensionType) {
-        this.dimensionType = dimensionType;
+    public void setAggregationType(AggregationType aggregationType) {
+        this.aggregationType = aggregationType;
     }
 
     @Override
@@ -121,7 +121,7 @@ public class Measurement implements ToXContentObject, Writeable {
         builder.field("metricType", metricType.toString());
         builder.field("number", number);
         builder.field("count", count);
-        builder.field("dimensionType", dimensionType.toString());
+        builder.field("aggregationType", aggregationType.toString());
         builder.endObject();
         return builder;
     }
@@ -131,15 +131,15 @@ public class Measurement implements ToXContentObject, Writeable {
         out.writeString(metricType.toString());
         out.writeGenericValue(metricType.parseValue(number));
         out.writeInt(count);
-        out.writeString(dimensionType.toString());
+        out.writeString(aggregationType.toString());
     }
 
     public static Measurement readFromStream(StreamInput in) throws IOException {
         MetricType metricType = MetricType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         Number number = metricType.parseValue(in.readGenericValue());
         int count = in.readInt();
-        DimensionType dimensionType = DimensionType.valueOf(in.readString());
-        return new Measurement(metricType, number, count, dimensionType);
+        AggregationType aggregationType = AggregationType.valueOf(in.readString());
+        return new Measurement(metricType, number, count, aggregationType);
     }
 
     @Override
@@ -150,11 +150,11 @@ public class Measurement implements ToXContentObject, Writeable {
         return count == that.count
             && metricType == that.metricType
             && Objects.equals(number, that.number)
-            && dimensionType == that.dimensionType;
+            && aggregationType == that.aggregationType;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(metricType, number, count, dimensionType);
+        return Objects.hash(metricType, number, count, aggregationType);
     }
 }

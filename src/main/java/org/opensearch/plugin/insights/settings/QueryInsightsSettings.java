@@ -34,7 +34,7 @@ public class QueryInsightsSettings {
     /**
      * Max number of requests for the consumer to collect at one time
      */
-    public static final int QUERY_RECORD_QUEUE_CAPACITY = 100000;
+    public static final int QUERY_RECORD_QUEUE_CAPACITY = 1000;
     /**
      * Time interval for record queue consumer to run
      */
