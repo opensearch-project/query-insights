@@ -194,8 +194,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate grouping
-     * @param groupingTypeSetting grouping
+     * Validate grouping given grouping type setting
+     * @param groupingTypeSetting grouping setting
      */
     public void validateGrouping(final String groupingTypeSetting) {
         GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);

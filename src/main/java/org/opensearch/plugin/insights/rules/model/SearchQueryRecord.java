@@ -26,6 +26,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
  * which contains extensive information related to a search query.
  */
 public class SearchQueryRecord implements ToXContentObject, Writeable {
+    public static final String MEASUREMENTS = "measurements";
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
@@ -98,12 +99,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     }
 
     /**
-     * Set the dimension type for measurement
+     * Set the aggregation type for measurement
      * @param name the name of the measurement
-     * @param dimensionType Dimension type to set
+     * @param aggregationType Aggregation type to set
      */
-    public void setMeasurementDimension(final MetricType name, DimensionType dimensionType) {
-        measurements.get(name).setDimensionType(dimensionType);
+    public void setMeasurementAggregation(final MetricType name, AggregationType aggregationType) {
+        measurements.get(name).setAggregationType(aggregationType);
     }
 
     public Map<MetricType, Measurement> getMeasurements() {
@@ -136,7 +137,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             builder.field(entry.getKey().toString(), entry.getValue());
         }
-        builder.startObject("measurements");
+        builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
             builder.field(entry.getKey().toString());  // MetricType as field name
             entry.getValue().toXContent(builder, params);  // Serialize Measurement object

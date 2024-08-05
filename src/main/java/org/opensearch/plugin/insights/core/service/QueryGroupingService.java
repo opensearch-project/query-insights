@@ -14,38 +14,71 @@ import java.util.PriorityQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.DimensionType;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Handles grouping of search queries based on the GroupingType for the MetricType
+ * Following algorithm :
  */
 public class QueryGroupingService {
 
+    /**
+     * Logger
+     */
     private static final Logger log = LogManager.getLogger(QueryGroupingService.class);
+    /**
+     * Grouping type for the current grouping service
+     */
     private GroupingType groupingType;
+    /**
+     * Metric type for the current grouping service
+     */
     private MetricType metricType;
 
-    private DimensionType dimensionType;
+    /**
+     * Aggregation type for the current grouping service
+     */
+    private AggregationType aggregationType;
+    /**
+     * Map storing groupingId to Tuple containing Aggregate search query record and boolean.
+     * SearchQueryRecord: Aggregate search query record to store the aggregate of a metric type based on the aggregation type..
+     * Example: Average latency. This query record will be used to store the average latency for multiple query records
+     * in this case.
+     * boolean: True if the aggregate record is in the Top N queries priority query (min heap) and False if the aggregate
+     * record is in the Max Heap
+     */
     private Map<String, Tuple<SearchQueryRecord, Boolean>> groupIdToAggSearchQueryRecord;
+    /**
+     * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
+     */
     private PriorityQueue<SearchQueryRecord> minHeapTopQueriesStore;
+    /**
+     * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
+     * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
+     * records is updated and it now qualifies as part of the Top N, the record is moved from the Max heap to the Min heap,
+     * and the records are rearranged accordingly.
+     */
     private PriorityQueue<SearchQueryRecord> maxHeapQueryStore;
 
+    /**
+     * Top N size based on the configuration set
+     */
     private int topNSize;
 
     public QueryGroupingService(
         MetricType metricType,
         GroupingType groupingType,
-        DimensionType dimensionType,
+        AggregationType aggregationType,
         PriorityQueue<SearchQueryRecord> topQueriesStore,
         int topNSize
     ) {
         this.groupingType = groupingType;
         this.metricType = metricType;
-        this.dimensionType = dimensionType;
+        this.aggregationType = aggregationType;
         this.groupIdToAggSearchQueryRecord = new HashMap<>();
         this.minHeapTopQueriesStore = topQueriesStore;
         this.maxHeapQueryStore = new PriorityQueue<>((a, b) -> SearchQueryRecord.compare(b, a, metricType));
@@ -66,14 +99,25 @@ public class QueryGroupingService {
         SearchQueryRecord aggregateSearchQueryRecord;
         String groupId = getGroupingId(searchQueryRecord);
 
-        // New group
+        // New group added to the grouping service
+        // Add to min PQ and overflow records to max PQ (if the number of records in the min PQ exceeds the configured size N)
         if (!groupIdToAggSearchQueryRecord.containsKey(groupId)) {
             aggregateSearchQueryRecord = searchQueryRecord;
             aggregateSearchQueryRecord.setGroupingId(groupId);
-            aggregateSearchQueryRecord.setMeasurementDimension(metricType, dimensionType);
-            addToMinPQ(aggregateSearchQueryRecord, groupId);
+            aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
+            addToMinPQOverflowToMaxPQ(aggregateSearchQueryRecord, groupId);
         }
-        // Old group
+        // Existing group being updated to the grouping service
+        // 1. If present in min PQ
+        // - remove the record from the min PQ
+        // - update the aggregate record (aggregate measurement could increase or decrease)
+        // - If max PQ contains elements, add to max PQ and promote any records to min PQ
+        // - If max PQ is empty, add to min PQ and overflow any records to max PQ
+        // 2. If present in max PQ
+        // - remove the record from the max PQ
+        // - update the aggregate record (aggregate measurement could increase or decrease)
+        // - If min PQ is full, add to min PQ and overflow any records to max PQ
+        // - else, add to max PQ and promote any records to min PQ
         else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();
             boolean isPresentInMinPQ = groupIdToAggSearchQueryRecord.get(groupId).v2();
@@ -86,7 +130,7 @@ public class QueryGroupingService {
         return aggregateSearchQueryRecord;
     }
 
-    private void addToMinPQ(SearchQueryRecord searchQueryRecord, String groupId) {
+    private void addToMinPQOverflowToMaxPQ(SearchQueryRecord searchQueryRecord, String groupId) {
         minHeapTopQueriesStore.add(searchQueryRecord);
         groupIdToAggSearchQueryRecord.put(groupId, new Tuple<>(searchQueryRecord, true));
 
@@ -102,8 +146,11 @@ public class QueryGroupingService {
         Number measurementToAdd = searchQueryRecord.getMeasurement(metricType);
         aggregateSearchQueryRecord.addMeasurement(metricType, measurementToAdd);
 
-        addToMinPQ(aggregateSearchQueryRecord, groupId);
-
+        if (minHeapTopQueriesStore.size() >= topNSize) {
+            addToMinPQOverflowToMaxPQ(aggregateSearchQueryRecord, groupId);
+        } else {
+            addToMaxPQPromoteToMinPQ(aggregateSearchQueryRecord, groupId);
+        }
     }
 
     private void updateToMinPQ(SearchQueryRecord searchQueryRecord, SearchQueryRecord aggregateSearchQueryRecord, String groupId) {
@@ -112,13 +159,13 @@ public class QueryGroupingService {
         aggregateSearchQueryRecord.addMeasurement(metricType, measurementToAdd);
 
         if (maxHeapQueryStore.size() > 0) {
-            addToMaxPQ(aggregateSearchQueryRecord, groupId);
+            addToMaxPQPromoteToMinPQ(aggregateSearchQueryRecord, groupId);
         } else {
-            addToMinPQ(aggregateSearchQueryRecord, groupId);
+            addToMinPQOverflowToMaxPQ(aggregateSearchQueryRecord, groupId);
         }
     }
 
-    private void addToMaxPQ(SearchQueryRecord aggregateSearchQueryRecord, String groupId) {
+    private void addToMaxPQPromoteToMinPQ(SearchQueryRecord aggregateSearchQueryRecord, String groupId) {
         maxHeapQueryStore.add(aggregateSearchQueryRecord);
         groupIdToAggSearchQueryRecord.put(groupId, new Tuple<>(aggregateSearchQueryRecord, false));
 

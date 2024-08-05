@@ -15,8 +15,8 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.DimensionType;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -37,7 +37,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.DEFUALT_DIMENSION_TYPE,
+            AggregationType.DEFUALT_AGGREGATION_TYPE,
             topQueriesStore,
             10
         );
@@ -137,7 +137,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         QueryGroupingService invalidGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.NONE,
-            DimensionType.DEFUALT_DIMENSION_TYPE,
+            AggregationType.DEFUALT_AGGREGATION_TYPE,
             topQueriesStore,
             10
         );
@@ -209,16 +209,16 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(15, queryGroupingService.numberOfTopGroups()); // Should reflect the updated top N size
     }
 
-    public void testAddMeasurementSumDimensionLatency() {
+    public void testAddMeasurementSumAggregationLatency() {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.SUM,
+            AggregationType.SUM,
             topQueriesStore,
             10
         );
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -233,16 +233,16 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(expectedSum, aggregatedRecord.getMeasurement(MetricType.LATENCY));
     }
 
-    public void testAddMeasurementAverageDimensionLatency() {
+    public void testAddMeasurementAverageAggregationLatency() {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             10
         );
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -260,16 +260,16 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(expectedAverage, aggregatedRecord.getMeasurement(MetricType.LATENCY));
     }
 
-    public void testAddMeasurementNoneDimensionLatency() {
+    public void testAddMeasurementNoneAggregationLatency() {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.NONE,
+            AggregationType.NONE,
             topQueriesStore,
             10
         );
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -284,10 +284,10 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(expectedSum, aggregatedRecord.getMeasurement(MetricType.LATENCY));
     }
 
-    public void testAddMeasurementSumDimensionCpu() {
-        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.SIMILARITY, DimensionType.SUM, topQueriesStore, 10);
+    public void testAddMeasurementSumAggregationCpu() {
+        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.SUM, topQueriesStore, 10);
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -302,16 +302,16 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(expectedSum, aggregatedRecord.getMeasurement(MetricType.CPU));
     }
 
-    public void testAddMeasurementAverageDimensionCpu() {
+    public void testAddMeasurementAverageAggregationCpu() {
         queryGroupingService = new QueryGroupingService(
             MetricType.CPU,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             10
         );
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -329,10 +329,10 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(expectedAverage, aggregatedRecord.getMeasurement(MetricType.CPU));
     }
 
-    public void testAddMeasurementNoneDimensionCpu() {
-        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.SIMILARITY, DimensionType.NONE, topQueriesStore, 10);
+    public void testAddMeasurementNoneAggregationCpu() {
+        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.NONE, topQueriesStore, 10);
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -348,9 +348,9 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
     }
 
     public void testNoneGroupingTypeIllegalArgumentException() {
-        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.NONE, DimensionType.NONE, topQueriesStore, 10);
+        queryGroupingService = new QueryGroupingService(MetricType.CPU, GroupingType.NONE, AggregationType.NONE, topQueriesStore, 10);
         int numOfRecords = 10;
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, DimensionType.NONE);
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
@@ -368,7 +368,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -409,7 +409,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -458,7 +458,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -507,7 +507,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -565,7 +565,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -623,7 +623,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -681,7 +681,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -738,7 +738,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -795,7 +795,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -845,72 +845,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         assertEquals(2, queryGroupingService.numberOfTopGroups());
         assertEquals(950L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
-    }
-
-    public void testSwitchGroupingTypeToUserId() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
-            topQueriesStore,
-            2
-        );
-        int numOfRecords = 1;
-
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            950
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
-
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            975
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
-
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            800
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
-            for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
-            }
-        }
-
-        assertEquals(2, queryGroupingService.numberOfTopGroups());
-        assertEquals(950L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
-        assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
-
-        queryGroupingService.setGroupingType(GroupingType.USER_ID);
-        assertEquals(0, queryGroupingService.numberOfTopGroups());
     }
 
     public void testSwitchGroupingTypeToNone() {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
@@ -971,7 +912,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService = new QueryGroupingService(
             MetricType.LATENCY,
             GroupingType.SIMILARITY,
-            DimensionType.AVERAGE,
+            AggregationType.AVERAGE,
             topQueriesStore,
             2
         );
