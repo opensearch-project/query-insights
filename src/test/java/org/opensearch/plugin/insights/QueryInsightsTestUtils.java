@@ -178,6 +178,24 @@ final public class QueryInsightsTestUtils {
         return records;
     }
 
+    public static List<List<SearchQueryRecord>> generateMultipleQueryInsightsRecordsWithMeasurement(
+        int count,
+        MetricType metricType,
+        List<Number> measurements
+    ) {
+        List<List<SearchQueryRecord>> multipleRecordLists = new ArrayList<>();
+
+        for (int i = 0; i < measurements.size(); i++) {
+            List<SearchQueryRecord> records = generateQueryInsightRecords(count);
+            multipleRecordLists.add(records);
+            for (SearchQueryRecord record : records) {
+                record.getMeasurements().get(metricType).setMeasurement(measurements.get(i));
+            }
+            QueryInsightsTestUtils.populateHashcode(records, i);
+        }
+        return multipleRecordLists;
+    }
+
     public static void populateSameQueryHashcodes(List<SearchQueryRecord> searchQueryRecords) {
         for (SearchQueryRecord record : searchQueryRecords) {
             record.getAttributes().put(Attribute.QUERY_HASHCODE, 1);

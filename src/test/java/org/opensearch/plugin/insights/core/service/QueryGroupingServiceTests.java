@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -34,13 +33,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.DEFUALT_AGGREGATION_TYPE,
-            topQueriesStore,
-            10
-        );
+        queryGroupingService = getQueryGroupingService(AggregationType.DEFUALT_AGGREGATION_TYPE, 10);
     }
 
     public void testWithAllDifferentHashcodes() {
@@ -210,13 +203,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementSumAggregationLatency() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.SUM,
-            topQueriesStore,
-            10
-        );
+        queryGroupingService = getQueryGroupingService(AggregationType.SUM, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -234,13 +221,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementAverageAggregationLatency() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            10
-        );
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -261,13 +242,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementNoneAggregationLatency() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.NONE,
-            topQueriesStore,
-            10
-        );
+        queryGroupingService = getQueryGroupingService(AggregationType.NONE, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -365,37 +340,17 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 1. New query group not existing added to MIN
     public void testNewGroupAddedToMin() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
-        );
-        int numOfRecords = 2;
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            2,
             MetricType.LATENCY,
-            1000
+            List.of(1000, 1100)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
-
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2);
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -406,45 +361,17 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 2. New query group not existing added to MIN and overflows to MAX
     public void testNewGroupOverflowsMinToMax() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
-        );
-        int numOfRecords = 2;
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            2,
             MetricType.LATENCY,
-            1000
+            List.of(1000, 1100, 900)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
-
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
-
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3);
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -455,45 +382,17 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 3. New query group not existing added to MIN and causes other group to overflow to MAX
     public void testNewGroupCausesOtherGroupOverflowMinToMax() {
-        queryGroupingService = new QueryGroupingService(
-            MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
-        );
-        int numOfRecords = 2;
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            2,
             MetricType.LATENCY,
-            1000
+            List.of(1000, 1100, 1200)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
-
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
-
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1200
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3);
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -504,54 +403,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 4. Existing query group update to MIN increases average
     public void testExistingGroupUpdateToMinIncreaseAverage() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(1100, 1200, 1000)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            1000
+            List.of(1300)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1200
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        // Average will decrease when this record added and record should be moved out of Top N
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1300
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -562,54 +432,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 5. Existing query group update to MIN decrease average - stay in MIN
     public void testExistingGroupUpdateToMinDecreaseAverageStayInMin() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(1100, 600, 1000)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            1000
+            List.of(700)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            600
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        // Average will decrease when this record added and record should be moved out of Top N
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            700
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -620,54 +461,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 6. Existing query group update to MIN decrease average - overflows to MAX
     public void testExistingGroupUpdateToMinDecreaseAverageOverflowsToMax() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(1199, 1100, 1000)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            1000
+            List.of(1)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1199
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        // Average will decrease when this record added and record should be moved out of Top N
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -678,53 +490,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 7. Existing query group update to MAX increases average - stay in MAX
     public void testExistingGroupUpdateToMaxIncreaseAverageStayInMax() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(900, 975, 950)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            950
+            List.of(920)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            975
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            920
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -735,53 +519,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 8. Existing query group update to MAX increases average - promote to MIN
     public void testExistingGroupUpdateToMaxIncreaseAveragePromoteToMin() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(900, 975, 950)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            950
+            List.of(1100)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            975
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1100
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -792,53 +548,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
     // 9. Existing query group update to MAX decrease average
     public void testExistingGroupUpdateToMaxDecreaseAverage() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(900, 975, 950)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            950
+            List.of(800)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            975
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            800
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -848,53 +576,25 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
     }
 
     public void testSwitchGroupingTypeToNone() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(900, 975, 950)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            950
+            List.of(800)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            975
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            800
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
@@ -905,78 +605,38 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         queryGroupingService.setGroupingType(GroupingType.NONE);
         assertEquals(0, queryGroupingService.numberOfTopGroups());
 
-        assertThrows(IllegalArgumentException.class, () -> { queryGroupingService.addQueryToGroup(allRecords.get(0).get(0)); });
+        assertThrows(IllegalArgumentException.class, () -> { queryGroupingService.addQueryToGroup(allRecords1.get(0).get(0)); });
     }
 
     public void testMultipleQueryGroupsUpdates() {
-        queryGroupingService = new QueryGroupingService(
+        queryGroupingService = getQueryGroupingService(AggregationType.AVERAGE, 2);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            2
+            List.of(900, 1000, 1000)
         );
-        int numOfRecords = 1;
 
-        List<SearchQueryRecord> records1 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
             MetricType.LATENCY,
-            1000
+            List.of(800, 400, 1200)
         );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records1, 1);
 
-        List<SearchQueryRecord> records2 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1000
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records2, 2);
+        allRecords1.addAll(allRecords2);
 
-        List<SearchQueryRecord> records3 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            900
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records3, 3);
-
-        List<SearchQueryRecord> records4 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            800
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records4, 3);
-
-        List<SearchQueryRecord> records5 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            400
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records5, 2);
-
-        List<SearchQueryRecord> records6 = QueryInsightsTestUtils.generateQueryInsightsRecordsWithMeasurement(
-            numOfRecords,
-            MetricType.LATENCY,
-            1200
-        );
-        // Set all records to have the same hashcode for aggregation
-        QueryInsightsTestUtils.populateHashcode(records6, 1);
-
-        SearchQueryRecord aggregatedRecord = null;
-        List<List<SearchQueryRecord>> allRecords = Arrays.asList(records1, records2, records3, records4, records5, records6);
-
-        for (List<SearchQueryRecord> recordList : allRecords) {
+        for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+                queryGroupingService.addQueryToGroup(record);
             }
         }
 
         assertEquals(2, queryGroupingService.numberOfTopGroups());
         assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
+    }
+
+    private QueryGroupingService getQueryGroupingService(AggregationType aggregationType, int topNSize) {
+        return new QueryGroupingService(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
     }
 }
