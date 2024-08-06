@@ -119,9 +119,9 @@ final public class QueryInsightsTestUtils {
             long cpuValue = randomLongBetween(1000, 10000);
             long memoryValue = randomLongBetween(1000, 10000);
             Map<MetricType, Measurement> measurements = new LinkedHashMap<>();
-            measurements.put(MetricType.LATENCY, new Measurement(MetricType.LATENCY, latencyValue, aggregationType));
-            measurements.put(MetricType.CPU, new Measurement(MetricType.CPU, cpuValue, aggregationType));
-            measurements.put(MetricType.MEMORY, new Measurement(MetricType.MEMORY, memoryValue, aggregationType));
+            measurements.put(MetricType.LATENCY, new Measurement(latencyValue, aggregationType));
+            measurements.put(MetricType.CPU, new Measurement(cpuValue, aggregationType));
+            measurements.put(MetricType.MEMORY, new Measurement(memoryValue, aggregationType));
 
             Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
             int countOfPhases = randomIntBetween(2, 5);
@@ -237,7 +237,7 @@ final public class QueryInsightsTestUtils {
 
     public static SearchQueryRecord createFixedSearchQueryRecord() {
         long timestamp = 1706574180000L;
-        Map<MetricType, Measurement> measurements = Map.of(MetricType.LATENCY, new Measurement(MetricType.LATENCY, 1L));
+        Map<MetricType, Measurement> measurements = Map.of(MetricType.LATENCY, new Measurement(1L));
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();

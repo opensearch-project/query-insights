@@ -91,11 +91,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     /**
      * Add measurement to SearchQueryRecord. Applicable when we are grouping multiple queries based on GroupingType.
-     * @param name the name of the measurement
-     * @param measurement The measurement we want to add to the current measurement.
+     * @param metricType the name of the measurement
+     * @param numberToAdd The measurement number we want to add to the current measurement.
      */
-    public void addMeasurement(final MetricType name, Number measurement) {
-        measurements.get(name).addMeasurement(measurement);
+    public void addMeasurement(final MetricType metricType, Number numberToAdd) {
+        measurements.get(metricType).addMeasurement(numberToAdd);
     }
 
     /**
