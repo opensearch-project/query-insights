@@ -207,17 +207,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             if (shouldCollect(MetricType.LATENCY)) {
                 measurements.put(
                     MetricType.LATENCY,
-                    new Measurement(
-                        MetricType.LATENCY,
-                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos())
-                    )
+                    new Measurement(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos()))
                 );
             }
             if (shouldCollect(MetricType.CPU)) {
                 measurements.put(
                     MetricType.CPU,
                     new Measurement(
-                        MetricType.CPU,
                         tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum()
                     )
                 );
@@ -226,7 +222,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 measurements.put(
                     MetricType.MEMORY,
                     new Measurement(
-                        MetricType.MEMORY,
                         tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
                     )
                 );

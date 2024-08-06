@@ -345,7 +345,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
             MetricType.LATENCY,
-            List.of(1000, 1100)
+            List.of(1000L, 1100L)
         );
 
         for (List<SearchQueryRecord> recordList : allRecords) {
@@ -366,7 +366,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
             MetricType.LATENCY,
-            List.of(1000, 1100, 900)
+            List.of(1000L, 1100L, 900L)
         );
 
         for (List<SearchQueryRecord> recordList : allRecords) {
@@ -387,7 +387,7 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
             MetricType.LATENCY,
-            List.of(1000, 1100, 1200)
+            List.of(1000L, 1100L, 1200L)
         );
 
         for (List<SearchQueryRecord> recordList : allRecords) {
@@ -408,13 +408,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1100, 1200, 1000)
+            List.of(1100L, 1200L, 1000L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1300)
+            List.of(1300L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -437,13 +437,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1100, 600, 1000)
+            List.of(1100L, 600L, 1000L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(700)
+            List.of(700L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -466,13 +466,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1199, 1100, 1000)
+            List.of(1199L, 1100L, 1000L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1)
+            List.of(1L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -495,13 +495,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(900, 975, 950)
+            List.of(900L, 975L, 950L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(920)
+            List.of(920L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -524,13 +524,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(900, 975, 950)
+            List.of(900L, 975L, 950L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(1100)
+            List.of(1100L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -553,13 +553,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(900, 975, 950)
+            List.of(900L, 975L, 950L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(800)
+            List.of(800L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -581,13 +581,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(900, 975, 950)
+            List.of(900L, 975L, 950L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(800)
+            List.of(800L)
         );
 
         allRecords1.addAll(allRecords2);
@@ -614,13 +614,13 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(900, 1000, 1000)
+            List.of(900L, 1000L, 1000L)
         );
 
         List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
             MetricType.LATENCY,
-            List.of(800, 400, 1200)
+            List.of(800L, 400L, 1200L)
         );
 
         allRecords1.addAll(allRecords2);

@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.Objects;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -19,24 +18,21 @@ import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 /**
- * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific AggregationType and MetricType
+ * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific AggregationType
  */
 public class Measurement implements ToXContentObject, Writeable {
     private static int DEFAULT_COUNT = 1;
     private AggregationType aggregationType;
-    private MetricType metricType;
     private Number number;
     private int count;
 
     /**
      * Constructor
-     * @param metricType metricType
      * @param number number
      * @param count count
      * @param aggregationType aggregationType
      */
-    public Measurement(MetricType metricType, Number number, int count, AggregationType aggregationType) {
-        this.metricType = metricType;
+    public Measurement(Number number, int count, AggregationType aggregationType) {
         this.number = number;
         this.count = count;
         this.aggregationType = aggregationType;
@@ -44,21 +40,19 @@ public class Measurement implements ToXContentObject, Writeable {
 
     /**
      * Constructor
-     * @param metricType metricType
      * @param number number
      * @param aggregationType aggregationType
      */
-    public Measurement(MetricType metricType, Number number, AggregationType aggregationType) {
-        this(metricType, number, DEFAULT_COUNT, aggregationType);
+    public Measurement(Number number, AggregationType aggregationType) {
+        this(number, DEFAULT_COUNT, aggregationType);
     }
 
     /**
      * Constructor
-     * @param metricType metricType
      * @param number number
      */
-    public Measurement(MetricType metricType, Number number) {
-        this(metricType, number, DEFAULT_COUNT, AggregationType.DEFUALT_AGGREGATION_TYPE);
+    public Measurement(Number number) {
+        this(number, DEFAULT_COUNT, AggregationType.DEFUALT_AGGREGATION_TYPE);
     }
 
     /**
@@ -69,17 +63,31 @@ public class Measurement implements ToXContentObject, Writeable {
         switch (aggregationType) {
             case NONE:
                 aggregationType = AggregationType.SUM;
-                setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
+                setMeasurement(addMeasurementInferType(number, toAdd));
                 break;
             case SUM:
-                setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
+                setMeasurement(addMeasurementInferType(number, toAdd));
                 break;
             case AVERAGE:
                 count += 1;
-                setMeasurement(MetricType.addMeasurements(number, toAdd, metricType));
+                setMeasurement(addMeasurementInferType(number, toAdd));
                 break;
             default:
                 throw new IllegalArgumentException("The following aggregation type is not supported : " + aggregationType);
+        }
+    }
+
+    private Number addMeasurementInferType(Number a, Number b) {
+        if (a instanceof Long && b instanceof Long) {
+            return a.longValue() + b.longValue();
+        } else if (a instanceof Integer && b instanceof Integer) {
+            return a.intValue() + b.intValue();
+        } else if (a instanceof Double && b instanceof Double) {
+            return a.doubleValue() + b.doubleValue();
+        } else if (a instanceof Float && b instanceof Float) {
+            return a.floatValue() + b.floatValue();
+        } else {
+            throw new IllegalArgumentException("Unsupported number type: " + a.getClass() + " or " + b.getClass());
         }
     }
 
@@ -93,9 +101,33 @@ public class Measurement implements ToXContentObject, Writeable {
             case SUM:
                 return number;
             case AVERAGE:
-                return MetricType.getAverageMeasurement(number, count, metricType);
+                return getAverageMeasurement(number, count);
             default:
                 throw new IllegalArgumentException("Aggregation Type should be set for measurement.");
+        }
+    }
+
+    /**
+     * Get average measurement number based on the total and count
+     * @param total total measurement value
+     * @param count count of measurements
+     * @return average measurement value
+     */
+    private Number getAverageMeasurement(Number total, int count) {
+        if (count == 0) {
+            throw new IllegalArgumentException("Count cannot be zero for average calculation.");
+        }
+
+        if (total instanceof Long) {
+            return ((Long) total) / count;
+        } else if (total instanceof Integer) {
+            return ((Integer) total) / count;
+        } else if (total instanceof Double) {
+            return ((Double) total) / count;
+        } else if (total instanceof Float) {
+            return ((Float) total) / count;
+        } else {
+            throw new IllegalArgumentException("Unsupported number type: " + total.getClass());
         }
     }
 
@@ -118,7 +150,6 @@ public class Measurement implements ToXContentObject, Writeable {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, ToXContent.Params params) throws IOException {
         builder.startObject();
-        builder.field("metricType", metricType.toString());
         builder.field("number", number);
         builder.field("count", count);
         builder.field("aggregationType", aggregationType.toString());
@@ -128,18 +159,50 @@ public class Measurement implements ToXContentObject, Writeable {
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeString(metricType.toString());
-        out.writeGenericValue(metricType.parseValue(number));
+        writeNumber(out, number);
         out.writeInt(count);
         out.writeString(aggregationType.toString());
     }
 
+    private void writeNumber(StreamOutput out, Number number) throws IOException {
+        if (number instanceof Long) {
+            out.writeByte((byte) 0); // Type indicator for Long
+            out.writeLong((Long) number);
+        } else if (number instanceof Integer) {
+            out.writeByte((byte) 1); // Type indicator for Integer
+            out.writeInt((Integer) number);
+        } else if (number instanceof Double) {
+            out.writeByte((byte) 2); // Type indicator for Double
+            out.writeDouble((Double) number);
+        } else if (number instanceof Float) {
+            out.writeByte((byte) 3); // Type indicator for Float
+            out.writeFloat((Float) number);
+        } else {
+            throw new IOException("Unsupported number type: " + number.getClass());
+        }
+    }
+
+    private static Number readNumber(StreamInput in) throws IOException {
+        byte typeIndicator = in.readByte();
+        switch (typeIndicator) {
+            case 0:
+                return in.readLong();
+            case 1:
+                return in.readInt();
+            case 2:
+                return in.readDouble();
+            case 3:
+                return in.readFloat();
+            default:
+                throw new IOException("Unsupported number type indicator: " + typeIndicator);
+        }
+    }
+
     public static Measurement readFromStream(StreamInput in) throws IOException {
-        MetricType metricType = MetricType.valueOf(in.readString().toUpperCase(Locale.ROOT));
-        Number number = metricType.parseValue(in.readGenericValue());
+        Number number = readNumber(in);
         int count = in.readInt();
         AggregationType aggregationType = AggregationType.valueOf(in.readString());
-        return new Measurement(metricType, number, count, aggregationType);
+        return new Measurement(number, count, aggregationType);
     }
 
     @Override
@@ -147,14 +210,11 @@ public class Measurement implements ToXContentObject, Writeable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Measurement that = (Measurement) o;
-        return count == that.count
-            && metricType == that.metricType
-            && Objects.equals(number, that.number)
-            && aggregationType == that.aggregationType;
+        return count == that.count && Objects.equals(number, that.number) && aggregationType == that.aggregationType;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(metricType, number, count, aggregationType);
+        return Objects.hash(number, count, aggregationType);
     }
 }
