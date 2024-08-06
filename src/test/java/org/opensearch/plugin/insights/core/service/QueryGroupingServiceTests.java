@@ -248,15 +248,15 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
-        SearchQueryRecord aggregatedRecord = null;
+        SearchQueryRecord lastRecord = null;
 
-        Number expectedSum = 0;
+        Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
-            expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.LATENCY).longValue();
-            aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+            expectedValue = record.getMeasurement(MetricType.LATENCY).longValue();
+            lastRecord = queryGroupingService.addQueryToGroup(record);
         }
 
-        assertEquals(expectedSum, aggregatedRecord.getMeasurement(MetricType.LATENCY));
+        assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.LATENCY));
     }
 
     public void testAddMeasurementSumAggregationCpu() {
@@ -311,15 +311,15 @@ public class QueryGroupingServiceTests extends OpenSearchTestCase {
 
         // Set all records to have the same hashcode for aggregation
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
-        SearchQueryRecord aggregatedRecord = null;
+        SearchQueryRecord lastRecord = null;
 
-        Number expectedSum = 0;
+        Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
-            expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
-            aggregatedRecord = queryGroupingService.addQueryToGroup(record);
+            expectedValue = record.getMeasurement(MetricType.CPU).longValue();
+            lastRecord = queryGroupingService.addQueryToGroup(record);
         }
 
-        assertEquals(expectedSum, aggregatedRecord.getMeasurement(MetricType.CPU));
+        assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.CPU));
     }
 
     public void testNoneGroupingTypeIllegalArgumentException() {

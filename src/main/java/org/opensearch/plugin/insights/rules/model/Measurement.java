@@ -56,14 +56,14 @@ public class Measurement implements ToXContentObject, Writeable {
     }
 
     /**
-     * Add measurement number to the current number based on the aggregationType
+     * Add measurement number to the current number based on the aggregationType.
+     * If aggregateType is NONE, replace the number since we are not aggregating in this case.
      * @param toAdd number to add
      */
     public void addMeasurement(Number toAdd) {
         switch (aggregationType) {
             case NONE:
-                aggregationType = AggregationType.SUM;
-                setMeasurement(addMeasurementInferType(number, toAdd));
+                setMeasurement(toAdd);
                 break;
             case SUM:
                 setMeasurement(addMeasurementInferType(number, toAdd));
