@@ -35,6 +35,8 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -93,6 +95,8 @@ public class TopQueriesService {
      */
     private QueryInsightsExporter exporter;
 
+    private QueryGroupingService queryGroupingService;
+
     TopQueriesService(
         final MetricType metricType,
         final ThreadPool threadPool,
@@ -109,6 +113,13 @@ public class TopQueriesService {
         topQueriesStore = new PriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
+        queryGroupingService = new QueryGroupingService(
+            metricType,
+            QueryInsightsSettings.DEFAULT_GROUPING_TYPE,
+            AggregationType.AVERAGE,
+            topQueriesStore,
+            topNSize
+        );
     }
 
     /**
@@ -118,6 +129,7 @@ public class TopQueriesService {
      */
     public void setTopNSize(final int topNSize) {
         this.topNSize = topNSize;
+        this.queryGroupingService.updateTopNSize(topNSize);
     }
 
     /**
@@ -167,6 +179,10 @@ public class TopQueriesService {
         this.windowSize = windowSize;
         // reset the window start time since the window size has changed
         this.windowStart = -1L;
+    }
+
+    public void setGrouping(final GroupingType groupingType) {
+        queryGroupingService.setGroupingType(groupingType);
     }
 
     /**
@@ -306,10 +322,16 @@ public class TopQueriesService {
     }
 
     private void addToTopNStore(final List<SearchQueryRecord> records) {
-        topQueriesStore.addAll(records);
-        // remove top elements for fix sizing priority queue
-        while (topQueriesStore.size() > topNSize) {
-            topQueriesStore.poll();
+        if (queryGroupingService.getGroupingType() != GroupingType.NONE) {
+            for (SearchQueryRecord record : records) {
+                queryGroupingService.addQueryToGroup(record);
+            }
+        } else {
+            topQueriesStore.addAll(records);
+            // remove top elements for fix sizing priority queue
+            while (topQueriesStore.size() > topNSize) {
+                topQueriesStore.poll();
+            }
         }
     }
 
@@ -329,6 +351,9 @@ public class TopQueriesService {
             }
             topQueriesHistorySnapshot.set(history);
             topQueriesStore.clear();
+            if (queryGroupingService.getGroupingType() != GroupingType.NONE) {
+                queryGroupingService.drain();
+            }
             topQueriesCurrentSnapshot.set(new ArrayList<>());
             windowStart = newWindowStart;
             // export to the configured sink
@@ -363,6 +388,7 @@ public class TopQueriesService {
 
     /**
      * Close the top n queries service
+     * @throws IOException IOException
      */
     public void close() throws IOException {
         queryInsightsExporterFactory.closeExporter(this.exporter);

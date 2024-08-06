@@ -56,7 +56,11 @@ public enum Attribute {
     /**
      * Custom search request labels
      */
-    LABELS;
+    LABELS,
+    /**
+     * Unique hashcode used to group similar queries
+     */
+    QUERY_HASHCODE;
 
     /**
      * Read an Attribute from a StreamInput
@@ -85,6 +89,7 @@ public enum Attribute {
      *
      * @param out            the StreamOutput to write
      * @param attributeValue the Attribute value to write
+     * @throws IOException IOException
      */
     @SuppressWarnings("unchecked")
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {

@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
@@ -28,6 +29,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -74,6 +76,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     final QueryInsightsExporterFactory queryInsightsExporterFactory;
 
+    /**
+     * Flags for enabling insight data grouping for different metric types
+     */
+    private GroupingType groupingType;
+
     private volatile boolean searchQueryMetricsEnabled;
 
     private SearchQueryCategorizer searchQueryCategorizer;
@@ -114,15 +121,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryMetricsEnabled = clusterSettings.get(SEARCH_QUERY_METRICS_ENABLED_SETTING);
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         clusterSettings.addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
+        this.groupingType = DEFAULT_GROUPING_TYPE;
     }
 
     /**
      * Ingest the query data into in-memory stores
      *
      * @param record the record to ingest
+     * @return true/false
      */
     public boolean addRecord(final SearchQueryRecord record) {
-        boolean shouldAdd = searchQueryMetricsEnabled;
+        boolean shouldAdd = isSearchQueryMetricsFeatureEnabled() || isGroupingEnabled();
         if (!shouldAdd) {
             for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
                 if (!enableCollect.get(entry.getKey())) {
@@ -187,6 +196,40 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Validate grouping given grouping type setting
+     * @param groupingTypeSetting grouping setting
+     */
+    public void validateGrouping(final String groupingTypeSetting) {
+        GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+    }
+
+    /**
+     * Set grouping
+     * @param groupingTypeSetting grouping
+     */
+    public void setGrouping(final String groupingTypeSetting) {
+        GroupingType newGroupingType = GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+        GroupingType oldGroupingType = groupingType;
+
+        if (oldGroupingType != newGroupingType) {
+            groupingType = newGroupingType;
+
+            for (MetricType metricType : MetricType.allMetricTypes()) {
+                this.topQueriesServices.get(metricType).setGrouping(newGroupingType);
+            }
+        }
+    }
+
+    /**
+     * Get the grouping type based on the metricType
+     * @return GroupingType
+     */
+
+    public GroupingType getGrouping() {
+        return groupingType;
+    }
+
+    /**
      * Get if the Query Insights data collection is enabled for a MetricType
      *
      * @param metricType {@link MetricType}
@@ -225,6 +268,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public boolean isSearchQueryMetricsFeatureEnabled() {
         return this.searchQueryMetricsEnabled;
+    }
+
+    /**
+     * Is grouping feature enabled and grouping not NONE
+     * @return boolean
+     */
+    public boolean isGroupingEnabled() {
+        return this.groupingType != GroupingType.NONE;
     }
 
     /**

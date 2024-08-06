@@ -15,6 +15,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.aggregations.AggregatorFactories;
@@ -81,7 +82,7 @@ public final class SearchQueryCategorizer {
      */
     public void categorize(SearchQueryRecord record) {
         SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
-        Map<MetricType, Number> measurements = record.getMeasurements();
+        Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);
         incrementQueryAggregationCounters(source.aggregations(), measurements);
@@ -93,7 +94,7 @@ public final class SearchQueryCategorizer {
         }
     }
 
-    private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Number> measurements) {
+    private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Measurement> measurements) {
         if (sorts != null && sorts.size() > 0) {
             for (SortBuilder<?> sortBuilder : sorts) {
                 String sortOrder = sortBuilder.order().toString();
@@ -102,7 +103,7 @@ public final class SearchQueryCategorizer {
         }
     }
 
-    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations, Map<MetricType, Number> measurements) {
+    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations, Map<MetricType, Measurement> measurements) {
         if (aggregations == null) {
             return;
         }
@@ -110,7 +111,7 @@ public final class SearchQueryCategorizer {
         searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(aggregations.getAggregatorFactories(), measurements);
     }
 
-    private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Number> measurements) {
+    private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Measurement> measurements) {
         if (topLevelQueryBuilder == null) {
             return;
         }
