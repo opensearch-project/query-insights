@@ -263,6 +263,7 @@ integTest {
   if (System.getProperty("security.enabled") == "true" || System.getProperty("https") == "true") {
     // Exclude this IT, because they executed in another task (:integTestWithSecurity)
     exclude 'org/opensearch/plugin/insights/rules/resthandler/top_queries/TopQueriesRestIT.class'
+    exclude 'org/opensearch/plugin/insights/core/exporter/QueryInsightsExporterIT.class'
   }
 }
 
