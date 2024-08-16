@@ -16,6 +16,7 @@ import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -30,6 +31,7 @@ import org.opensearch.threadpool.ThreadPool;
 public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final ThreadPool threadPool = mock(ThreadPool.class);
     private final Client client = mock(Client.class);
+    private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsService queryInsightsService;
     private QueryInsightsService queryInsightsServiceSpy;
 
@@ -39,7 +41,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
-        queryInsightsService = new QueryInsightsService(clusterSettings, threadPool, client, NoopMetricsRegistry.INSTANCE);
+        queryInsightsService = new QueryInsightsService(clusterSettings, threadPool, client, NoopMetricsRegistry.INSTANCE, namedXContentRegistry);
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
@@ -56,7 +58,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.drainRecords();
         assertEquals(
             QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
-            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false).size()
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size()
         );
     }
 

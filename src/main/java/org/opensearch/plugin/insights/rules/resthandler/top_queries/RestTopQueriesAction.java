@@ -67,12 +67,14 @@ public class RestTopQueriesAction extends BaseRestHandler {
     static TopQueriesRequest prepareRequest(final RestRequest request) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final String metricType = request.param("type", MetricType.LATENCY.toString());
+        final String from = request.param("from");
+        final String to = request.param("to");
         if (!ALLOWED_METRICS.contains(metricType)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
             );
         }
-        return new TopQueriesRequest(MetricType.fromString(metricType), nodesIds);
+        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, nodesIds);
     }
 
     @Override

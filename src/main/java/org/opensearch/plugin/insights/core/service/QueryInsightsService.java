@@ -26,7 +26,9 @@ import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -34,6 +36,8 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
+
+import javax.naming.Name;
 
 /**
  * Service responsible for gathering, analyzing, storing and exporting
@@ -74,9 +78,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     final QueryInsightsExporterFactory queryInsightsExporterFactory;
 
+    /**
+     * Query Insights reader factory
+     */
+    final QueryInsightsReaderFactory queryInsightsReaderFactory;
+
     private volatile boolean searchQueryMetricsEnabled;
 
     private SearchQueryCategorizer searchQueryCategorizer;
+
+    private NamedXContentRegistry namedXContentRegistry;
 
     /**
      * Constructor of the QueryInsightsService
@@ -85,29 +96,33 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param threadPool The OpenSearch thread pool to run async tasks
      * @param client OS client
      * @param metricsRegistry Opentelemetry Metrics registry
+     * @param namedXContentRegistry NamedXContentRegistry for parsing purposes
      */
     @Inject
     public QueryInsightsService(
         final ClusterSettings clusterSettings,
         final ThreadPool threadPool,
         final Client client,
-        final MetricsRegistry metricsRegistry
-    ) {
+        final MetricsRegistry metricsRegistry,
+        final NamedXContentRegistry namedXContentRegistry
+        ) {
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
         this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client);
+        this.queryInsightsReaderFactory = new QueryInsightsReaderFactory(client);
+        this.namedXContentRegistry = namedXContentRegistry;
         // initialize top n queries services and configurations consumers
         topQueriesServices = new HashMap<>();
         for (MetricType metricType : MetricType.allMetricTypes()) {
             enableCollect.put(metricType, false);
-            topQueriesServices.put(metricType, new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory));
+            topQueriesServices.put(metricType, new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory));
         }
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterSettings.addSettingsUpdateConsumer(
                 getExporterSettings(type),
-                (settings -> setExporter(type, settings)),
-                (settings -> validateExporterConfig(type, settings))
+                (settings -> setExporterReader(type, settings)),
+                (settings -> validateExporterReaderConfig(type, settings))
             );
         }
 
@@ -295,14 +310,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Set the exporter config for a metricType
+     * Set the exporter and reader config for a metricType
      *
      * @param type {@link MetricType}
-     * @param settings exporter settings
+     * @param settings exporter and reader settings
      */
-    public void setExporter(final MetricType type, final Settings settings) {
+    public void setExporterReader(final MetricType type, final Settings settings) {
         if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).setExporter(settings);
+            TopQueriesService tqs = topQueriesServices.get(type);
+            tqs.setExporter(settings);
+            tqs.setReader(settings, namedXContentRegistry);
         }
     }
 
@@ -333,14 +350,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the exporter config for a metricType
+     * Validate the exporter and reader config for a metricType
      *
      * @param type {@link MetricType}
-     * @param settings exporter settings
+     * @param settings exporter and reader settings
      */
-    public void validateExporterConfig(final MetricType type, final Settings settings) {
+    public void validateExporterReaderConfig(final MetricType type, final Settings settings) {
         if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).validateExporterConfig(settings);
+            TopQueriesService tqs = topQueriesServices.get(type);
+            tqs.validateExporterReaderConfig(settings);
         }
     }
 
@@ -370,5 +388,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
         // close any unclosed resources
         queryInsightsExporterFactory.closeAllExporters();
+        queryInsightsReaderFactory.closeAllReaders();
     }
 }

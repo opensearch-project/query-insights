@@ -79,7 +79,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             clusterService.getClusterSettings(),
             threadPool,
             client,
-            metricsRegistry
+            metricsRegistry,
+            xContentRegistry
         );
         return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService));
     }

@@ -180,7 +180,6 @@ public class QueryInsightsSettings {
      * Config key for export index
      */
     public static final String EXPORT_INDEX = "config.index";
-
     /**
      * Settings and defaults for top queries exporters
      */
@@ -201,6 +200,7 @@ public class QueryInsightsSettings {
      * Default exporter type of top queries
      */
     public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
+
 
     /**
      * Settings for the exporter of top latency queries
