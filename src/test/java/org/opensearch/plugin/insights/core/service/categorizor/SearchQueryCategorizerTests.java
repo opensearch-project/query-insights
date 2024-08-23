@@ -114,7 +114,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(valueCaptor.capture(), tagsCaptor.capture());
 
         double actualValue = valueCaptor.getValue();
-        String actualTag = (String) tagsCaptor.getValue().getTagsMap().get("type");
+        String actualTag = (String) tagsCaptor.getValue().getTagsMap().get("agg_type");
 
         assertEquals(1.0d, actualValue, 0.0001);
         assertEquals(MULTI_TERMS_AGGREGATION, actualTag);
