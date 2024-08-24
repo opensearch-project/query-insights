@@ -118,7 +118,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * @param searchQueryMetricsEnabled boolean flag
      */
     public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
-        log.info("Setting query metrics enabled as : " + searchQueryMetricsEnabled);
         boolean oldSearchQueryMetricsEnabled = queryInsightsService.isSearchQueryMetricsFeatureEnabled();
         this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
         if (searchQueryMetricsEnabled) {
@@ -137,9 +136,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private void updateSettingsForSearchQueryMetrics() {
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
-        log.info(
-            "Setting setSearchQueryMetricsEnabled as : " + clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING)
-        );
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
