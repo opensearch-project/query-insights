@@ -118,6 +118,7 @@ public class QueryInsightsExporterFactory {
      * Close an exporter
      *
      * @param exporter the exporter to close
+     * @throws IOException exception
      */
     public void closeExporter(QueryInsightsExporter exporter) throws IOException {
         if (exporter != null) {

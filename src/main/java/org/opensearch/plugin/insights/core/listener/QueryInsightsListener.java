@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
+import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
@@ -82,6 +83,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.validateWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
+
+        updateSettingsForSearchQueryMetrics();
     }
 
     /**
@@ -108,6 +111,36 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 queryInsightsService.checkAndRestartQueryInsights();
             }
         }
+    }
+
+    /**
+     * Set search query metrics enabled to enable collection of search query categorization metrics
+     * @param searchQueryMetricsEnabled boolean flag
+     */
+    public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
+        log.info("Setting query metrics enabled as : " + searchQueryMetricsEnabled);
+        boolean oldSearchQueryMetricsEnabled = queryInsightsService.isSearchQueryMetricsFeatureEnabled();
+        this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
+        if (searchQueryMetricsEnabled) {
+            super.setEnabled(true);
+            if (!oldSearchQueryMetricsEnabled) {
+                queryInsightsService.checkAndRestartQueryInsights();
+            }
+        } else {
+            super.setEnabled(false);
+            if (oldSearchQueryMetricsEnabled) {
+                queryInsightsService.checkAndStopQueryInsights();
+            }
+        }
+    }
+
+    private void updateSettingsForSearchQueryMetrics() {
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
+        log.info(
+            "Setting setSearchQueryMetricsEnabled as : " + clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING)
+        );
+        setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
     @Override
