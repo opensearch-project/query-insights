@@ -52,7 +52,7 @@ public class Measurement implements ToXContentObject, Writeable {
      * @param number number
      */
     public Measurement(Number number) {
-        this(number, DEFAULT_COUNT, AggregationType.DEFUALT_AGGREGATION_TYPE);
+        this(number, DEFAULT_COUNT, AggregationType.DEFAULT_AGGREGATION_TYPE);
     }
 
     /**

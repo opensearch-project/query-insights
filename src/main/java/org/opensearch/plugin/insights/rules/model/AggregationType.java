@@ -16,5 +16,5 @@ public enum AggregationType {
     AVERAGE,
     SUM;
 
-    public static AggregationType DEFUALT_AGGREGATION_TYPE = NONE;
+    public static AggregationType DEFAULT_AGGREGATION_TYPE = NONE;
 }

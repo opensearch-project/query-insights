@@ -24,12 +24,12 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
  * Handles grouping of search queries based on the GroupingType for the MetricType
  * Following algorithm :
  */
-public class QueryGroupingService {
+public class QueryGrouper {
 
     /**
      * Logger
      */
-    private static final Logger log = LogManager.getLogger(QueryGroupingService.class);
+    private static final Logger log = LogManager.getLogger(QueryGrouper.class);
     /**
      * Grouping type for the current grouping service
      */
@@ -69,7 +69,7 @@ public class QueryGroupingService {
      */
     private int topNSize;
 
-    public QueryGroupingService(
+    public QueryGrouper(
         MetricType metricType,
         GroupingType groupingType,
         AggregationType aggregationType,

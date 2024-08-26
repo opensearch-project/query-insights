@@ -61,7 +61,7 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFUALT_AGGREGATION_TYPE);
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFAULT_AGGREGATION_TYPE);
     }
 
     /**
@@ -76,7 +76,7 @@ final public class QueryInsightsTestUtils {
             count,
             System.currentTimeMillis(),
             0,
-            AggregationType.DEFUALT_AGGREGATION_TYPE
+            AggregationType.DEFAULT_AGGREGATION_TYPE
         );
         for (SearchQueryRecord record : records) {
             record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);

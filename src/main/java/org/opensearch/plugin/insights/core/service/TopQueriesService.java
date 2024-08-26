@@ -95,7 +95,7 @@ public class TopQueriesService {
      */
     private QueryInsightsExporter exporter;
 
-    private QueryGroupingService queryGroupingService;
+    private QueryGrouper queryGrouper;
 
     TopQueriesService(
         final MetricType metricType,
@@ -113,7 +113,7 @@ public class TopQueriesService {
         topQueriesStore = new PriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
-        queryGroupingService = new QueryGroupingService(
+        queryGrouper = new QueryGrouper(
             metricType,
             QueryInsightsSettings.DEFAULT_GROUPING_TYPE,
             AggregationType.AVERAGE,
@@ -129,7 +129,7 @@ public class TopQueriesService {
      */
     public void setTopNSize(final int topNSize) {
         this.topNSize = topNSize;
-        this.queryGroupingService.updateTopNSize(topNSize);
+        this.queryGrouper.updateTopNSize(topNSize);
     }
 
     /**
@@ -182,7 +182,7 @@ public class TopQueriesService {
     }
 
     public void setGrouping(final GroupingType groupingType) {
-        queryGroupingService.setGroupingType(groupingType);
+        queryGrouper.setGroupingType(groupingType);
     }
 
     /**
@@ -322,9 +322,9 @@ public class TopQueriesService {
     }
 
     private void addToTopNStore(final List<SearchQueryRecord> records) {
-        if (queryGroupingService.getGroupingType() != GroupingType.NONE) {
+        if (queryGrouper.getGroupingType() != GroupingType.NONE) {
             for (SearchQueryRecord record : records) {
-                queryGroupingService.addQueryToGroup(record);
+                queryGrouper.addQueryToGroup(record);
             }
         } else {
             topQueriesStore.addAll(records);
@@ -351,8 +351,8 @@ public class TopQueriesService {
             }
             topQueriesHistorySnapshot.set(history);
             topQueriesStore.clear();
-            if (queryGroupingService.getGroupingType() != GroupingType.NONE) {
-                queryGroupingService.drain();
+            if (queryGrouper.getGroupingType() != GroupingType.NONE) {
+                queryGrouper.drain();
             }
             topQueriesCurrentSnapshot.set(new ArrayList<>());
             windowStart = newWindowStart;
