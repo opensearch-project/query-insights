@@ -10,12 +10,13 @@ package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -116,7 +117,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         int numberOfShards = 10;
 
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, false);
 
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
         when(searchRequest.searchType()).thenReturn(searchType);
@@ -182,7 +183,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         CountDownLatch countDownLatch = new CountDownLatch(numRequests);
 
         for (int i = 0; i < numRequests; i++) {
-            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService));
+            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService, false));
         }
 
         for (int i = 0; i < numRequests; i++) {
@@ -201,61 +202,147 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         verify(queryInsightsService, times(numRequests)).addRecord(any());
     }
 
-    public void testTopNFeatureEnabledDisabled() {
-        // Test case 1: Only latency enabled initially, disable latency and verify expected behavior
-        QueryInsightsService queryInsightsService1 = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener1 = new QueryInsightsListener(clusterService, queryInsightsService1);
+    public void testAllFeatureEnabledDisabled() throws InvocationTargetException, NoSuchMethodException, IllegalAccessException {
+        QueryInsightsListener queryInsightsListener;
 
-        when(queryInsightsService1.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
-        when(queryInsightsService1.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
-        when(queryInsightsService1.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
-        when(queryInsightsService1.isTopNFeatureEnabled()).thenReturn(true).thenReturn(false);
+        // Test case 1
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(true, false),  // Latency enabled, then disabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false)         // Metrics disabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
+        assertFalse(queryInsightsListener.isEnabled());  // All metrics are disabled, so QI should be disabled
 
-        queryInsightsListener1.setEnableTopQueries(MetricType.LATENCY, false);
-        assertFalse(queryInsightsListener1.isEnabled());
-        verify(queryInsightsService1).checkAndStopQueryInsights();
-        verify(queryInsightsService1, never()).checkAndRestartQueryInsights();
+        // Test case 2
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(false, true),  // Latency disabled, then enabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false)         // Metrics disabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
+        assertTrue(queryInsightsListener.isEnabled());  // Latency is enabled, so QI should be enabled
 
-        // Test case 2: All disabled initially, enable latency and verify expected behavior
-        QueryInsightsService queryInsightsService2 = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener2 = new QueryInsightsListener(clusterService, queryInsightsService2);
+        // Test case 3
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(true, false),  // Latency enabled, then disabled
+            Arrays.asList(true),         // CPU enabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false)         // Metrics disabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
+        assertTrue(queryInsightsListener.isEnabled());  // CPU is still enabled, so QI should still be enabled
 
-        when(queryInsightsService2.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
-        when(queryInsightsService2.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
-        when(queryInsightsService2.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
-        when(queryInsightsService2.isTopNFeatureEnabled()).thenReturn(false).thenReturn(true);
+        // Test case 4
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(false, true),  // Latency disabled, then enabled
+            Arrays.asList(true),         // CPU enabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false)         // Metrics disabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
+        assertTrue(queryInsightsListener.isEnabled());  // Latency and CPU is enabled, so QI should be enabled
 
-        queryInsightsListener2.setEnableTopQueries(MetricType.LATENCY, true);
-        assertTrue(queryInsightsListener2.isEnabled());
-        verify(queryInsightsService2).checkAndRestartQueryInsights();
-        verify(queryInsightsService2, never()).checkAndStopQueryInsights();
+        // Test case 5
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(true, false),  // Latency enabled, then disabled
+            Arrays.asList(true, false),  // CPU enabled, then disabled
+            Arrays.asList(false),         // Memory disabled
+            Arrays.asList(true)          // Metrics enabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
+        queryInsightsListener.setEnableTopQueries(MetricType.CPU, false);
+        assertTrue(queryInsightsListener.isEnabled());  // Metrics is still enabled, so QI should still be enabled
 
-        // Test case 3: latency and CPU enabled initially, disable latency and verify expected behavior
-        QueryInsightsService queryInsightsService3 = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener3 = new QueryInsightsListener(clusterService, queryInsightsService3);
+        // Test case 6
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(false),        // Latency disabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(true, false),  // Memory enabled, then disabled
+            Arrays.asList(true)          // Metrics enabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.MEMORY, false);
+        assertTrue(queryInsightsListener.isEnabled());  // Metrics is still enabled, so QI should still be enabled
 
-        when(queryInsightsService3.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
-        when(queryInsightsService3.isCollectionEnabled(MetricType.CPU)).thenReturn(true);
-        when(queryInsightsService3.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
-        when(queryInsightsService3.isTopNFeatureEnabled()).thenReturn(true).thenReturn(true);
+        // Test case 7
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(true, false),  // Latency enabled, then disabled
+            Arrays.asList(true, false),  // CPU enabled, then disabled
+            Arrays.asList(true, false),  // Memory enabled, then disabled
+            Arrays.asList(true)          // Metrics enabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
+        queryInsightsListener.setEnableTopQueries(MetricType.CPU, false);
+        queryInsightsListener.setEnableTopQueries(MetricType.MEMORY, false);
+        assertTrue(queryInsightsListener.isEnabled());  // Metrics is still enabled, so QI should still be enabled
 
-        queryInsightsListener3.setEnableTopQueries(MetricType.LATENCY, false);
-        assertTrue(queryInsightsListener3.isEnabled());
-        verify(queryInsightsService3, never()).checkAndStopQueryInsights();
-        verify(queryInsightsService3, never()).checkAndRestartQueryInsights();
+        // Test case 8
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(true),  // Latency enabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(true)         // Metrics enabled then disabled
+        );
+        queryInsightsListener.setSearchQueryMetricsEnabled(false);
+        assertTrue(queryInsightsListener.isEnabled());  // Latency is still enabled, so QI should be enabled
 
-        // Test case 4: Only CPU enabled initially, enable latency and verify expected behavior
-        QueryInsightsService queryInsightsService4 = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener4 = new QueryInsightsListener(clusterService, queryInsightsService4);
+        // Test case 9
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(false),  // Latency disabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(true, false)   // Metrics enabled then disabled
+        );
+        queryInsightsListener.setSearchQueryMetricsEnabled(false);
+        assertFalse(queryInsightsListener.isEnabled());  // All disabled, so QI should be disabled
+    }
 
-        when(queryInsightsService4.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
-        when(queryInsightsService4.isCollectionEnabled(MetricType.CPU)).thenReturn(true);
-        when(queryInsightsService4.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
-        when(queryInsightsService4.isTopNFeatureEnabled()).thenReturn(true).thenReturn(true);
+    private QueryInsightsListener testFeatureEnableDisableSetup(
+        List<Boolean> latencyValues,
+        List<Boolean> cpuValues,
+        List<Boolean> memoryValues,
+        List<Boolean> metricsEnabledValues
+    ) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
-        queryInsightsListener4.setEnableTopQueries(MetricType.LATENCY, true);
-        assertTrue(queryInsightsListener4.isEnabled());
-        verify(queryInsightsService4, never()).checkAndRestartQueryInsights();
-        verify(queryInsightsService4, never()).checkAndStopQueryInsights();
+        // Determine initial state: If any of the first values in the lists is true, enable it
+        boolean shouldEnable = latencyValues.get(0) || cpuValues.get(0) || memoryValues.get(0) || metricsEnabledValues.get(0);
+
+        QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, shouldEnable);
+
+        // Configure the mock to return multiple values in sequence for the various metrics
+        when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(
+            latencyValues.get(0),
+            latencyValues.subList(1, latencyValues.size()).toArray(new Boolean[0])
+        );
+
+        when(queryInsightsService.isCollectionEnabled(MetricType.CPU)).thenReturn(
+            cpuValues.get(0),
+            cpuValues.subList(1, cpuValues.size()).toArray(new Boolean[0])
+        );
+
+        when(queryInsightsService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(
+            memoryValues.get(0),
+            memoryValues.subList(1, memoryValues.size()).toArray(new Boolean[0])
+        );
+
+        when(queryInsightsService.isSearchQueryMetricsFeatureEnabled()).thenReturn(
+            metricsEnabledValues.get(0),
+            metricsEnabledValues.subList(1, metricsEnabledValues.size()).toArray(new Boolean[0])
+        );
+
+        when(queryInsightsService.isTopNFeatureEnabled()).thenCallRealMethod(); // Call real method if needed
+
+        // Logic for isAnyFeatureEnabled() based on the last values in the lists
+        boolean isAnyFeatureEnabled = latencyValues.get(latencyValues.size() - 1)
+            || cpuValues.get(cpuValues.size() - 1)
+            || memoryValues.get(memoryValues.size() - 1)
+            || metricsEnabledValues.get(metricsEnabledValues.size() - 1);
+
+        when(queryInsightsService.isAnyFeatureEnabled()).thenReturn(isAnyFeatureEnabled);
+
+        return queryInsightsListener;
     }
 }

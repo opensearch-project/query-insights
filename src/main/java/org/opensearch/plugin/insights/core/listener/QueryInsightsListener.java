@@ -54,11 +54,18 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      *
      * @param clusterService       The Node's cluster service.
      * @param queryInsightsService The topQueriesByLatencyService associated with this listener
+     * @param initiallyEnabled Is the listener initially enabled/disabled
      */
     @Inject
-    public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
+    public QueryInsightsListener(
+        final ClusterService clusterService,
+        final QueryInsightsService queryInsightsService,
+        boolean initiallyEnabled
+    ) {
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
+        super.setEnabled(initiallyEnabled); // Disable query insights listener and service initially
+
         // Setting endpoints set up for top n queries, including enabling top n queries, window size and top n size
         // Expected metricTypes are Latency, CPU and Memory.
         for (MetricType type : MetricType.allMetricTypes()) {
@@ -101,14 +108,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         boolean isTopNFeatureCurrentlyDisabled = !queryInsightsService.isTopNFeatureEnabled();
 
         if (isTopNFeatureCurrentlyDisabled) {
-            super.setEnabled(false);
             if (!isTopNFeaturePreviouslyDisabled) {
-                queryInsightsService.checkAndStopQueryInsights();
+                checkAndStopQueryInsights();
             }
         } else {
-            super.setEnabled(true);
             if (isTopNFeaturePreviouslyDisabled) {
-                queryInsightsService.checkAndRestartQueryInsights();
+                checkAndRestartQueryInsights();
             }
         }
     }
@@ -121,15 +126,34 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         boolean oldSearchQueryMetricsEnabled = queryInsightsService.isSearchQueryMetricsFeatureEnabled();
         this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
         if (searchQueryMetricsEnabled) {
-            super.setEnabled(true);
             if (!oldSearchQueryMetricsEnabled) {
-                queryInsightsService.checkAndRestartQueryInsights();
+                checkAndRestartQueryInsights();
             }
         } else {
-            super.setEnabled(false);
             if (oldSearchQueryMetricsEnabled) {
-                queryInsightsService.checkAndStopQueryInsights();
+                checkAndStopQueryInsights();
             }
+        }
+    }
+
+    /**
+     * Stops query insights service if no features enabled
+     */
+    public void checkAndStopQueryInsights() {
+        if (!queryInsightsService.isAnyFeatureEnabled()) {
+            super.setEnabled(false);
+            queryInsightsService.stop();
+        }
+    }
+
+    /**
+     * Restarts query insights service if any feature enabled
+     */
+    public void checkAndRestartQueryInsights() {
+        if (queryInsightsService.isAnyFeatureEnabled()) {
+            super.setEnabled(true);
+            queryInsightsService.stop();
+            queryInsightsService.start();
         }
     }
 

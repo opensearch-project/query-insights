@@ -235,25 +235,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Stops query insights service if no features enabled
-     */
-    public void checkAndStopQueryInsights() {
-        if (!isAnyFeatureEnabled()) {
-            this.stop();
-        }
-    }
-
-    /**
-     * Restarts query insights service if any feature enabled
-     */
-    public void checkAndRestartQueryInsights() {
-        if (isAnyFeatureEnabled()) {
-            this.stop();
-            this.start();
-        }
-    }
-
-    /**
      * Validate the window size config for a metricType
      *
      * @param type {@link MetricType}
