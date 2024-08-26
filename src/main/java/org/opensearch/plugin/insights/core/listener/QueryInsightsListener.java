@@ -28,11 +28,13 @@ import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.action.search.SearchRequestOperationsListener;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.hash.MurmurHash3;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.QueryShape;
+import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -226,8 +228,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                     )
                 );
             }
-            // TODO: Use David's QueryShape library to get the query shape hashcode
-            final QueryShape queryShape = new QueryShape(request.source());
+            MurmurHash3.Hash128 hashcode = QueryShapeGenerator.getShapeHashCode(request.source(), false);
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
@@ -236,7 +237,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
-            attributes.put(Attribute.QUERY_HASHCODE, queryShape.hashCode());
+            attributes.put(Attribute.QUERY_HASHCODE, hashcode.toString());
 
             Map<String, Object> labels = new HashMap<>();
             // Retrieve user provided label if exists
