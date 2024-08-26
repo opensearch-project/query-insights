@@ -227,7 +227,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                     )
                 );
             }
-            MurmurHash3.Hash128 hashcode = QueryShapeGenerator.getShapeHashCode(request.source(), false);
+            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
@@ -236,7 +236,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
-            attributes.put(Attribute.QUERY_HASHCODE, hashcode.toString());
+            attributes.put(Attribute.QUERY_HASHCODE, hashcode);
 
             Map<String, Object> labels = new HashMap<>();
             // Retrieve user provided label if exists
