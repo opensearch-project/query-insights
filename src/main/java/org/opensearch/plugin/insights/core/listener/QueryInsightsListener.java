@@ -33,7 +33,6 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
-import org.opensearch.plugin.insights.core.service.QueryShape;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;

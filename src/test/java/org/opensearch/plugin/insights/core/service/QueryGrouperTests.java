@@ -278,13 +278,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementAverageAggregationCpu() {
-        queryGrouper = new QueryGrouper(
-            MetricType.CPU,
-            GroupingType.SIMILARITY,
-            AggregationType.AVERAGE,
-            topQueriesStore,
-            10
-        );
+        queryGrouper = new QueryGrouper(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.AVERAGE, topQueriesStore, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
