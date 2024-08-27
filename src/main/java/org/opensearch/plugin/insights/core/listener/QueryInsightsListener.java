@@ -114,7 +114,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     /**
-     * Enable or disable top queries insights collection for {@link MetricType}
+     * Enable or disable top queries insights collection for {@link MetricType}.
      * This function will enable or disable the corresponding listeners
      * and query insights services.
      *
@@ -122,57 +122,33 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * @param isCurrentMetricEnabled boolean
      */
     public void setEnableTopQueries(final MetricType metricType, final boolean isCurrentMetricEnabled) {
-        boolean isTopNFeaturePreviouslyDisabled = !queryInsightsService.isTopNFeatureEnabled();
         this.queryInsightsService.enableCollection(metricType, isCurrentMetricEnabled);
-        boolean isTopNFeatureCurrentlyDisabled = !queryInsightsService.isTopNFeatureEnabled();
-
-        if (isTopNFeatureCurrentlyDisabled) {
-            if (!isTopNFeaturePreviouslyDisabled) {
-                checkAndStopQueryInsights();
-            }
-        } else {
-            if (isTopNFeaturePreviouslyDisabled) {
-                checkAndRestartQueryInsights();
-            }
-        }
+        updateQueryInsightsState();
     }
 
     /**
-     * Set search query metrics enabled to enable collection of search query categorization metrics
+     * Set search query metrics enabled to enable collection of search query categorization metrics.
      * @param searchQueryMetricsEnabled boolean flag
      */
     public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
-        boolean oldSearchQueryMetricsEnabled = queryInsightsService.isSearchQueryMetricsFeatureEnabled();
         this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
-        if (searchQueryMetricsEnabled) {
-            if (!oldSearchQueryMetricsEnabled) {
-                checkAndRestartQueryInsights();
-            }
-        } else {
-            if (oldSearchQueryMetricsEnabled) {
-                checkAndStopQueryInsights();
-            }
-        }
+        updateQueryInsightsState();
     }
 
     /**
-     * Stops query insights service if no features enabled
+     * Update the query insights service state based on the enabled features.
+     * If any feature is enabled, it starts the service. If no features are enabled, it stops the service.
      */
-    public void checkAndStopQueryInsights() {
-        if (!queryInsightsService.isAnyFeatureEnabled()) {
-            super.setEnabled(false);
-            queryInsightsService.stop();
-        }
-    }
+    private void updateQueryInsightsState() {
+        boolean anyFeatureEnabled = queryInsightsService.isAnyFeatureEnabled();
 
-    /**
-     * Restarts query insights service if any feature enabled
-     */
-    public void checkAndRestartQueryInsights() {
-        if (queryInsightsService.isAnyFeatureEnabled()) {
+        if (anyFeatureEnabled && !super.isEnabled()) {
             super.setEnabled(true);
             queryInsightsService.stop();
             queryInsightsService.start();
+        } else if (!anyFeatureEnabled && super.isEnabled()) {
+            super.setEnabled(false);
+            queryInsightsService.stop();
         }
     }
 
