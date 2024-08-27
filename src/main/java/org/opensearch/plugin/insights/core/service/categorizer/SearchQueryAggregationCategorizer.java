@@ -20,7 +20,7 @@ import org.opensearch.telemetry.metrics.tags.Tags;
  */
 public class SearchQueryAggregationCategorizer {
 
-    private static final String TYPE_TAG = "type";
+    static final String AGGREGATION_TYPE_TAG = "agg_type";
     private final SearchQueryCounters searchQueryCounters;
 
     /**
@@ -49,7 +49,7 @@ public class SearchQueryAggregationCategorizer {
     private void incrementCountersRecursively(AggregationBuilder aggregationBuilder, Map<MetricType, Number> measurements) {
         // Increment counters for the current aggregation
         String aggregationType = aggregationBuilder.getType();
-        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, aggregationType), measurements);
+        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, aggregationType), measurements);
 
         // Recursively process sub-aggregations if any
         Collection<AggregationBuilder> subAggregations = aggregationBuilder.getSubAggregations();
@@ -63,7 +63,7 @@ public class SearchQueryAggregationCategorizer {
         Collection<PipelineAggregationBuilder> pipelineAggregations = aggregationBuilder.getPipelineAggregations();
         for (PipelineAggregationBuilder pipelineAggregation : pipelineAggregations) {
             String pipelineAggregationType = pipelineAggregation.getType();
-            searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(TYPE_TAG, pipelineAggregationType), measurements);
+            searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, pipelineAggregationType), measurements);
         }
     }
 }
