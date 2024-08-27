@@ -20,7 +20,7 @@ import org.opensearch.telemetry.metrics.tags.Tags;
  */
 public class SearchQueryAggregationCategorizer {
 
-    private static final String AGGREGATION_TYPE_TAG = "agg_type";
+    static final String AGGREGATION_TYPE_TAG = "agg_type";
     private final SearchQueryCounters searchQueryCounters;
 
     /**

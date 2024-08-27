@@ -6,11 +6,10 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights.core.service.categorizor;
+package org.opensearch.plugin.insights.core.service.categorizer;
 
 import org.opensearch.common.hash.MurmurHash3;
 import org.opensearch.plugin.insights.SearchSourceBuilderUtils;
-import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
