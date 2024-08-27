@@ -54,20 +54,37 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      *
      * @param clusterService       The Node's cluster service.
      * @param queryInsightsService The topQueriesByLatencyService associated with this listener
-     * @param initiallyEnabled Is the listener initially enabled/disabled
      */
     @Inject
+    public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
+        super(false); // Disable query insights listener and service initially
+        this.clusterService = clusterService;
+        this.queryInsightsService = queryInsightsService;
+        initialize();
+    }
+
+    /**
+     * Constructor for QueryInsightsListener
+     *
+     * @param clusterService       The Node's cluster service.
+     * @param queryInsightsService The topQueriesByLatencyService associated with this listener
+     * @param initiallyEnabled Is the listener initially enabled/disabled
+     */
     public QueryInsightsListener(
         final ClusterService clusterService,
         final QueryInsightsService queryInsightsService,
         boolean initiallyEnabled
     ) {
+        super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
-        super.setEnabled(initiallyEnabled); // Disable query insights listener and service initially
+        initialize();
+    }
 
-        // Setting endpoints set up for top n queries, including enabling top n queries, window size and top n size
-        // Expected metricTypes are Latency, CPU and Memory.
+    // Common initialization logic
+    private void initialize() {
+        // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
+        // Expected metricTypes are Latency, CPU, and Memory.
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(getTopNEnabledSetting(type), v -> this.setEnableTopQueries(type, v));
@@ -91,7 +108,9 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
 
-        updateSettingsForSearchQueryMetrics();
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
+        setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
     /**
@@ -155,12 +174,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             queryInsightsService.stop();
             queryInsightsService.start();
         }
-    }
-
-    private void updateSettingsForSearchQueryMetrics() {
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
-        setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
     @Override
