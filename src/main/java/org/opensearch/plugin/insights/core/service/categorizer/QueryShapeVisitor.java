@@ -8,11 +8,15 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ONE_SPACE_INDENT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.QUERY_FIELD_DATA_MAP;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.common.SetOnce;
 import org.opensearch.index.query.QueryBuilder;
@@ -23,11 +27,21 @@ import org.opensearch.index.query.QueryBuilderVisitor;
  */
 public final class QueryShapeVisitor implements QueryBuilderVisitor {
     private final SetOnce<String> queryType = new SetOnce<>();
+    private final SetOnce<String> fieldData = new SetOnce<>();
     private final Map<BooleanClause.Occur, List<QueryShapeVisitor>> childVisitors = new EnumMap<>(BooleanClause.Occur.class);
 
     @Override
-    public void accept(QueryBuilder qb) {
-        queryType.set(qb.getName());
+    public void accept(QueryBuilder queryBuilder) {
+        queryType.set(queryBuilder.getName());
+
+        List<String> fieldDataList = new ArrayList<>();
+        List<Function<Object, String>> methods = QUERY_FIELD_DATA_MAP.get(queryBuilder.getClass());
+        if (methods != null) {
+            for (Function<Object, String> lambda : methods) {
+                fieldDataList.add(lambda.apply(queryBuilder));
+            }
+        }
+        fieldData.set(String.join(", ", fieldDataList));
     }
 
     @Override
@@ -81,14 +95,22 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     /**
      * Pretty print the query builder tree
      * @param indent indent size
+     * @param showFields whether to print field data
      * @return Query builder tree as a pretty string
      */
-    public String prettyPrintTree(String indent) {
-        StringBuilder outputBuilder = new StringBuilder(indent).append(queryType.get()).append("\n");
+    public String prettyPrintTree(String indent, Boolean showFields) {
+        StringBuilder outputBuilder = new StringBuilder(indent).append(queryType.get());
+        if (showFields) {
+            outputBuilder.append(" [").append(fieldData.get()).append("]");
+        }
+        outputBuilder.append("\n");
         for (Map.Entry<BooleanClause.Occur, List<QueryShapeVisitor>> entry : childVisitors.entrySet()) {
-            outputBuilder.append(indent).append("  ").append(entry.getKey().name().toLowerCase(Locale.ROOT)).append(":\n");
+            outputBuilder.append(indent)
+                .append(ONE_SPACE_INDENT.repeat(2))
+                .append(entry.getKey().name().toLowerCase(Locale.ROOT))
+                .append(":\n");
             for (QueryShapeVisitor child : entry.getValue()) {
-                outputBuilder.append(child.prettyPrintTree(indent + "    "));
+                outputBuilder.append(child.prettyPrintTree(indent + ONE_SPACE_INDENT.repeat(4), showFields));
             }
         }
         return outputBuilder.toString();
