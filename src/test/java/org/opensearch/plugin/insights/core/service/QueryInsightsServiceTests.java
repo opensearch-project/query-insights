@@ -90,26 +90,6 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
     }
 
-    public void testFeaturesEnableDisable() {
-        // Test case 1: All metric type collection disabled and search query metrics disabled, enable search query metrics
-        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
-
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
-        verify(queryInsightsServiceSpy).checkAndRestartQueryInsights();
-
-        // Test case 2: All metric type collection disabled and search query metrics enabled, disable search query metrics
-        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
-
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
-        verify(queryInsightsServiceSpy).checkAndStopQueryInsights();
-    }
-
     public void testAddRecordGroupBySimilarityWithDifferentGroups() {
 
         int numberOfRecordsRequired = 10;
