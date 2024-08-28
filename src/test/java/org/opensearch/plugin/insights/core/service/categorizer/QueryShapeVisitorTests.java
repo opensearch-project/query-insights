@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights.core.service.categorizor;
+package org.opensearch.plugin.insights.core.service.categorizer;
 
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.ConstantScoreQueryBuilder;
@@ -16,7 +16,6 @@ import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.index.query.RegexpQueryBuilder;
 import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.index.query.TermsQueryBuilder;
-import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeVisitor;
 import org.opensearch.test.OpenSearchTestCase;
 
 public final class QueryShapeVisitorTests extends OpenSearchTestCase {
