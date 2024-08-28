@@ -117,7 +117,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         int numberOfShards = 10;
 
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, false);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
 
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
         when(searchRequest.searchType()).thenReturn(searchType);
@@ -183,7 +183,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         CountDownLatch countDownLatch = new CountDownLatch(numRequests);
 
         for (int i = 0; i < numRequests; i++) {
-            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService, false));
+            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService));
         }
 
         for (int i = 0; i < numRequests; i++) {
