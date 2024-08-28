@@ -23,8 +23,12 @@ import org.opensearch.telemetry.metrics.tags.Tags;
  */
 public final class SearchQueryCounters {
     private static final String LEVEL_TAG = "level";
-    private static final String TYPE_TAG = "type";
+    private static final String QUERY_TYPE_TAG = "type";
     private static final String UNIT = "1";
+    private static final String UNIT_MILLIS = "ms";
+    private static final String UNIT_CPU_CYCLES = "ns";
+    private static final String UNIT_BYTES = "bytes";
+
     private final MetricsRegistry metricsRegistry;
     /**
      * Aggregation counter
@@ -83,17 +87,17 @@ public final class SearchQueryCounters {
         this.queryTypeLatencyHistogram = metricsRegistry.createHistogram(
             "search.query.type.latency.histogram",
             "Histogram for the latency per query type",
-            UNIT
+            UNIT_MILLIS
         );
         this.queryTypeCpuHistogram = metricsRegistry.createHistogram(
             "search.query.type.cpu.histogram",
             "Histogram for the cpu per query type",
-            UNIT
+            UNIT_CPU_CYCLES
         );
         this.queryTypeMemoryHistogram = metricsRegistry.createHistogram(
             "search.query.type.memory.histogram",
             "Histogram for the memory per query type",
-            UNIT
+            UNIT_BYTES
         );
         this.queryHandlers = new HashMap<>();
     }
@@ -109,7 +113,7 @@ public final class SearchQueryCounters {
 
         Counter counter = nameToQueryTypeCounters.computeIfAbsent(uniqueQueryCounterName, k -> createQueryCounter(k));
         counter.add(1, Tags.create().addTag(LEVEL_TAG, level));
-        incrementAllHistograms(Tags.create().addTag(LEVEL_TAG, level).addTag(TYPE_TAG, uniqueQueryCounterName), measurements);
+        incrementAllHistograms(Tags.create().addTag(LEVEL_TAG, level).addTag(QUERY_TYPE_TAG, uniqueQueryCounterName), measurements);
     }
 
     /**
