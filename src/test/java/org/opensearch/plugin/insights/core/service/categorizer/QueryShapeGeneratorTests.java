@@ -6,63 +6,17 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights.core.service.categorizor;
+package org.opensearch.plugin.insights.core.service.categorizer;
 
-import org.opensearch.index.query.BoolQueryBuilder;
-import org.opensearch.index.query.MatchQueryBuilder;
-import org.opensearch.index.query.QueryBuilders;
-import org.opensearch.index.query.RangeQueryBuilder;
-import org.opensearch.index.query.RegexpQueryBuilder;
-import org.opensearch.index.query.TermQueryBuilder;
-import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
-import org.opensearch.search.aggregations.bucket.terms.SignificantTextAggregationBuilder;
-import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
-import org.opensearch.search.aggregations.metrics.TopHitsAggregationBuilder;
-import org.opensearch.search.aggregations.pipeline.AvgBucketPipelineAggregationBuilder;
-import org.opensearch.search.aggregations.pipeline.DerivativePipelineAggregationBuilder;
-import org.opensearch.search.aggregations.pipeline.MaxBucketPipelineAggregationBuilder;
-import org.opensearch.search.aggregations.support.ValueType;
+import org.opensearch.common.hash.MurmurHash3;
+import org.opensearch.plugin.insights.SearchSourceBuilderUtils;
 import org.opensearch.search.builder.SearchSourceBuilder;
-import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.OpenSearchTestCase;
 
 public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
+
     public void testComplexSearch() {
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.size(0);
-        // build query
-        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("field1", "value2");
-        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("field2", "php");
-        RegexpQueryBuilder regexpQueryBuilder = new RegexpQueryBuilder("field3", "text");
-        RangeQueryBuilder rangeQueryBuilder = new RangeQueryBuilder("field4");
-        sourceBuilder.query(
-            new BoolQueryBuilder().must(termQueryBuilder).filter(matchQueryBuilder).should(regexpQueryBuilder).filter(rangeQueryBuilder)
-        );
-        // build agg
-        sourceBuilder.aggregation(
-            new TermsAggregationBuilder("agg1").userValueTypeHint(ValueType.STRING)
-                .field("type")
-                .subAggregation(new DerivativePipelineAggregationBuilder("pipeline-agg1", "bucket1"))
-                .subAggregation(new TermsAggregationBuilder("child-agg3").userValueTypeHint(ValueType.STRING).field("key.sub3"))
-        );
-        sourceBuilder.aggregation(new TermsAggregationBuilder("agg2").userValueTypeHint(ValueType.STRING).field("model"));
-        sourceBuilder.aggregation(
-            new TermsAggregationBuilder("agg3").userValueTypeHint(ValueType.STRING)
-                .field("key")
-                .subAggregation(new MaxBucketPipelineAggregationBuilder("pipeline-agg2", "bucket2"))
-                .subAggregation(new TermsAggregationBuilder("child-agg1").userValueTypeHint(ValueType.STRING).field("key.sub1"))
-                .subAggregation(new TermsAggregationBuilder("child-agg2").userValueTypeHint(ValueType.STRING).field("key.sub2"))
-        );
-        sourceBuilder.aggregation(new TopHitsAggregationBuilder("top_hits").storedField("_none_"));
-        sourceBuilder.aggregation(new SignificantTextAggregationBuilder("sig_text", "agg4").filterDuplicateText(true));
-        sourceBuilder.aggregation(new MaxBucketPipelineAggregationBuilder("pipeline-agg4", "bucket4"));
-        sourceBuilder.aggregation(new DerivativePipelineAggregationBuilder("pipeline-agg3", "bucket3"));
-        sourceBuilder.aggregation(new AvgBucketPipelineAggregationBuilder("pipeline-agg5", "bucket5"));
-        // build sort
-        sourceBuilder.sort("color", SortOrder.DESC);
-        sourceBuilder.sort("vendor", SortOrder.DESC);
-        sourceBuilder.sort("price", SortOrder.ASC);
-        sourceBuilder.sort("album", SortOrder.ASC);
+        SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createDefaultSearchSourceBuilder();
 
         String shapeShowFieldsTrue = QueryShapeGenerator.buildShape(sourceBuilder, true);
         String expectedShowFieldsTrue = "bool []\n"
@@ -136,15 +90,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testQueryShape() {
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.size(0);
-        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("field1", "value2");
-        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("field2", "php");
-        RegexpQueryBuilder regexpQueryBuilder = new RegexpQueryBuilder("field3", "text");
-        RangeQueryBuilder rangeQueryBuilder = new RangeQueryBuilder("field4");
-        sourceBuilder.query(
-            new BoolQueryBuilder().must(termQueryBuilder).filter(matchQueryBuilder).should(regexpQueryBuilder).filter(rangeQueryBuilder)
-        );
+        SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder();
 
         String shapeShowFieldsTrue = QueryShapeGenerator.buildShape(sourceBuilder, true);
         String expectedShowFieldsTrue = "bool []\n"
@@ -170,26 +116,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testAggregationShape() {
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.aggregation(
-            new TermsAggregationBuilder("agg1").userValueTypeHint(ValueType.STRING)
-                .field("type")
-                .subAggregation(new DerivativePipelineAggregationBuilder("pipeline-agg1", "bucket1"))
-                .subAggregation(new TermsAggregationBuilder("child-agg3").userValueTypeHint(ValueType.STRING).field("key.sub3"))
-        );
-        sourceBuilder.aggregation(new TermsAggregationBuilder("agg2").userValueTypeHint(ValueType.STRING).field("model"));
-        sourceBuilder.aggregation(
-            new TermsAggregationBuilder("agg3").userValueTypeHint(ValueType.STRING)
-                .field("key")
-                .subAggregation(new MaxBucketPipelineAggregationBuilder("pipeline-agg2", "bucket2"))
-                .subAggregation(new TermsAggregationBuilder("child-agg1").userValueTypeHint(ValueType.STRING).field("key.sub1"))
-                .subAggregation(new TermsAggregationBuilder("child-agg2").userValueTypeHint(ValueType.STRING).field("key.sub2"))
-        );
-        sourceBuilder.aggregation(new TopHitsAggregationBuilder("top_hits").storedField("_none_"));
-        sourceBuilder.aggregation(new SignificantTextAggregationBuilder("sig_text", "agg4").filterDuplicateText(true));
-        sourceBuilder.aggregation(new MaxBucketPipelineAggregationBuilder("pipeline-agg4", "bucket4"));
-        sourceBuilder.aggregation(new DerivativePipelineAggregationBuilder("pipeline-agg3", "bucket3"));
-        sourceBuilder.aggregation(new AvgBucketPipelineAggregationBuilder("pipeline-agg5", "bucket5"));
+        SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createAggregationSearchSourceBuilder();
 
         String shapeShowFieldsTrue = QueryShapeGenerator.buildShape(sourceBuilder, true);
         String expectedShowFieldsTrue = "aggregation:\n"
@@ -237,11 +164,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testSortShape() {
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.sort("color", SortOrder.DESC);
-        sourceBuilder.sort("vendor", SortOrder.DESC);
-        sourceBuilder.sort("price", SortOrder.ASC);
-        sourceBuilder.sort("album", SortOrder.ASC);
+        SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createSortSearchSourceBuilder();
 
         String shapeShowFieldsTrue = QueryShapeGenerator.buildShape(sourceBuilder, true);
         String expectedShowFieldsTrue = "sort:\n" + "  asc [album]\n" + "  asc [price]\n" + "  desc [color]\n" + "  desc [vendor]\n";
@@ -250,5 +173,29 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
         String shapeShowFieldsFalse = QueryShapeGenerator.buildShape(sourceBuilder, false);
         String expectedShowFieldsFalse = "sort:\n" + "  asc\n" + "  asc\n" + "  desc\n" + "  desc\n";
         assertEquals(expectedShowFieldsFalse, shapeShowFieldsFalse);
+    }
+
+    public void testHashCode() {
+        // Create test source builders
+        SearchSourceBuilder defaultSourceBuilder = SearchSourceBuilderUtils.createDefaultSearchSourceBuilder();
+        SearchSourceBuilder querySourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder();
+
+        // showFields true
+        MurmurHash3.Hash128 defaultHashTrue = QueryShapeGenerator.getShapeHashCode(defaultSourceBuilder, true);
+        MurmurHash3.Hash128 queryHashTrue = QueryShapeGenerator.getShapeHashCode(querySourceBuilder, true);
+        assertEquals(defaultHashTrue, QueryShapeGenerator.getShapeHashCode(defaultSourceBuilder, true));
+        assertEquals(queryHashTrue, QueryShapeGenerator.getShapeHashCode(querySourceBuilder, true));
+        assertNotEquals(defaultHashTrue, queryHashTrue);
+
+        // showFields false
+        MurmurHash3.Hash128 defaultHashFalse = QueryShapeGenerator.getShapeHashCode(defaultSourceBuilder, false);
+        MurmurHash3.Hash128 queryHashFalse = QueryShapeGenerator.getShapeHashCode(querySourceBuilder, false);
+        assertEquals(defaultHashFalse, QueryShapeGenerator.getShapeHashCode(defaultSourceBuilder, false));
+        assertEquals(queryHashFalse, QueryShapeGenerator.getShapeHashCode(querySourceBuilder, false));
+        assertNotEquals(defaultHashFalse, queryHashFalse);
+
+        // Compare field data on vs off
+        assertNotEquals(defaultHashTrue, defaultHashFalse);
+        assertNotEquals(queryHashTrue, queryHashFalse);
     }
 }

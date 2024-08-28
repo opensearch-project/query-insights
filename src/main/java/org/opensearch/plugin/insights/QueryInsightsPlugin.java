@@ -82,7 +82,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             metricsRegistry,
             xContentRegistry
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService));
+        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, false));
     }
 
     @Override

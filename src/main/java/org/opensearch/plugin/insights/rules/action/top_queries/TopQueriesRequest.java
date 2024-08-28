@@ -54,6 +54,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
 
     /**
      * Get the type of requested metrics
+     * @return MetricType for current top query service
      */
     public MetricType getMetricType() {
         return metricType;

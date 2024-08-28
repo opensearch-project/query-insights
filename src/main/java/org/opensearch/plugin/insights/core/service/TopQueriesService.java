@@ -440,6 +440,7 @@ public class TopQueriesService {
 
     /**
      * Close the top n queries service
+     * @throws IOException exception
      */
     public void close() throws IOException {
         queryInsightsExporterFactory.closeExporter(this.exporter);

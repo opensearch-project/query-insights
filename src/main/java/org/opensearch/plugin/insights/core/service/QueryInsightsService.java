@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
@@ -126,15 +125,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
         }
 
-        this.searchQueryMetricsEnabled = clusterSettings.get(SEARCH_QUERY_METRICS_ENABLED_SETTING);
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
-        clusterSettings.addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
+        this.enableSearchQueryMetricsFeature(false);
     }
 
     /**
      * Ingest the query data into in-memory stores
      *
      * @param record the record to ingest
+     * @return SearchQueryRecord
      */
     public boolean addRecord(final SearchQueryRecord record) {
         boolean shouldAdd = searchQueryMetricsEnabled;
@@ -243,22 +242,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Stops query insights service if no features enabled
+     * Enable/Disable search query metrics feature.
+     * @param enable enable/disable search query metrics feature
      */
-    public void checkAndStopQueryInsights() {
-        if (!isAnyFeatureEnabled()) {
-            this.stop();
-        }
-    }
-
-    /**
-     * Restarts query insights service if any feature enabled
-     */
-    public void checkAndRestartQueryInsights() {
-        if (isAnyFeatureEnabled()) {
-            this.stop();
-            this.start();
-        }
+    public void enableSearchQueryMetricsFeature(boolean enable) {
+        searchQueryMetricsEnabled = enable;
     }
 
     /**
@@ -320,24 +308,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             TopQueriesService tqs = topQueriesServices.get(type);
             tqs.setExporter(settings);
             tqs.setReader(settings, namedXContentRegistry);
-        }
-    }
-
-    /**
-     * Set search query metrics enabled to enable collection of search query categorization metrics
-     * @param searchQueryMetricsEnabled boolean flag
-     */
-    public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
-        boolean oldSearchQueryMetricsEnabled = isSearchQueryMetricsFeatureEnabled();
-        this.searchQueryMetricsEnabled = searchQueryMetricsEnabled;
-        if (searchQueryMetricsEnabled) {
-            if (!oldSearchQueryMetricsEnabled) {
-                checkAndRestartQueryInsights();
-            }
-        } else {
-            if (oldSearchQueryMetricsEnabled) {
-                checkAndStopQueryInsights();
-            }
         }
     }
 

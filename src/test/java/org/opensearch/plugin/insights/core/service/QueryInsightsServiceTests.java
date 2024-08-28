@@ -10,7 +10,6 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 
 import org.junit.Before;
 import org.opensearch.client.Client;
@@ -76,38 +75,18 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
         // Enable search query metrics
-        queryInsightsService.setSearchQueryMetricsEnabled(true);
+        queryInsightsService.enableSearchQueryMetricsFeature(true);
 
         // Assert that searchQueryMetricsEnabled is true and searchQueryCategorizer is initialized
         assertTrue(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
         // Disable search query metrics
-        queryInsightsService.setSearchQueryMetricsEnabled(false);
+        queryInsightsService.enableSearchQueryMetricsFeature(false);
 
         // Assert that searchQueryMetricsEnabled is false and searchQueryCategorizer is not null
         assertFalse(queryInsightsService.isSearchQueryMetricsFeatureEnabled());
         assertNotNull(queryInsightsService.getSearchQueryCategorizer());
 
-    }
-
-    public void testFeaturesEnableDisable() {
-        // Test case 1: All metric type collection disabled and search query metrics disabled, enable search query metrics
-        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
-
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
-        verify(queryInsightsServiceSpy).checkAndRestartQueryInsights();
-
-        // Test case 2: All metric type collection disabled and search query metrics enabled, disable search query metrics
-        queryInsightsServiceSpy.enableCollection(MetricType.LATENCY, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.CPU, false);
-        queryInsightsServiceSpy.enableCollection(MetricType.MEMORY, false);
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(true);
-
-        queryInsightsServiceSpy.setSearchQueryMetricsEnabled(false);
-        verify(queryInsightsServiceSpy).checkAndStopQueryInsights();
     }
 }
