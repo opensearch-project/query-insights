@@ -332,7 +332,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         }
     }
 
-    // 1. New query group not existing added to MIN
+    // New query group not existing added to MIN
     public void testNewGroupAddedToMin() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -353,7 +353,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 2. New query group not existing added to MIN and overflows to MAX
+    // New query group not existing added to MIN and overflows to MAX
     public void testNewGroupOverflowsMinToMax() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -374,7 +374,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 3. New query group not existing added to MIN and causes other group to overflow to MAX
+    // New query group not existing added to MIN and causes other group to overflow to MAX
     public void testNewGroupCausesOtherGroupOverflowMinToMax() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -395,7 +395,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1200L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 4. Existing query group update to MIN increases average
+    // Existing query group update to MIN increases average
     public void testExistingGroupUpdateToMinIncreaseAverage() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -424,7 +424,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1200L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 5. Existing query group update to MIN decrease average - stay in MIN
+    // Existing query group update to MIN decrease average - stay in MIN
     public void testExistingGroupUpdateToMinDecreaseAverageStayInMin() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -453,7 +453,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 6. Existing query group update to MIN decrease average - overflows to MAX
+    // Existing query group update to MIN decrease average - overflows to MAX
     public void testExistingGroupUpdateToMinDecreaseAverageOverflowsToMax() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -482,7 +482,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 7. Existing query group update to MAX increases average - stay in MAX
+    // Existing query group update to MAX increases average - stay in MAX
     public void testExistingGroupUpdateToMaxIncreaseAverageStayInMax() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -511,7 +511,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 8. Existing query group update to MAX increases average - promote to MIN
+    // Existing query group update to MAX increases average - promote to MIN
     public void testExistingGroupUpdateToMaxIncreaseAveragePromoteToMin() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
@@ -540,7 +540,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
-    // 9. Existing query group update to MAX decrease average
+    // Existing query group update to MAX decrease average
     public void testExistingGroupUpdateToMaxDecreaseAverage() {
         queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 

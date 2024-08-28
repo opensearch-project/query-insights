@@ -269,11 +269,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Is grouping feature enabled and grouping not NONE
+     * Is grouping feature enabled and TopN feature enabled
      * @return boolean
      */
     public boolean isGroupingEnabled() {
-        return this.groupingType != GroupingType.NONE;
+        return this.groupingType != GroupingType.NONE && isTopNFeatureEnabled();
     }
 
     /**
