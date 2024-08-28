@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights.core.listener;
 
+import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
@@ -56,10 +57,27 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      */
     @Inject
     public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
+        this(clusterService, queryInsightsService, false);
+    }
+
+    /**
+     * Constructor for QueryInsightsListener
+     *
+     * @param clusterService       The Node's cluster service.
+     * @param queryInsightsService The topQueriesByLatencyService associated with this listener
+     * @param initiallyEnabled Is the listener initially enabled/disabled
+     */
+    public QueryInsightsListener(
+        final ClusterService clusterService,
+        final QueryInsightsService queryInsightsService,
+        boolean initiallyEnabled
+    ) {
+        super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
-        // Setting endpoints set up for top n queries, including enabling top n queries, window size and top n size
-        // Expected metricTypes are Latency, CPU and Memory.
+
+        // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
+        // Expected metricTypes are Latency, CPU, and Memory.
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(getTopNEnabledSetting(type), v -> this.setEnableTopQueries(type, v));
@@ -82,10 +100,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.validateWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
+
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
+        setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
     /**
-     * Enable or disable top queries insights collection for {@link MetricType}
+     * Enable or disable top queries insights collection for {@link MetricType}.
      * This function will enable or disable the corresponding listeners
      * and query insights services.
      *
@@ -93,20 +115,33 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * @param isCurrentMetricEnabled boolean
      */
     public void setEnableTopQueries(final MetricType metricType, final boolean isCurrentMetricEnabled) {
-        boolean isTopNFeaturePreviouslyDisabled = !queryInsightsService.isTopNFeatureEnabled();
         this.queryInsightsService.enableCollection(metricType, isCurrentMetricEnabled);
-        boolean isTopNFeatureCurrentlyDisabled = !queryInsightsService.isTopNFeatureEnabled();
+        updateQueryInsightsState();
+    }
 
-        if (isTopNFeatureCurrentlyDisabled) {
-            super.setEnabled(false);
-            if (!isTopNFeaturePreviouslyDisabled) {
-                queryInsightsService.checkAndStopQueryInsights();
-            }
-        } else {
+    /**
+     * Set search query metrics enabled to enable collection of search query categorization metrics.
+     * @param searchQueryMetricsEnabled boolean flag
+     */
+    public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
+        this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
+        updateQueryInsightsState();
+    }
+
+    /**
+     * Update the query insights service state based on the enabled features.
+     * If any feature is enabled, it starts the service. If no features are enabled, it stops the service.
+     */
+    private void updateQueryInsightsState() {
+        boolean anyFeatureEnabled = queryInsightsService.isAnyFeatureEnabled();
+
+        if (anyFeatureEnabled && !super.isEnabled()) {
             super.setEnabled(true);
-            if (isTopNFeaturePreviouslyDisabled) {
-                queryInsightsService.checkAndRestartQueryInsights();
-            }
+            queryInsightsService.stop(); // Ensures a clean restart
+            queryInsightsService.start();
+        } else if (!anyFeatureEnabled && super.isEnabled()) {
+            super.setEnabled(false);
+            queryInsightsService.stop();
         }
     }
 
