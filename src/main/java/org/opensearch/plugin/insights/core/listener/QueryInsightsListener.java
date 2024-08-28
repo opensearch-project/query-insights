@@ -44,6 +44,8 @@ import org.opensearch.tasks.Task;
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
     private static final ToXContent.Params FORMAT_PARAMS = new ToXContent.MapParams(Collections.singletonMap("pretty", "false"));
 
+    private final Object stateLock = new Object(); // Lock to synchronize service start/stop
+
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
 
     private final QueryInsightsService queryInsightsService;
@@ -57,10 +59,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      */
     @Inject
     public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
-        super(false); // Disable query insights listener and service initially
-        this.clusterService = clusterService;
-        this.queryInsightsService = queryInsightsService;
-        initialize();
+        this(clusterService, queryInsightsService, false);
     }
 
     /**
@@ -78,11 +77,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
-        initialize();
-    }
 
-    // Common initialization logic
-    private void initialize() {
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
         // Expected metricTypes are Latency, CPU, and Memory.
         for (MetricType type : MetricType.allMetricTypes()) {
@@ -142,13 +137,16 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private void updateQueryInsightsState() {
         boolean anyFeatureEnabled = queryInsightsService.isAnyFeatureEnabled();
 
-        if (anyFeatureEnabled && !super.isEnabled()) {
-            super.setEnabled(true);
-            queryInsightsService.stop();
-            queryInsightsService.start();
-        } else if (!anyFeatureEnabled && super.isEnabled()) {
-            super.setEnabled(false);
-            queryInsightsService.stop();
+        // Handles multiple feature enabled/disabled simultaneously
+        synchronized (stateLock) {
+            if (anyFeatureEnabled && !super.isEnabled()) {
+                super.setEnabled(true);
+                queryInsightsService.stop(); // Ensures a clean restart
+                queryInsightsService.start();
+            } else if (!anyFeatureEnabled && super.isEnabled()) {
+                super.setEnabled(false);
+                queryInsightsService.stop();
+            }
         }
     }
 
