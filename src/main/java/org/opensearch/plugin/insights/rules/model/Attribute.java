@@ -85,6 +85,7 @@ public enum Attribute {
      *
      * @param out            the StreamOutput to write
      * @param attributeValue the Attribute value to write
+     * @throws IOException exception
      */
     @SuppressWarnings("unchecked")
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {
