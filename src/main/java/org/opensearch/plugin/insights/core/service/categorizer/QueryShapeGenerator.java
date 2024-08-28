@@ -14,6 +14,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import org.apache.lucene.util.BytesRef;
+import org.opensearch.common.hash.MurmurHash3;
 import org.opensearch.core.common.io.stream.NamedWriteable;
 import org.opensearch.index.query.AbstractGeometryQueryBuilder;
 import org.opensearch.index.query.CommonTermsQueryBuilder;
@@ -75,6 +77,18 @@ public class QueryShapeGenerator {
     static final Map<Class<?>, List<Function<Object, String>>> QUERY_FIELD_DATA_MAP = FieldDataMapHelper.getQueryFieldDataMap();
     static final Map<Class<?>, List<Function<Object, String>>> AGG_FIELD_DATA_MAP = FieldDataMapHelper.getAggFieldDataMap();
     static final Map<Class<?>, List<Function<Object, String>>> SORT_FIELD_DATA_MAP = FieldDataMapHelper.getSortFieldDataMap();
+
+    /**
+     * Method to get query shape hash code given a source
+     * @param source search request source
+     * @param showFields whether to include field data in query shape
+     * @return Hash code of query shape as a MurmurHash3.Hash128 object (128-bit)
+     */
+    public static MurmurHash3.Hash128 getShapeHashCode(SearchSourceBuilder source, Boolean showFields) {
+        final String shape = buildShape(source, showFields);
+        final BytesRef shapeBytes = new BytesRef(shape);
+        return MurmurHash3.hash128(shapeBytes.bytes, 0, shapeBytes.length, 0, new MurmurHash3.Hash128());
+    }
 
     /**
      * Method to build search query shape given a source
