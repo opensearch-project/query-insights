@@ -219,6 +219,28 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set max number of groups
+     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
+     */
+    public void setMaximumGroups(final int maxGroups) {
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            this.topQueriesServices.get(metricType).setMaxGroups(maxGroups);
+        }
+    }
+
+    /**
+     * Validate max number of groups. Should be between 1 and MAX_GROUPS_LIMIT
+     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
+     */
+    public void validateMaximumGroups(final int maxGroups) {
+        if (maxGroups < 1 || maxGroups > QueryInsightsSettings.MAX_GROUPS_LIMIT) {
+            throw new IllegalArgumentException(
+                "Max groups setting" + " should be between 1 and " + QueryInsightsSettings.MAX_GROUPS_LIMIT + ", was (" + maxGroups + ")"
+            );
+        }
+    }
+
+    /**
      * Get the grouping type based on the metricType
      * @return GroupingType
      */

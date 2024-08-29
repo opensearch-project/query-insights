@@ -185,6 +185,10 @@ public class TopQueriesService {
         queryGrouper.setGroupingType(groupingType);
     }
 
+    public void setMaxGroups(final int maxGroups) {
+        queryGrouper.setMaxGroups(maxGroups);
+    }
+
     /**
      * Validate if the window size is valid, based on internal constrains.
      *

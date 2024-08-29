@@ -71,6 +71,9 @@ public class QueryInsightsSettings {
     public static final String PLUGINS_BASE_URI = "/_insights";
 
     public static final GroupingType DEFAULT_GROUPING_TYPE = GroupingType.NONE;
+    public static final int DEFAULT_MAX_GROUPS = 100;
+
+    public static final int MAX_GROUPS_LIMIT = 10000;
 
     /**
      * Settings for Top Queries
@@ -121,6 +124,16 @@ public class QueryInsightsSettings {
     public static final Setting<String> TOP_N_QUERIES_GROUP_BY = Setting.simpleString(
         TOP_N_QUERIES_SETTING_PREFIX + ".group_by",
         DEFAULT_GROUPING_TYPE.getValue(),
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Define the group_by option for Top N queries to group queries.
+     */
+    public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_groups",
+        DEFAULT_MAX_GROUPS,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );

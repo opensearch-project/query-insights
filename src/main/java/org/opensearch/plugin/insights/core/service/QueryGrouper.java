@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -19,6 +21,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /**
  * Handles grouping of search queries based on the GroupingType for the MetricType
@@ -69,6 +72,14 @@ public class QueryGrouper {
      */
     private int topNSize;
 
+    /**
+     * To keep track of Top N groups we need to store details of all the groups encountered in the window.
+     * This value can be arbitrarily large and we need to limit this.
+     * Following is the maximum number of groups that should be tracked when calculating Top N groups and we have a
+     * cluster setting to configure.
+     */
+    private int maxGroups;
+
     public QueryGrouper(
         MetricType metricType,
         GroupingType groupingType,
@@ -84,6 +95,7 @@ public class QueryGrouper {
         this.maxHeapQueryStore = new PriorityQueue<>((a, b) -> SearchQueryRecord.compare(b, a, metricType));
 
         this.topNSize = topNSize;
+        this.maxGroups = QueryInsightsSettings.DEFAULT_MAX_GROUPS;
     }
 
     /**
@@ -102,6 +114,10 @@ public class QueryGrouper {
         // New group added to the grouping service
         // Add to min PQ and overflow records to max PQ (if the number of records in the min PQ exceeds the configured size N)
         if (!groupIdToAggSearchQueryRecord.containsKey(groupId)) {
+            boolean maxGroupsLimitReached = checkMaxGroupsLimitReached(groupId);
+            if (maxGroupsLimitReached) {
+                return null;
+            }
             aggregateSearchQueryRecord = searchQueryRecord;
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
@@ -176,8 +192,21 @@ public class QueryGrouper {
         }
     }
 
+    private boolean checkMaxGroupsLimitReached(String groupId) {
+        if (maxGroups <= maxHeapQueryStore.size()) {
+            log.warn(
+                "Exceeded [{}] setting threshold which is set at {}. Discarding new group with id {}.",
+                TOP_N_QUERIES_MAX_GROUPS.getKey(),
+                maxGroups,
+                groupId
+            );
+            return true;
+        }
+        return false;
+    }
+
     /**
-     * Drain the internal grouping. Needs to be performed after every window.
+     * Drain the internal grouping. Needs to be performed after every window or if a setting is changed.
      */
     public void drain() {
         log.debug("Number of groups for the current window is " + numberOfGroups());
@@ -215,6 +244,26 @@ public class QueryGrouper {
 
     public GroupingType getGroupingType() {
         return groupingType;
+    }
+
+    /**
+     * Get maximum number of groups that should be tracked when calculating Top N groups
+     * @return max number of groups
+     */
+    public int getMaxGroups() {
+        return maxGroups;
+    }
+
+    /**
+     * Set the maximum number of groups that should be tracked when calculating Top N groups.
+     * If the value changes, reset the state of the query grouper service by draining all internal data.
+     * @param maxGroups max number of groups
+     */
+    public void setMaxGroups(int maxGroups) {
+        if (this.maxGroups != maxGroups) {
+            this.maxGroups = maxGroups;
+            drain();
+        }
     }
 
     /**

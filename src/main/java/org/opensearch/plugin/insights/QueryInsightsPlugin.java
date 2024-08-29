@@ -131,6 +131,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
             QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS,
             QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY,
+            QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS,
             QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING
         );
     }

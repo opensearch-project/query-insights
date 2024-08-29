@@ -628,6 +628,37 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         assertEquals(2, queryGrouper.numberOfTopGroups());
         assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
+        assertEquals(3, queryGrouper.numberOfGroups());
+    }
+
+    public void testMaxGroupLimitReached() {
+        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
+
+        queryGrouper.setMaxGroups(1);
+
+        List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
+            MetricType.LATENCY,
+            List.of(900L, 1000L, 1000L)
+        );
+
+        List<List<SearchQueryRecord>> allRecords2 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
+            1,
+            MetricType.LATENCY,
+            List.of(800L, 400L, 1200L)
+        );
+
+        allRecords1.addAll(allRecords2);
+
+        for (List<SearchQueryRecord> recordList : allRecords1) {
+            for (SearchQueryRecord record : recordList) {
+                queryGrouper.addQueryToGroup(record);
+            }
+        }
+
+        assertEquals(1, queryGrouper.numberOfTopGroups());
+        assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
+        assertEquals(2, queryGrouper.numberOfGroups());
     }
 
     private QueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
