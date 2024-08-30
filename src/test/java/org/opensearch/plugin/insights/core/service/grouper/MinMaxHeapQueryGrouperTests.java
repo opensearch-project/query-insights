@@ -6,14 +6,14 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights.core.service;
+package org.opensearch.plugin.insights.core.service.grouper;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.PriorityBlockingQueue;
 import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.service.store.PriorityQueueTopQueriesStore;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -22,18 +22,18 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
- * Unit Tests for {@link QueryGrouper}.
+ * Unit Tests for {@link MinMaxHeapQueryGrouper}.
  */
-public class QueryGrouperTests extends OpenSearchTestCase {
-    private QueryGrouper queryGrouper;
-    private PriorityBlockingQueue<SearchQueryRecord> topQueriesStore = new PriorityBlockingQueue<>(
+public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
+    private MinMaxHeapQueryGrouper minMaxHeapQueryGrouper;
+    private PriorityQueueTopQueriesStore<SearchQueryRecord> topQueriesStore = new PriorityQueueTopQueriesStore<>(
         100,
         (a, b) -> SearchQueryRecord.compare(a, b, MetricType.LATENCY)
     );
 
     @Before
     public void setup() {
-        queryGrouper = getQueryGroupingService(AggregationType.DEFAULT_AGGREGATION_TYPE, 10);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.DEFAULT_AGGREGATION_TYPE, 10);
     }
 
     public void testWithAllDifferentHashcodes() {
@@ -42,7 +42,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         SearchQueryRecord groupedRecord;
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
-            groupedRecord = queryGrouper.addQueryToGroup(record);
+            groupedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_HASHCODE);
             hashcodeSet.add(hashcode);
         }
@@ -56,7 +56,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         SearchQueryRecord groupedRecord;
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
-            groupedRecord = queryGrouper.addQueryToGroup(record);
+            groupedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_HASHCODE);
             hashcodeSet.add(hashcode);
         }
@@ -67,11 +67,11 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         int numOfRecords = 10;
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
-        int groupsBeforeDrain = queryGrouper.numberOfGroups();
-        queryGrouper.drain();
-        int groupsAfterDrain = queryGrouper.numberOfGroups();
+        int groupsBeforeDrain = minMaxHeapQueryGrouper.numberOfGroups();
+        minMaxHeapQueryGrouper.drain();
+        int groupsAfterDrain = minMaxHeapQueryGrouper.numberOfGroups();
 
         assertEquals(numOfRecords, groupsBeforeDrain);
         assertEquals(0, groupsAfterDrain);
@@ -82,27 +82,27 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertEquals(10, queryGrouper.numberOfTopGroups()); // Initially expects top 10 groups
+        assertEquals(10, minMaxHeapQueryGrouper.numberOfTopGroups()); // Initially expects top 10 groups
 
-        queryGrouper.updateTopNSize(5);
-        queryGrouper.drain(); // Clear previous state
+        minMaxHeapQueryGrouper.updateTopNSize(5);
+        minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertEquals(5, queryGrouper.numberOfTopGroups()); // After update, expects top 5 groups
+        assertEquals(5, minMaxHeapQueryGrouper.numberOfTopGroups()); // After update, expects top 5 groups
     }
 
     public void testEmptyPriorityQueues() {
-        int groupsBeforeDrain = queryGrouper.numberOfGroups();
+        int groupsBeforeDrain = minMaxHeapQueryGrouper.numberOfGroups();
         assertEquals(0, groupsBeforeDrain);
 
-        queryGrouper.drain();
-        int groupsAfterDrain = queryGrouper.numberOfGroups();
+        minMaxHeapQueryGrouper.drain();
+        int groupsAfterDrain = minMaxHeapQueryGrouper.numberOfGroups();
         assertEquals(0, groupsAfterDrain); // No groups should be present after draining
     }
 
@@ -111,23 +111,23 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertTrue(queryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
+        assertTrue(minMaxHeapQueryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
 
-        queryGrouper.updateTopNSize(5); // Change size to 5
-        queryGrouper.drain(); // Clear previous state
+        minMaxHeapQueryGrouper.updateTopNSize(5); // Change size to 5
+        minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertEquals(5, queryGrouper.numberOfTopGroups()); // Should be exactly 5 in the min heap
+        assertEquals(5, minMaxHeapQueryGrouper.numberOfTopGroups()); // Should be exactly 5 in the min heap
     }
 
     public void testInvalidGroupingType() {
-        QueryGrouper invalidGroupingService = new QueryGrouper(
+        MinMaxHeapQueryGrouper invalidGroupingService = new MinMaxHeapQueryGrouper(
             MetricType.LATENCY,
             GroupingType.NONE,
             AggregationType.DEFAULT_AGGREGATION_TYPE,
@@ -143,10 +143,10 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertTrue(queryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
+        assertTrue(minMaxHeapQueryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
     }
 
     public void testChangeGroupingType() {
@@ -154,15 +154,15 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        int groupsBeforeChange = queryGrouper.numberOfGroups();
+        int groupsBeforeChange = minMaxHeapQueryGrouper.numberOfGroups();
         assertTrue(groupsBeforeChange > 0);
 
-        queryGrouper.setGroupingType(GroupingType.NONE); // Changing to NONE should clear groups
+        minMaxHeapQueryGrouper.setGroupingType(GroupingType.NONE); // Changing to NONE should clear groups
 
-        int groupsAfterChange = queryGrouper.numberOfGroups();
+        int groupsAfterChange = minMaxHeapQueryGrouper.numberOfGroups();
         assertEquals(0, groupsAfterChange); // Expect no groups after changing to NONE
     }
 
@@ -171,16 +171,16 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        int groupsBeforeDrain = queryGrouper.numberOfGroups();
+        int groupsBeforeDrain = minMaxHeapQueryGrouper.numberOfGroups();
         assertTrue(groupsBeforeDrain > 0);
 
-        queryGrouper.setGroupingType(GroupingType.SIMILARITY);
-        queryGrouper.drain();
+        minMaxHeapQueryGrouper.setGroupingType(GroupingType.SIMILARITY);
+        minMaxHeapQueryGrouper.drain();
 
-        int groupsAfterDrain = queryGrouper.numberOfGroups();
+        int groupsAfterDrain = minMaxHeapQueryGrouper.numberOfGroups();
         assertEquals(0, groupsAfterDrain); // After drain, groups should be cleared
     }
 
@@ -189,21 +189,21 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        queryGrouper.updateTopNSize(15);
-        queryGrouper.drain(); // Clear previous state
+        minMaxHeapQueryGrouper.updateTopNSize(15);
+        minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            queryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
-        assertEquals(15, queryGrouper.numberOfTopGroups()); // Should reflect the updated top N size
+        assertEquals(15, minMaxHeapQueryGrouper.numberOfTopGroups()); // Should reflect the updated top N size
     }
 
     public void testAddMeasurementSumAggregationLatency() {
-        queryGrouper = getQueryGroupingService(AggregationType.SUM, 10);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.SUM, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -213,7 +213,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
-            aggregatedRecord = queryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.LATENCY).longValue();
         }
 
@@ -221,7 +221,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementAverageAggregationLatency() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 10);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -233,7 +233,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         int expectedCount = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.LATENCY).longValue();
-            aggregatedRecord = queryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             expectedCount += 1;
         }
 
@@ -242,7 +242,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementNoneAggregationLatency() {
-        queryGrouper = getQueryGroupingService(AggregationType.NONE, 10);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.NONE, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -253,14 +253,20 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
             expectedValue = record.getMeasurement(MetricType.LATENCY).longValue();
-            lastRecord = queryGrouper.addQueryToGroup(record);
+            lastRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
         assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.LATENCY));
     }
 
     public void testAddMeasurementSumAggregationCpu() {
-        queryGrouper = new QueryGrouper(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.SUM, topQueriesStore, 10);
+        minMaxHeapQueryGrouper = new MinMaxHeapQueryGrouper(
+            MetricType.CPU,
+            GroupingType.SIMILARITY,
+            AggregationType.SUM,
+            topQueriesStore,
+            10
+        );
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -270,7 +276,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
-            aggregatedRecord = queryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
         }
 
@@ -278,7 +284,13 @@ public class QueryGrouperTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementAverageAggregationCpu() {
-        queryGrouper = new QueryGrouper(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.AVERAGE, topQueriesStore, 10);
+        minMaxHeapQueryGrouper = new MinMaxHeapQueryGrouper(
+            MetricType.CPU,
+            GroupingType.SIMILARITY,
+            AggregationType.AVERAGE,
+            topQueriesStore,
+            10
+        );
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -290,7 +302,7 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         int expectedCount = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
-            aggregatedRecord = queryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
             expectedCount += 1;
         }
 
@@ -299,7 +311,13 @@ public class QueryGrouperTests extends OpenSearchTestCase {
     }
 
     public void testAddMeasurementNoneAggregationCpu() {
-        queryGrouper = new QueryGrouper(MetricType.CPU, GroupingType.SIMILARITY, AggregationType.NONE, topQueriesStore, 10);
+        minMaxHeapQueryGrouper = new MinMaxHeapQueryGrouper(
+            MetricType.CPU,
+            GroupingType.SIMILARITY,
+            AggregationType.NONE,
+            topQueriesStore,
+            10
+        );
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -310,14 +328,14 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
             expectedValue = record.getMeasurement(MetricType.CPU).longValue();
-            lastRecord = queryGrouper.addQueryToGroup(record);
+            lastRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
         }
 
         assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.CPU));
     }
 
     public void testNoneGroupingTypeIllegalArgumentException() {
-        queryGrouper = new QueryGrouper(MetricType.CPU, GroupingType.NONE, AggregationType.NONE, topQueriesStore, 10);
+        minMaxHeapQueryGrouper = new MinMaxHeapQueryGrouper(MetricType.CPU, GroupingType.NONE, AggregationType.NONE, topQueriesStore, 10);
         int numOfRecords = 10;
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords, AggregationType.NONE);
 
@@ -328,13 +346,13 @@ public class QueryGrouperTests extends OpenSearchTestCase {
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
-            assertThrows(IllegalArgumentException.class, () -> { queryGrouper.addQueryToGroup(record); });
+            assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.addQueryToGroup(record); });
         }
     }
 
     // New query group not existing added to MIN
     public void testNewGroupAddedToMin() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
@@ -344,18 +362,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // New query group not existing added to MIN and overflows to MAX
     public void testNewGroupOverflowsMinToMax() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
@@ -365,18 +383,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // New query group not existing added to MIN and causes other group to overflow to MAX
     public void testNewGroupCausesOtherGroupOverflowMinToMax() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             2,
@@ -386,18 +404,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1200L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MIN increases average
     public void testExistingGroupUpdateToMinIncreaseAverage() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -415,18 +433,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(1200L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1200L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MIN decrease average - stay in MIN
     public void testExistingGroupUpdateToMinDecreaseAverageStayInMin() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -444,18 +462,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(900L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MIN decrease average - overflows to MAX
     public void testExistingGroupUpdateToMinDecreaseAverageOverflowsToMax() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -473,18 +491,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MAX increases average - stay in MAX
     public void testExistingGroupUpdateToMaxIncreaseAverageStayInMax() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -502,18 +520,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(950L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MAX increases average - promote to MIN
     public void testExistingGroupUpdateToMaxIncreaseAveragePromoteToMin() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -531,18 +549,18 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1000L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     // Existing query group update to MAX decrease average
     public void testExistingGroupUpdateToMaxDecreaseAverage() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -560,17 +578,17 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(950L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
     }
 
     public void testSwitchGroupingTypeToNone() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -588,22 +606,22 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(950L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(975L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
 
-        queryGrouper.setGroupingType(GroupingType.NONE);
-        assertEquals(0, queryGrouper.numberOfTopGroups());
+        minMaxHeapQueryGrouper.setGroupingType(GroupingType.NONE);
+        assertEquals(0, minMaxHeapQueryGrouper.numberOfTopGroups());
 
-        assertThrows(IllegalArgumentException.class, () -> { queryGrouper.addQueryToGroup(allRecords1.get(0).get(0)); });
+        assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.addQueryToGroup(allRecords1.get(0).get(0)); });
     }
 
     public void testMultipleQueryGroupsUpdates() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -621,20 +639,20 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(2, queryGrouper.numberOfTopGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(1100L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
-        assertEquals(3, queryGrouper.numberOfGroups());
+        assertEquals(3, minMaxHeapQueryGrouper.numberOfGroups());
     }
 
     public void testMaxGroupLimitReached() {
-        queryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
 
-        queryGrouper.setMaxGroups(1);
+        minMaxHeapQueryGrouper.setMaxGroups(1);
 
         List<List<SearchQueryRecord>> allRecords1 = QueryInsightsTestUtils.generateMultipleQueryInsightsRecordsWithMeasurement(
             1,
@@ -652,16 +670,16 @@ public class QueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                queryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.addQueryToGroup(record);
             }
         }
 
-        assertEquals(1, queryGrouper.numberOfTopGroups());
+        assertEquals(1, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
-        assertEquals(2, queryGrouper.numberOfGroups());
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfGroups());
     }
 
-    private QueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
-        return new QueryGrouper(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
+    private MinMaxHeapQueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
+        return new MinMaxHeapQueryGrouper(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
     }
 }

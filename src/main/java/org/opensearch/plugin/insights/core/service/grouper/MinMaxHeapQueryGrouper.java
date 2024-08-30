@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.plugin.insights.core.service;
+package org.opensearch.plugin.insights.core.service.grouper;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS;
 
@@ -15,6 +15,7 @@ import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.plugin.insights.core.service.store.PriorityQueueTopQueriesStore;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -26,12 +27,12 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
  * Handles grouping of search queries based on the GroupingType for the MetricType
  * Following algorithm : https://github.com/opensearch-project/OpenSearch/issues/13357#issuecomment-2269706425
  */
-public class QueryGrouper {
+public class MinMaxHeapQueryGrouper implements QueryGrouper {
 
     /**
      * Logger
      */
-    private static final Logger log = LogManager.getLogger(QueryGrouper.class);
+    private static final Logger log = LogManager.getLogger(MinMaxHeapQueryGrouper.class);
     /**
      * Grouping type for the current grouping service
      */
@@ -57,7 +58,7 @@ public class QueryGrouper {
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
-    private PriorityBlockingQueue<SearchQueryRecord> minHeapTopQueriesStore;
+    private PriorityQueueTopQueriesStore<SearchQueryRecord> minHeapTopQueriesStore;
     /**
      * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
      * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
@@ -79,11 +80,11 @@ public class QueryGrouper {
      */
     private int maxGroups;
 
-    public QueryGrouper(
+    public MinMaxHeapQueryGrouper(
         MetricType metricType,
         GroupingType groupingType,
         AggregationType aggregationType,
-        PriorityBlockingQueue<SearchQueryRecord> topQueriesStore,
+        PriorityQueueTopQueriesStore<SearchQueryRecord> topQueriesStore,
         int topNSize
     ) {
         this.groupingType = groupingType;
@@ -102,6 +103,7 @@ public class QueryGrouper {
      * @param searchQueryRecord record
      * @return return the search query record that represents the group
      */
+    @Override
     public SearchQueryRecord addQueryToGroup(SearchQueryRecord searchQueryRecord) {
         if (groupingType == GroupingType.NONE) {
             throw new IllegalArgumentException("Do not use addQueryToGroup when GroupingType is None");
@@ -141,6 +143,65 @@ public class QueryGrouper {
             }
         }
         return aggregateSearchQueryRecord;
+    }
+
+    /**
+     * Drain the internal grouping. Needs to be performed after every window or if a setting is changed.
+     */
+    @Override
+    public void drain() {
+        log.debug("Number of groups for the current window is " + numberOfGroups());
+        groupIdToAggSearchQueryRecord.clear();
+        maxHeapQueryStore.clear();
+        minHeapTopQueriesStore.clear();
+    }
+
+    @Override
+    public PriorityQueueTopQueriesStore<SearchQueryRecord> getMinHeapTopQueriesStore() {
+        return this.minHeapTopQueriesStore;
+    }
+
+    /**
+     * Set Grouping Type
+     * @param newGroupingType grouping type
+     */
+    @Override
+    public void setGroupingType(GroupingType newGroupingType) {
+        if (this.groupingType != newGroupingType) {
+            this.groupingType = newGroupingType;
+            drain();
+        }
+    }
+
+    /**
+     * Get Grouping Type
+     * @return grouping type
+     */
+    @Override
+    public GroupingType getGroupingType() {
+        return groupingType;
+    }
+
+    /**
+     * Set the maximum number of groups that should be tracked when calculating Top N groups.
+     * If the value changes, reset the state of the query grouper service by draining all internal data.
+     * @param maxGroups max number of groups
+     */
+    @Override
+    public void setMaxGroups(int maxGroups) {
+        if (this.maxGroups != maxGroups) {
+            this.maxGroups = maxGroups;
+            drain();
+        }
+    }
+
+    /**
+     * Update Top N size
+     * @param newSize new size
+     */
+    @Override
+    public void updateTopNSize(int newSize) {
+        this.topNSize = newSize;
     }
 
     private void addToMinPQOverflowToMaxPQ(SearchQueryRecord searchQueryRecord, String groupId) {
@@ -203,19 +264,10 @@ public class QueryGrouper {
     }
 
     /**
-     * Drain the internal grouping. Needs to be performed after every window or if a setting is changed.
-     */
-    public void drain() {
-        log.debug("Number of groups for the current window is " + numberOfGroups());
-        groupIdToAggSearchQueryRecord.clear();
-        maxHeapQueryStore.clear();
-        minHeapTopQueriesStore.clear();
-    }
-
-    /**
      * Gives the number of groups as part of the current grouping.
      * @return number of groups
      */
+
     int numberOfGroups() {
         return groupIdToAggSearchQueryRecord.size();
     }
@@ -226,41 +278,6 @@ public class QueryGrouper {
      */
     int numberOfTopGroups() {
         return minHeapTopQueriesStore.size();
-    }
-
-    /**
-     * Set Grouping Type
-     * @param newGroupingType grouping type
-     */
-    public void setGroupingType(GroupingType newGroupingType) {
-        if (this.groupingType != newGroupingType) {
-            this.groupingType = newGroupingType;
-            drain();
-        }
-    }
-
-    public GroupingType getGroupingType() {
-        return groupingType;
-    }
-
-    /**
-     * Get maximum number of groups that should be tracked when calculating Top N groups
-     * @return max number of groups
-     */
-    public int getMaxGroups() {
-        return maxGroups;
-    }
-
-    /**
-     * Set the maximum number of groups that should be tracked when calculating Top N groups.
-     * If the value changes, reset the state of the query grouper service by draining all internal data.
-     * @param maxGroups max number of groups
-     */
-    public void setMaxGroups(int maxGroups) {
-        if (this.maxGroups != maxGroups) {
-            this.maxGroups = maxGroups;
-            drain();
-        }
     }
 
     /**
@@ -277,13 +294,5 @@ public class QueryGrouper {
             default:
                 throw new IllegalArgumentException("The following grouping type is not supported : " + groupingType);
         }
-    }
-
-    /**
-     * Update Top N size
-     * @param newSize new size
-     */
-    public void updateTopNSize(int newSize) {
-        this.topNSize = newSize;
     }
 }
