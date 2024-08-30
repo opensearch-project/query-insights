@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.joda.time.DateTime;
 import org.opensearch.client.node.NodeClient;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.Strings;
@@ -64,16 +65,53 @@ public class RestTopQueriesAction extends BaseRestHandler {
         return channel -> client.execute(TopQueriesAction.INSTANCE, topQueriesRequest, topQueriesResponse(channel));
     }
 
+    private static boolean isNotISODate(final String dateTime) {
+        try {
+            DateTime.parse(dateTime);
+            return false;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     static TopQueriesRequest prepareRequest(final RestRequest request) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final String metricType = request.param("type", MetricType.LATENCY.toString());
-        final String from = request.param("from");
-        final String to = request.param("to");
+        final String from = request.param("from", null);
+        final String to = request.param("to", null);
         if (!ALLOWED_METRICS.contains(metricType)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
             );
         }
+        if (from != null || to != null) {
+            if (from != null ^ to != null) {
+                throw new IllegalArgumentException(
+                    String.format(Locale.ROOT, "request [%s] is missing one of the time parameters. Both must be provided", request.path())
+                );
+            }
+            if (isNotISODate(from)) {
+                throw new IllegalArgumentException(
+                    String.format(
+                        Locale.ROOT,
+                        "request [%s] contains invalid 'from' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
+                        request.path(),
+                        from
+                    )
+                );
+            }
+            if (isNotISODate(to)) {
+                throw new IllegalArgumentException(
+                    String.format(
+                        Locale.ROOT,
+                        "request [%s] contains invalid 'to' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
+                        request.path(),
+                        to
+                    )
+                );
+            }
+        }
+
         return new TopQueriesRequest(MetricType.fromString(metricType), from, to, nodesIds);
     }
 

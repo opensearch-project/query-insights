@@ -8,10 +8,9 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-
 import java.io.Closeable;
 import java.util.List;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Base interface for Query Insights readers

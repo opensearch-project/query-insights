@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.DateTime;
@@ -18,14 +20,13 @@ import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.index.IndexNotFoundException;
-import org.opensearch.index.query.*;
-import org.opensearch.index.search.MatchQuery;
+import org.opensearch.index.query.MatchQueryBuilder;
+import org.opensearch.index.query.QueryBuilder;
+import org.opensearch.index.query.QueryBuilders;
+import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Local index reader for reading query insights data from local OpenSearch indices.
@@ -82,10 +83,13 @@ public final class LocalIndexReader implements QueryInsightsReader {
     @Override
     public List<SearchQueryRecord> read(final String from, final String to) {
         List<SearchQueryRecord> records = new ArrayList<>();
-        final DateTime start = new DateTime(Long.valueOf(from), DateTimeZone.UTC);
-        DateTime end = new DateTime(Long.valueOf(to), DateTimeZone.UTC);
-        if (end.compareTo(DateTime.now()) > 0){
-            end = DateTime.now();
+        if (from == null || to == null) {
+            return records;
+        }
+        final DateTime start = DateTime.parse(from);
+        DateTime end = DateTime.parse(to);
+        if (end.compareTo(DateTime.now(DateTimeZone.UTC)) > 0) {
+            end = DateTime.now(DateTimeZone.UTC);
         }
         DateTime curr = start;
         while (curr.compareTo(end.plusDays(1).withTimeAtStartOfDay()) < 0) {
@@ -93,7 +97,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
             SearchRequest searchRequest = new SearchRequest(index);
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
-            RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp").from(from).to(to);
+            RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp").from(start.getMillis()).to(end.getMillis());
             QueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
             searchSourceBuilder.query(query);
             searchRequest.source(searchSourceBuilder);
@@ -103,8 +107,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
                     SearchQueryRecord record = SearchQueryRecord.getRecord(hit, namedXContentRegistry);
                     records.add(record);
                 }
-            } catch (IndexNotFoundException ignored) {
-            } catch (Exception e) {
+            } catch (IndexNotFoundException ignored) {} catch (Exception e) {
                 logger.error("Unable to parse search hit: ", e);
             }
             curr = curr.plusDays(1);

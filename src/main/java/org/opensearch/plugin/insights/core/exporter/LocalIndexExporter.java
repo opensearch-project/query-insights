@@ -78,7 +78,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
         }
         try {
             final String index = getDateTimeFromFormat();
-//            client.prepareIndex().setRequireAlias()
+            // client.prepareIndex().setRequireAlias()
             final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
             for (SearchQueryRecord record : records) {
                 bulkRequestBuilder.add(

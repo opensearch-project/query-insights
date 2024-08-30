@@ -201,7 +201,6 @@ public class QueryInsightsSettings {
      */
     public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
 
-
     /**
      * Settings for the exporter of top latency queries
      */

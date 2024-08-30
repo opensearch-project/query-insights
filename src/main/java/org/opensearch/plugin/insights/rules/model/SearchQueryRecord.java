@@ -9,8 +9,11 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
-import java.util.*;
-
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
@@ -21,7 +24,12 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
-import org.opensearch.core.xcontent.*;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.ToXContentObject;
+import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
@@ -126,11 +134,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         long timestamp = 0L;
         Map<MetricType, Number> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
-        XContentParser parser = XContentType.JSON.xContent().createParser(
-            namedXContentRegistry,
-            LoggingDeprecationHandler.INSTANCE,
-            hit.getSourceAsString()
-        );
+        XContentParser parser = XContentType.JSON.xContent()
+            .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
         while (parser.nextToken() != XContentParser.Token.END_OBJECT) {

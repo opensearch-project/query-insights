@@ -40,7 +40,13 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
-        queryInsightsService = new QueryInsightsService(clusterSettings, threadPool, client, NoopMetricsRegistry.INSTANCE, namedXContentRegistry);
+        queryInsightsService = new QueryInsightsService(
+            clusterSettings,
+            threadPool,
+            client,
+            NoopMetricsRegistry.INSTANCE,
+            namedXContentRegistry
+        );
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);

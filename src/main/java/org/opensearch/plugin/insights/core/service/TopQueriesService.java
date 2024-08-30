@@ -8,20 +8,32 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import java.io.FileFilter;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.joda.time.DateTime;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -35,8 +47,6 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.threadpool.ThreadPool;
-
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.*;
 
 /**
  * Service responsible for gathering and storing top N queries
@@ -100,7 +110,8 @@ public class TopQueriesService {
     TopQueriesService(
         final MetricType metricType,
         final ThreadPool threadPool,
-        final QueryInsightsExporterFactory queryInsightsExporterFactory, QueryInsightsReaderFactory queryInsightsReaderFactory
+        final QueryInsightsExporterFactory queryInsightsExporterFactory,
+        QueryInsightsReaderFactory queryInsightsReaderFactory
     ) {
         this.enabled = false;
         this.metricType = metricType;
@@ -250,7 +261,10 @@ public class TopQueriesService {
      * @param namedXContentRegistry NamedXContentRegistry for parsing purposes
      */
     public void setReader(final Settings settings, final NamedXContentRegistry namedXContentRegistry) {
-        this.reader = queryInsightsReaderFactory.createReader(settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN), namedXContentRegistry);
+        this.reader = queryInsightsReaderFactory.createReader(
+            settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN),
+            namedXContentRegistry
+        );
         queryInsightsReaderFactory.updateReader(reader, settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN));
     }
 
@@ -270,11 +284,11 @@ public class TopQueriesService {
     private final Predicate<SearchQueryRecord> removeInternal = (record) -> {
         Map<Attribute, Object> attributes = record.getAttributes();
         Object indicesObject = attributes.get(Attribute.INDICES);
-        if (indicesObject instanceof Object[]){
+        if (indicesObject instanceof Object[]) {
             Object[] indices = (Object[]) indicesObject;
             return Arrays.stream(indices).noneMatch(index -> {
-                if (index instanceof String){
-                    String indexString = (String)index;
+                if (index instanceof String) {
+                    String indexString = (String) index;
                     return indexString.contains("top_queries");
                 }
                 return false;
@@ -295,7 +309,8 @@ public class TopQueriesService {
      * @return List of the records that are in the query insight store
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to) throws IllegalArgumentException {
+    public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to)
+        throws IllegalArgumentException {
         if (!enabled) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
@@ -307,8 +322,11 @@ public class TopQueriesService {
             queries.addAll(topQueriesHistorySnapshot.get());
         }
         List<SearchQueryRecord> filterQueries = queries;
-        Predicate<SearchQueryRecord> timeFilter = element -> Long.parseLong(from) <= element.getTimestamp() && element.getTimestamp() <= Long.parseLong(to);
-        if (from != null && to != null){
+        if (from != null && to != null) {
+            final DateTime start = DateTime.parse(from);
+            final DateTime end = DateTime.parse(to);
+            Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
+                && element.getTimestamp() <= end.getMillis();
             filterQueries = queries.stream().filter(removeInternal.and(timeFilter)).collect(Collectors.toList());
         }
         return Stream.of(filterQueries)
@@ -333,11 +351,15 @@ public class TopQueriesService {
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
             );
         }
+        final DateTime start = DateTime.parse(from);
+        final DateTime end = DateTime.parse(to);
+
         final List<SearchQueryRecord> queries = new ArrayList<>();
         if (reader != null) {
             try {
                 List<SearchQueryRecord> records = reader.read(from, to);
-                Predicate<SearchQueryRecord> timeFilter = element -> Long.parseLong(from) <= element.getTimestamp() && element.getTimestamp() <= Long.parseLong(to);
+                Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
+                    && element.getTimestamp() <= end.getMillis();
                 List<SearchQueryRecord> filteredRecords = records.stream().filter(timeFilter).collect(Collectors.toList());
                 queries.addAll(filteredRecords);
             } catch (Exception e) {

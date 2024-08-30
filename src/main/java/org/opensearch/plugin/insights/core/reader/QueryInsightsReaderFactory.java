@@ -8,6 +8,9 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
+
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Locale;
@@ -18,10 +21,6 @@ import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
-
-import javax.naming.Name;
-
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.*;
 
 /**
  * Factory class for validating and creating Readers based on provided settings
@@ -81,7 +80,7 @@ public class QueryInsightsReaderFactory {
      * Update a Reader based on provided parameters
      *
      * @param Reader The Reader to update
-     * @param indexPattern the index pattern if creating a index Reader
+     * @param indexPattern the index pattern if creating an index Reader
      * @return QueryInsightsReader the updated Reader sink
      */
     public QueryInsightsReader updateReader(QueryInsightsReader Reader, String indexPattern) {

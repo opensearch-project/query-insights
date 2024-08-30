@@ -36,8 +36,6 @@ import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
 
-import javax.naming.Name;
-
 /**
  * Service responsible for gathering, analyzing, storing and exporting
  * information related to search queries
@@ -104,7 +102,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         final Client client,
         final MetricsRegistry metricsRegistry,
         final NamedXContentRegistry namedXContentRegistry
-        ) {
+    ) {
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
@@ -115,7 +113,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         topQueriesServices = new HashMap<>();
         for (MetricType metricType : MetricType.allMetricTypes()) {
             enableCollect.put(metricType, false);
-            topQueriesServices.put(metricType, new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory));
+            topQueriesServices.put(
+                metricType,
+                new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
+            );
         }
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterSettings.addSettingsUpdateConsumer(
