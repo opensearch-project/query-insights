@@ -10,9 +10,7 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.PriorityQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,7 +35,7 @@ public class QueryGrouper {
     /**
      * Grouping type for the current grouping service
      */
-    private GroupingType groupingType;
+    private volatile GroupingType groupingType;
     /**
      * Metric type for the current grouping service
      */
@@ -55,7 +53,7 @@ public class QueryGrouper {
      * boolean: True if the aggregate record is in the Top N queries priority query (min heap) and False if the aggregate
      * record is in the Max Heap
      */
-    private Map<String, Tuple<SearchQueryRecord, Boolean>> groupIdToAggSearchQueryRecord;
+    private ConcurrentHashMap<String, Tuple<SearchQueryRecord, Boolean>> groupIdToAggSearchQueryRecord;
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
@@ -66,7 +64,7 @@ public class QueryGrouper {
      * records is updated and it now qualifies as part of the Top N, the record is moved from the Max heap to the Min heap,
      * and the records are rearranged accordingly.
      */
-    private PriorityQueue<SearchQueryRecord> maxHeapQueryStore;
+    private PriorityBlockingQueue<SearchQueryRecord> maxHeapQueryStore;
 
     /**
      * Top N size based on the configuration set
@@ -91,12 +89,11 @@ public class QueryGrouper {
         this.groupingType = groupingType;
         this.metricType = metricType;
         this.aggregationType = aggregationType;
-        this.groupIdToAggSearchQueryRecord = new HashMap<>();
+        this.groupIdToAggSearchQueryRecord = new ConcurrentHashMap<>();
         this.minHeapTopQueriesStore = topQueriesStore;
-        this.maxHeapQueryStore = new PriorityQueue<>((a, b) -> SearchQueryRecord.compare(b, a, metricType));
-
         this.topNSize = topNSize;
         this.maxGroups = QueryInsightsSettings.DEFAULT_MAX_GROUPS;
+        this.maxHeapQueryStore = new PriorityBlockingQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
     }
 
     /**

@@ -241,10 +241,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                     )
                 );
             }
-            String hashcode = null;
-            if (queryInsightsService.isSearchQueryMetricsFeatureEnabled()) {
-                QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
-            }
+
+            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
