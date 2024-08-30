@@ -15,7 +15,7 @@ import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
-import org.opensearch.plugin.insights.core.service.store.PriorityQueueTopQueriesStore;
+import org.opensearch.plugin.insights.core.service.store.TopQueriesStore;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -58,7 +58,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
-    private PriorityQueueTopQueriesStore<SearchQueryRecord> minHeapTopQueriesStore;
+    private TopQueriesStore<SearchQueryRecord> minHeapTopQueriesStore;
     /**
      * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
      * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
@@ -84,7 +84,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         MetricType metricType,
         GroupingType groupingType,
         AggregationType aggregationType,
-        PriorityQueueTopQueriesStore<SearchQueryRecord> topQueriesStore,
+        TopQueriesStore<SearchQueryRecord> topQueriesStore,
         int topNSize
     ) {
         this.groupingType = groupingType;
@@ -104,7 +104,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @return return the search query record that represents the group
      */
     @Override
-    public SearchQueryRecord addQueryToGroup(SearchQueryRecord searchQueryRecord) {
+    public SearchQueryRecord add(SearchQueryRecord searchQueryRecord) {
         if (groupingType == GroupingType.NONE) {
             throw new IllegalArgumentException("Do not use addQueryToGroup when GroupingType is None");
         }
@@ -157,7 +157,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     }
 
     @Override
-    public PriorityQueueTopQueriesStore<SearchQueryRecord> getMinHeapTopQueriesStore() {
+    public TopQueriesStore<SearchQueryRecord> getTopQueriesStore() {
         return this.minHeapTopQueriesStore;
     }
 

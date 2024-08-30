@@ -42,7 +42,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         SearchQueryRecord groupedRecord;
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
-            groupedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            groupedRecord = minMaxHeapQueryGrouper.add(record);
             int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_HASHCODE);
             hashcodeSet.add(hashcode);
         }
@@ -56,7 +56,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         SearchQueryRecord groupedRecord;
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
-            groupedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            groupedRecord = minMaxHeapQueryGrouper.add(record);
             int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_HASHCODE);
             hashcodeSet.add(hashcode);
         }
@@ -67,7 +67,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         int numOfRecords = 10;
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
         int groupsBeforeDrain = minMaxHeapQueryGrouper.numberOfGroups();
         minMaxHeapQueryGrouper.drain();
@@ -82,7 +82,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(10, minMaxHeapQueryGrouper.numberOfTopGroups()); // Initially expects top 10 groups
@@ -91,7 +91,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(5, minMaxHeapQueryGrouper.numberOfTopGroups()); // After update, expects top 5 groups
@@ -111,7 +111,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertTrue(minMaxHeapQueryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
@@ -120,7 +120,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(5, minMaxHeapQueryGrouper.numberOfTopGroups()); // Should be exactly 5 in the min heap
@@ -135,7 +135,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
             10
         );
         SearchQueryRecord record = QueryInsightsTestUtils.generateQueryInsightRecords(1).get(0);
-        expectThrows(IllegalArgumentException.class, () -> invalidGroupingService.addQueryToGroup(record));
+        expectThrows(IllegalArgumentException.class, () -> invalidGroupingService.add(record));
     }
 
     public void testLargeNumberOfRecords() {
@@ -143,7 +143,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertTrue(minMaxHeapQueryGrouper.numberOfTopGroups() <= 10); // Should be at most 10 in the min heap
@@ -154,7 +154,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         int groupsBeforeChange = minMaxHeapQueryGrouper.numberOfGroups();
@@ -171,7 +171,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         int groupsBeforeDrain = minMaxHeapQueryGrouper.numberOfGroups();
@@ -189,14 +189,14 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         minMaxHeapQueryGrouper.updateTopNSize(15);
         minMaxHeapQueryGrouper.drain(); // Clear previous state
 
         for (SearchQueryRecord record : records) {
-            minMaxHeapQueryGrouper.addQueryToGroup(record);
+            minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(15, minMaxHeapQueryGrouper.numberOfTopGroups()); // Should reflect the updated top N size
@@ -213,7 +213,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
-            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.add(record);
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.LATENCY).longValue();
         }
 
@@ -233,7 +233,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         int expectedCount = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.LATENCY).longValue();
-            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.add(record);
             expectedCount += 1;
         }
 
@@ -253,7 +253,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
             expectedValue = record.getMeasurement(MetricType.LATENCY).longValue();
-            lastRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            lastRecord = minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.LATENCY));
@@ -276,7 +276,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
-            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.add(record);
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
         }
 
@@ -302,7 +302,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         int expectedCount = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
-            aggregatedRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            aggregatedRecord = minMaxHeapQueryGrouper.add(record);
             expectedCount += 1;
         }
 
@@ -328,7 +328,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Number expectedValue = 0;
         for (SearchQueryRecord record : records) {
             expectedValue = record.getMeasurement(MetricType.CPU).longValue();
-            lastRecord = minMaxHeapQueryGrouper.addQueryToGroup(record);
+            lastRecord = minMaxHeapQueryGrouper.add(record);
         }
 
         assertEquals(expectedValue, lastRecord.getMeasurement(MetricType.CPU));
@@ -346,7 +346,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Number expectedSum = 0;
         for (SearchQueryRecord record : records) {
             expectedSum = expectedSum.longValue() + record.getMeasurement(MetricType.CPU).longValue();
-            assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.addQueryToGroup(record); });
+            assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.add(record); });
         }
     }
 
@@ -362,7 +362,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -383,7 +383,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -404,7 +404,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -433,7 +433,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -462,7 +462,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -491,7 +491,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -520,7 +520,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -549,7 +549,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -578,7 +578,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -606,7 +606,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -617,7 +617,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         minMaxHeapQueryGrouper.setGroupingType(GroupingType.NONE);
         assertEquals(0, minMaxHeapQueryGrouper.numberOfTopGroups());
 
-        assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.addQueryToGroup(allRecords1.get(0).get(0)); });
+        assertThrows(IllegalArgumentException.class, () -> { minMaxHeapQueryGrouper.add(allRecords1.get(0).get(0)); });
     }
 
     public void testMultipleQueryGroupsUpdates() {
@@ -639,7 +639,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 
@@ -670,7 +670,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
         for (List<SearchQueryRecord> recordList : allRecords1) {
             for (SearchQueryRecord record : recordList) {
-                minMaxHeapQueryGrouper.addQueryToGroup(record);
+                minMaxHeapQueryGrouper.add(record);
             }
         }
 

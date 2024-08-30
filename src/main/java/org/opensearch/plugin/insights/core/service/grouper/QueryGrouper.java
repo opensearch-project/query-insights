@@ -8,7 +8,7 @@
 
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import org.opensearch.plugin.insights.core.service.store.PriorityQueueTopQueriesStore;
+import org.opensearch.plugin.insights.core.service.store.TopQueriesStore;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
@@ -22,7 +22,7 @@ public interface QueryGrouper {
      * @param searchQueryRecord record to be added
      * @return the aggregate search query record representing the group
      */
-    SearchQueryRecord addQueryToGroup(SearchQueryRecord searchQueryRecord);
+    SearchQueryRecord add(SearchQueryRecord searchQueryRecord);
 
     /**
      * Drain the internal grouping. Needs to be performed after every window or if a setting is changed.
@@ -32,9 +32,9 @@ public interface QueryGrouper {
     /**
      * Get the min heap queue that holds the top N queries.
      *
-     * @return the PriorityBlockingQueue containing the top N queries
+     * @return the TopQueriesStore containing the top N queries
      */
-    PriorityQueueTopQueriesStore<SearchQueryRecord> getMinHeapTopQueriesStore();
+    TopQueriesStore<SearchQueryRecord> getTopQueriesStore();
 
     /**
      * Set the grouping type for this grouper.
