@@ -47,10 +47,10 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
             + "    derivative\n"
             + "    max_bucket\n"
             + "sort:\n"
-            + "  asc [album]\n"
-            + "  asc [price]\n"
             + "  desc [color]\n"
-            + "  desc [vendor]\n";
+            + "  desc [vendor]\n"
+            + "  asc [price]\n"
+            + "  asc [album]\n";
         assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
 
         String shapeShowFieldsFalse = QueryShapeGenerator.buildShape(sourceBuilder, false);
@@ -82,10 +82,10 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
             + "    derivative\n"
             + "    max_bucket\n"
             + "sort:\n"
-            + "  asc\n"
-            + "  asc\n"
             + "  desc\n"
-            + "  desc\n";
+            + "  desc\n"
+            + "  asc\n"
+            + "  asc\n";
         assertEquals(expectedShowFieldsFalse, shapeShowFieldsFalse);
     }
 
@@ -167,11 +167,11 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createSortSearchSourceBuilder();
 
         String shapeShowFieldsTrue = QueryShapeGenerator.buildShape(sourceBuilder, true);
-        String expectedShowFieldsTrue = "sort:\n" + "  asc [album]\n" + "  asc [price]\n" + "  desc [color]\n" + "  desc [vendor]\n";
+        String expectedShowFieldsTrue = "sort:\n" + "  desc [color]\n" + "  desc [vendor]\n" + "  asc [price]\n" + "  asc [album]\n";
         assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
 
         String shapeShowFieldsFalse = QueryShapeGenerator.buildShape(sourceBuilder, false);
-        String expectedShowFieldsFalse = "sort:\n" + "  asc\n" + "  asc\n" + "  desc\n" + "  desc\n";
+        String expectedShowFieldsFalse = "sort:\n" + "  desc\n" + "  desc\n" + "  asc\n" + "  asc\n";
         assertEquals(expectedShowFieldsFalse, shapeShowFieldsFalse);
     }
 

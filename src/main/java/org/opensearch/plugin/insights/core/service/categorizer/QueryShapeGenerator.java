@@ -226,7 +226,6 @@ public class QueryShapeGenerator {
             shapeStrings.add(stringBuilder.toString());
         }
 
-        Collections.sort(shapeStrings);
         for (String line : shapeStrings) {
             sortShape.append(line).append("\n");
         }
