@@ -13,6 +13,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_
 import java.util.HashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
@@ -25,7 +26,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /**
  * Handles grouping of search queries based on the GroupingType for the MetricType
- * Following algorithm :
+ * Following algorithm : https://github.com/opensearch-project/OpenSearch/issues/13357#issuecomment-2269706425
  */
 public class QueryGrouper {
 
@@ -58,7 +59,7 @@ public class QueryGrouper {
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
-    private PriorityQueue<SearchQueryRecord> minHeapTopQueriesStore;
+    private PriorityBlockingQueue<SearchQueryRecord> minHeapTopQueriesStore;
     /**
      * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
      * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
@@ -84,7 +85,7 @@ public class QueryGrouper {
         MetricType metricType,
         GroupingType groupingType,
         AggregationType aggregationType,
-        PriorityQueue<SearchQueryRecord> topQueriesStore,
+        PriorityBlockingQueue<SearchQueryRecord> topQueriesStore,
         int topNSize
     ) {
         this.groupingType = groupingType;
@@ -111,8 +112,19 @@ public class QueryGrouper {
         SearchQueryRecord aggregateSearchQueryRecord;
         String groupId = getGroupingId(searchQueryRecord);
 
-        // New group added to the grouping service
+        // 1) New group added to the grouping service
         // Add to min PQ and overflow records to max PQ (if the number of records in the min PQ exceeds the configured size N)
+        // 2) Existing group being updated to the grouping service
+        // a. If present in min PQ
+        // - remove the record from the min PQ
+        // - update the aggregate record (aggregate measurement could increase or decrease)
+        // - If max PQ contains elements, add to max PQ and promote any records to min PQ
+        // - If max PQ is empty, add to min PQ and overflow any records to max PQ
+        // b. If present in max PQ
+        // - remove the record from the max PQ
+        // - update the aggregate record (aggregate measurement could increase or decrease)
+        // - If min PQ is full, add to min PQ and overflow any records to max PQ
+        // - else, add to max PQ and promote any records to min PQ
         if (!groupIdToAggSearchQueryRecord.containsKey(groupId)) {
             boolean maxGroupsLimitReached = checkMaxGroupsLimitReached(groupId);
             if (maxGroupsLimitReached) {
@@ -122,19 +134,7 @@ public class QueryGrouper {
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
             addToMinPQOverflowToMaxPQ(aggregateSearchQueryRecord, groupId);
-        }
-        // Existing group being updated to the grouping service
-        // 1. If present in min PQ
-        // - remove the record from the min PQ
-        // - update the aggregate record (aggregate measurement could increase or decrease)
-        // - If max PQ contains elements, add to max PQ and promote any records to min PQ
-        // - If max PQ is empty, add to min PQ and overflow any records to max PQ
-        // 2. If present in max PQ
-        // - remove the record from the max PQ
-        // - update the aggregate record (aggregate measurement could increase or decrease)
-        // - If min PQ is full, add to min PQ and overflow any records to max PQ
-        // - else, add to max PQ and promote any records to min PQ
-        else {
+        } else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();
             boolean isPresentInMinPQ = groupIdToAggSearchQueryRecord.get(groupId).v2();
             if (isPresentInMinPQ) {

@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
-import java.util.PriorityQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -68,7 +68,7 @@ public class TopQueriesService {
     /**
      * The internal thread-safe store that holds the top n queries insight data
      */
-    private final PriorityQueue<SearchQueryRecord> topQueriesStore;
+    private final PriorityBlockingQueue<SearchQueryRecord> topQueriesStore;
 
     /**
      * The AtomicReference of a snapshot of the current window top queries for getters to consume
@@ -110,7 +110,7 @@ public class TopQueriesService {
         this.windowSize = QueryInsightsSettings.DEFAULT_WINDOW_SIZE;
         this.windowStart = -1L;
         this.exporter = null;
-        topQueriesStore = new PriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
+        topQueriesStore = new PriorityBlockingQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
         queryGrouper = new QueryGrouper(
