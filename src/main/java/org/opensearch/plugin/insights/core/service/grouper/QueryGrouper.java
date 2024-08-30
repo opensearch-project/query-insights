@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import org.opensearch.plugin.insights.core.service.store.TopQueriesStore;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
@@ -28,13 +27,6 @@ public interface QueryGrouper {
      * Drain the internal grouping. Needs to be performed after every window or if a setting is changed.
      */
     void drain();
-
-    /**
-     * Get the min heap queue that holds the top N queries.
-     *
-     * @return the TopQueriesStore containing the top N queries
-     */
-    TopQueriesStore<SearchQueryRecord> getTopQueriesStore();
 
     /**
      * Set the grouping type for this grouper.

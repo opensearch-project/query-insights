@@ -156,11 +156,6 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         minHeapTopQueriesStore.clear();
     }
 
-    @Override
-    public TopQueriesStore<SearchQueryRecord> getTopQueriesStore() {
-        return this.minHeapTopQueriesStore;
-    }
-
     /**
      * Set Grouping Type
      * @param newGroupingType grouping type
