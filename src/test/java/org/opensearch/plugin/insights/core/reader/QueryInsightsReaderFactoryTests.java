@@ -36,7 +36,6 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
 
     public void testValidateConfigWhenResetReader() {
         Settings.Builder settingsBuilder = Settings.builder();
-        // empty settings
         Settings settings = settingsBuilder.build();
         try {
             queryInsightsReaderFactory.validateReaderConfig(settings);
