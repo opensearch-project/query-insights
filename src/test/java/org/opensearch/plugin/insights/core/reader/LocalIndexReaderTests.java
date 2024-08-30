@@ -65,8 +65,8 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
 
         BytesReference sourceRef;
         try (XContentBuilder builder = XContentFactory.jsonBuilder()) {
-            builder.map(sourceMap); // Writes the map to XContentBuilder
-            sourceRef = BytesReference.bytes(builder); // Converts XContentBuilder to BytesReference
+            builder.map(sourceMap);
+            sourceRef = BytesReference.bytes(builder);
         } catch (IOException e) {
             throw new RuntimeException("Failed to build XContent", e);
         }
