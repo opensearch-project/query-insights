@@ -105,10 +105,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
 
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
-        setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
-
+        // Settings endpoints set for grouping top n queries
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
                 TOP_N_QUERIES_GROUP_BY,
