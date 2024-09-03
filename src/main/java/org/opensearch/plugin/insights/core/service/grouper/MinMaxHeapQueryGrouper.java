@@ -93,7 +93,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         this.groupIdToAggSearchQueryRecord = new ConcurrentHashMap<>();
         this.minHeapTopQueriesStore = topQueriesStore;
         this.topNSize = topNSize;
-        this.maxGroups = QueryInsightsSettings.DEFAULT_MAX_GROUPS;
+        this.maxGroups = QueryInsightsSettings.DEFAULT_GROUPS_LIMIT;
         this.maxHeapQueryStore = new PriorityBlockingQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
     }
 
