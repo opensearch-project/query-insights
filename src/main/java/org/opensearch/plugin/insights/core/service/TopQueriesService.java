@@ -184,11 +184,17 @@ public class TopQueriesService {
     }
 
     public void setGrouping(final GroupingType groupingType) {
-        queryGrouper.setGroupingType(groupingType);
+        boolean changed = queryGrouper.setGroupingType(groupingType);
+        if (changed) {
+            drain();
+        }
     }
 
     public void setMaxGroups(final int maxGroups) {
-        queryGrouper.setMaxGroups(maxGroups);
+        boolean changed = queryGrouper.setMaxGroups(maxGroups);
+        if (changed) {
+            drain();
+        }
     }
 
     /**
@@ -398,5 +404,14 @@ public class TopQueriesService {
      */
     public void close() throws IOException {
         queryInsightsExporterFactory.closeExporter(this.exporter);
+    }
+
+    /**
+     * Drain internal stores.
+     */
+    private void drain() {
+        topQueriesStore.clear();
+        topQueriesHistorySnapshot.set(new ArrayList<>());
+        topQueriesCurrentSnapshot.set(new ArrayList<>());
     }
 }

@@ -32,8 +32,9 @@ public interface QueryGrouper {
      * Set the grouping type for this grouper.
      *
      * @param groupingType the grouping type to set
+     * @return grouping type changed
      */
-    void setGroupingType(GroupingType groupingType);
+    boolean setGroupingType(GroupingType groupingType);
 
     /**
      * Get the current grouping type for this grouper.
@@ -46,8 +47,9 @@ public interface QueryGrouper {
      * Set the maximum number of groups allowed.
      *
      * @param maxGroups the maximum number of groups
+     * @return max groups changed
      */
-    void setMaxGroups(int maxGroups);
+    boolean setMaxGroups(int maxGroups);
 
     /**
      * Update the top N size for the grouper.

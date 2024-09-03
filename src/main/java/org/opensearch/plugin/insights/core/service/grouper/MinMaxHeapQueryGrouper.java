@@ -158,13 +158,17 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     /**
      * Set Grouping Type
      * @param newGroupingType grouping type
+     * @return grouping type changed
      */
     @Override
-    public void setGroupingType(GroupingType newGroupingType) {
+    public boolean setGroupingType(GroupingType newGroupingType) {
         if (this.groupingType != newGroupingType) {
+            log.info("deshsid setting grouping type in grouper to : " + newGroupingType);
             this.groupingType = newGroupingType;
             drain();
+            return true;
         }
+        return false;
     }
 
     /**
@@ -180,13 +184,16 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * Set the maximum number of groups that should be tracked when calculating Top N groups.
      * If the value changes, reset the state of the query grouper service by draining all internal data.
      * @param maxGroups max number of groups
+     * @return max groups changed
      */
     @Override
-    public void setMaxGroups(int maxGroups) {
+    public boolean setMaxGroups(int maxGroups) {
         if (this.maxGroups != maxGroups) {
             this.maxGroups = maxGroups;
             drain();
+            return true;
         }
+        return false;
     }
 
     /**
