@@ -194,7 +194,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "}";
     }
 
-
     protected String defaultTopQueryGroupingSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
@@ -248,38 +247,32 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         switch (queryType) {
             case "match":
                 // Query shape 1: Match query
-                return "{\n" +
-                    "  \"query\": {\n" +
-                    "    \"match\": {\n" +
-                    "      \"field1\": \"value1\"\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}";
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"field1\": \"value1\"\n" + "    }\n" + "  }\n" + "}";
 
             case "range":
                 // Query shape 2: Range query
-                return "{\n" +
-                    "  \"query\": {\n" +
-                    "    \"range\": {\n" +
-                    "      \"field2\": {\n" +
-                    "        \"gte\": 10,\n" +
-                    "        \"lte\": 50\n" +
-                    "      }\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}";
+                return "{\n"
+                    + "  \"query\": {\n"
+                    + "    \"range\": {\n"
+                    + "      \"field2\": {\n"
+                    + "        \"gte\": 10,\n"
+                    + "        \"lte\": 50\n"
+                    + "      }\n"
+                    + "    }\n"
+                    + "  }\n"
+                    + "}";
 
             case "term":
                 // Query shape 3: Term query
-                return "{\n" +
-                    "  \"query\": {\n" +
-                    "    \"term\": {\n" +
-                    "      \"field3\": {\n" +
-                    "        \"value\": \"exact-value\"\n" +
-                    "      }\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}";
+                return "{\n"
+                    + "  \"query\": {\n"
+                    + "    \"term\": {\n"
+                    + "      \"field3\": {\n"
+                    + "        \"value\": \"exact-value\"\n"
+                    + "      }\n"
+                    + "    }\n"
+                    + "  }\n"
+                    + "}";
 
             default:
                 throw new IllegalArgumentException("Unknown query type: " + queryType);

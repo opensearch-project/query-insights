@@ -7,14 +7,13 @@
  */
 package org.opensearch.plugin.insights.core.service.grouper;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * ITs for Grouping Top Queries by none
@@ -60,16 +59,14 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
     }
 
     private String groupByNoneSettings() {
-        return "{\n" +
-            "    \"persistent\" : {\n" +
-            "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n" +
-            "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n" +
-            "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n" +
-            "        \"search.insights.top_queries.group_by\" : \"none\",\n" +
-            "        \"search.insights.top_queries.max_groups\" : 5\n" +
-            "    }\n" +
-            "}";
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\",\n"
+            + "        \"search.insights.top_queries.max_groups\" : 5\n"
+            + "    }\n"
+            + "}";
     }
 }
-
-

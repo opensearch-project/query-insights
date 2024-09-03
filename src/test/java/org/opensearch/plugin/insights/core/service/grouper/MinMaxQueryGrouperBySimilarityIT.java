@@ -7,15 +7,14 @@
  */
 package org.opensearch.plugin.insights.core.service.grouper;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * ITs for Grouping Top Queries by similarity
@@ -98,63 +97,40 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
     private String[] invalidQueryGroupingSettings() {
         return new String[] {
             // Invalid max_groups: below minimum (0)
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.max_groups\" : 0\n" +
-                "    }\n" +
-                "}",
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.max_groups\" : 0\n" + "    }\n" + "}",
 
             // Invalid max_groups: above maximum (10001)
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.max_groups\" : 10001\n" +
-                "    }\n" +
-                "}",
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.max_groups\" : 10001\n" + "    }\n" + "}",
 
             // Invalid group_by: unsupported value
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.group_by\" : \"unsupported_value\"\n" +
-                "    }\n" +
-                "}"
-        };
+            "{\n"
+                + "    \"persistent\" : {\n"
+                + "        \"search.insights.top_queries.group_by\" : \"unsupported_value\"\n"
+                + "    }\n"
+                + "}" };
     }
 
     private String[] validQueryGroupingSettings() {
-        return new String[]{
+        return new String[] {
             // Valid max_groups: minimum value (1)
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.max_groups\" : 1\n" +
-                "    }\n" +
-                "}",
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.max_groups\" : 1\n" + "    }\n" + "}",
 
             // Valid max_groups: maximum value (10000)
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.max_groups\" : 10000\n" +
-                "    }\n" +
-                "}",
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.max_groups\" : 10000\n" + "    }\n" + "}",
 
             // Valid group_by: supported value (SIMILARITY)
-            "{\n" +
-                "    \"persistent\" : {\n" +
-                "        \"search.insights.top_queries.group_by\" : \"SIMILARITY\"\n" +
-                "    }\n" +
-                "}"
-        };
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.group_by\" : \"SIMILARITY\"\n" + "    }\n" + "}" };
     }
 
     private String groupByNoneSettings() {
-        return "{\n" +
-            "    \"persistent\" : {\n" +
-            "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n" +
-            "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n" +
-            "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n" +
-            "        \"search.insights.top_queries.group_by\" : \"none\",\n" +
-            "        \"search.insights.top_queries.max_groups\" : 5\n" +
-            "    }\n" +
-            "}";
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\",\n"
+            + "        \"search.insights.top_queries.max_groups\" : 5\n"
+            + "    }\n"
+            + "}";
     }
 }
-
