@@ -8,9 +8,7 @@
 package org.opensearch.plugin.insights.core.service.grouper;
 
 import java.io.IOException;
-import org.junit.Assert;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /**
  * ITs for Grouping Top Queries by none

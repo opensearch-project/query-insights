@@ -1,10 +1,14 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import org.junit.Assert;
-import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
-
 import java.io.IOException;
+import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
     /**

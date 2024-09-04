@@ -8,12 +8,10 @@
 package org.opensearch.plugin.insights.core.service.grouper;
 
 import java.io.IOException;
-import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /**
  * ITs for Grouping Top Queries by similarity

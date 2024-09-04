@@ -11,8 +11,6 @@ package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -21,7 +19,6 @@ import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /** Rest Action tests for Top Queries */
 public class TopQueriesRestIT extends QueryInsightsRestTestCase {

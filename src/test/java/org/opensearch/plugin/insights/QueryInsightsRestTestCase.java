@@ -348,7 +348,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         String endpoint = "/_insights/top_queries?pretty";
 
         if (type != null) {
-            switch (type.toLowerCase()) {
+            switch (type) {
                 case "cpu":
                 case "memory":
                 case "latency":
@@ -371,7 +371,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         return responseBody;
     }
-
 
     protected void updateClusterSettings(Supplier<String> settingsSupplier) throws IOException {
         Request request = new Request("PUT", "/_cluster/settings");
