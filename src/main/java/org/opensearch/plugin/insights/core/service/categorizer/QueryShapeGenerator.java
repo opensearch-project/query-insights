@@ -90,6 +90,12 @@ public class QueryShapeGenerator {
         return MurmurHash3.hash128(shapeBytes.bytes, 0, shapeBytes.length, 0, new MurmurHash3.Hash128());
     }
 
+    public static String getShapeHashCodeAsString(SearchSourceBuilder source, Boolean showFields) {
+        MurmurHash3.Hash128 hashcode = getShapeHashCode(source, showFields);
+        String hashAsString = Long.toHexString(hashcode.h1) + Long.toHexString(hashcode.h2);
+        return hashAsString;
+    }
+
     /**
      * Method to build search query shape given a source
      * @param source search request source
