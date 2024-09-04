@@ -33,23 +33,7 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
         doSearch("match", 6);
         doSearch("term", 4);
 
-        // Ensure records are drained to the top queries service
-        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-
-        // run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
-            String responseBody = getTopQueries();
-
-            int topNArraySize = countTopQueries(responseBody);
-
-            if (topNArraySize == 0) {
-                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-                continue;
-            }
-
-            // Validate that all queries are listed separately (no grouping)
-            Assert.assertEquals(12, topNArraySize);
-        }
+        assertTopQueriesCount(12, "latency");
     }
 
     private String groupByNoneSettings() {

@@ -46,6 +46,7 @@ import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.MediaType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
@@ -321,14 +322,56 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
-    protected String getTopQueries() throws IOException {
-        Request request = new Request("GET", "/_insights/top_queries?pretty");
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
+        // Ensure records are drained to the top queries service
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+
+        // run five times to make sure the records are drained to the top queries services
+        for (int i = 0; i < 5; i++) {
+            String responseBody = getTopQueries(type);
+
+            int topNArraySize = countTopQueries(responseBody);
+
+            if (topNArraySize < expectedTopQueriesCount) {
+                // Ensure records are drained to the top queries service
+                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+                continue;
+            }
+
+            // Validate that all queries are listed separately (no grouping)
+            Assert.assertEquals(expectedTopQueriesCount, topNArraySize);
+        }
+    }
+
+    protected String getTopQueries(String type) throws IOException {
+        // Base URL
+        String endpoint = "/_insights/top_queries?pretty";
+
+        if (type != null) {
+            switch (type.toLowerCase()) {
+                case "cpu":
+                case "memory":
+                case "latency":
+                    endpoint = "/_insights/top_queries?type=" + type + "&pretty";
+                    break;
+                case "all":
+                    // Keep the default endpoint (no type parameter)
+                    break;
+                default:
+                    // Throw an exception if the type is invalid
+                    throw new IllegalArgumentException("Invalid type: " + type + ". Valid types are 'all', 'cpu', 'memory', or 'latency'.");
+            }
+        }
+
+        Request request = new Request("GET", endpoint);
         Response response = client().performRequest(request);
+
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
 
         String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         return responseBody;
     }
+
 
     protected void updateClusterSettings(Supplier<String> settingsSupplier) throws IOException {
         Request request = new Request("PUT", "/_cluster/settings");

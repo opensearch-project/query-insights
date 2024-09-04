@@ -11,6 +11,8 @@ package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -55,19 +57,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         doSearch(2);
 
-        // run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
-            String responseBody = getTopQueries();
-
-            int topNArraySize = countTopQueries(responseBody);
-
-            if (topNArraySize == 0) {
-                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-                continue;
-            }
-
-            Assert.assertEquals(2, topNArraySize);
-        }
+        assertTopQueriesCount(2, "latency");
 
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
@@ -75,19 +65,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         // Do Search
         doSearch(2);
 
-        // Run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
-            String responseBody = getTopQueries();
-
-            int topNArraySize = countTopQueries(responseBody);
-
-            if (topNArraySize == 0) {
-                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-                continue;
-            }
-
-            Assert.assertEquals(2, topNArraySize);
-        }
+        assertTopQueriesCount(2, "cpu");
     }
 
     /**
@@ -112,10 +90,10 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.memory.window_size\" : \"600s\",\n"
+            + "        \"search.insights.top_queries.memory.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.memory.top_n_size\" : \"5\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.cpu.window_size\" : \"600s\",\n"
+            + "        \"search.insights.top_queries.cpu.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.cpu.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
             + "    }\n"
