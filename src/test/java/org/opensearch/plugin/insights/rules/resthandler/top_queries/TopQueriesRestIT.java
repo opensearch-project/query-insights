@@ -52,53 +52,41 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         waitForEmptyTopQueriesResponse();
 
         // Enable Top N Queries feature
-        Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(defaultTopQueriesSettings());
-        Response response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::defaultTopQueriesSettings);
+
         doSearch(2);
+
         // run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
-            // Get Top Queries
-            request = new Request("GET", "/_insights/top_queries?pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String topRequests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(topRequests.contains("top_queries"));
+            String responseBody = getTopQueries();
 
-            int topNArraySize = countTopQueries(topRequests);
+            int topNArraySize = countTopQueries(responseBody);
 
             if (topNArraySize == 0) {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
                 continue;
             }
+
             Assert.assertEquals(2, topNArraySize);
         }
 
         // Enable Top N Queries by resource usage
-        request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(topQueriesByResourceUsagesSettings());
-        response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::topQueriesByResourceUsagesSettings);
+
         // Do Search
         doSearch(2);
 
         // Run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
-            // Get Top Queries
-            request = new Request("GET", "/_insights/top_queries?type=cpu&pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String topRequests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(topRequests.contains("top_queries"));
+            String responseBody = getTopQueries();
 
-            // Use the countTopQueries method to determine the number of top queries
-            int topNArraySize = countTopQueries(topRequests);
+            int topNArraySize = countTopQueries(responseBody);
 
             if (topNArraySize == 0) {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
                 continue;
             }
+            
             Assert.assertEquals(2, topNArraySize);
         }
     }

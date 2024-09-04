@@ -30,11 +30,7 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
 
         waitForEmptyTopQueriesResponse();
 
-        // Enable top N feature and grouping feature
-        Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(defaultTopQueryGroupingSettings());
-        Response response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::defaultTopQueryGroupingSettings);
 
         // Search
         doSearch("range", 2);
@@ -43,14 +39,8 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
 
         // run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
-            // Get Top Queries
-            request = new Request("GET", "/_insights/top_queries?pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            String responseBody = getTopQueries();
 
-            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-
-            // Extract and count top_queries
             int topNArraySize = countTopQueries(responseBody);
 
             if (topNArraySize == 0) {
@@ -58,6 +48,7 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
                 continue;
             }
 
+            // Validate that all queries are grouped
             Assert.assertEquals(3, topNArraySize);
         }
     }

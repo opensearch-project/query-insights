@@ -29,11 +29,7 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
 
         waitForEmptyTopQueriesResponse();
 
-        // Enable top N feature and grouping by none
-        Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(groupByNoneSettings());
-        Response response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::groupByNoneSettings);
 
         // Search
         doSearch("range", 2);
@@ -45,16 +41,17 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
 
         // run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
-            // Get Top Queries and validate
-            request = new Request("GET", "/_insights/top_queries?pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            String responseBody = getTopQueries();
 
-            int top_n_array_size = countTopQueries(top_requests);
+            int topNArraySize = countTopQueries(responseBody);
+
+            if (topNArraySize == 0) {
+                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+                continue;
+            }
 
             // Validate that all queries are listed separately (no grouping)
-            Assert.assertEquals(12, top_n_array_size);
+            Assert.assertEquals(12, topNArraySize);
         }
     }
 

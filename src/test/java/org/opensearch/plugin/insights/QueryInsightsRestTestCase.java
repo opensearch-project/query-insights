@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -320,4 +321,19 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
+    protected String getTopQueries() throws IOException {
+        Request request = new Request("GET", "/_insights/top_queries?pretty");
+        Response response = client().performRequest(request);
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+
+        String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        return responseBody;
+    }
+
+    protected void updateClusterSettings(Supplier<String> settingsSupplier) throws IOException {
+        Request request = new Request("PUT", "/_cluster/settings");
+        request.setJsonEntity(settingsSupplier.get());
+        Response response = client().performRequest(request);
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+    }
 }
