@@ -8,7 +8,6 @@
 package org.opensearch.plugin.insights.core.service.grouper;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;

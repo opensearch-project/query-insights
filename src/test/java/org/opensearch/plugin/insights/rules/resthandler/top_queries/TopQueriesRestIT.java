@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.Assert;
@@ -86,7 +85,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
                 continue;
             }
-            
+
             Assert.assertEquals(2, topNArraySize);
         }
     }
