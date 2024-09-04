@@ -251,7 +251,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     }
 
     private boolean checkMaxGroupsLimitReached(String groupId) {
-        if (maxGroups <= maxHeapQueryStore.size()) {
+        if (maxGroups <= maxHeapQueryStore.size() && minHeapTopQueriesStore.size() >= topNSize) {
             log.warn(
                 "Exceeded [{}] setting threshold which is set at {}. Discarding new group with id {}.",
                 TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N.getKey(),
