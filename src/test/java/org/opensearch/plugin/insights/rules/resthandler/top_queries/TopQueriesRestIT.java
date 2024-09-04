@@ -49,6 +49,8 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
+        waitForEmptyTopQueriesResponse();
+
         // Enable Top N Queries feature
         Request request = new Request("PUT", "/_cluster/settings");
         request.setJsonEntity(defaultTopQueriesSettings());
@@ -61,14 +63,16 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
             request = new Request("GET", "/_insights/top_queries?pretty");
             response = client().performRequest(request);
             Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(top_requests.contains("top_queries"));
-            int top_n_array_size = top_requests.split("timestamp", -1).length - 1;
-            if (top_n_array_size == 0) {
+            String topRequests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            Assert.assertTrue(topRequests.contains("top_queries"));
+
+            int topNArraySize = countTopQueries(topRequests);
+
+            if (topNArraySize == 0) {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
                 continue;
             }
-            Assert.assertEquals(2, top_n_array_size);
+            Assert.assertEquals(2, topNArraySize);
         }
 
         // Enable Top N Queries by resource usage
@@ -78,20 +82,24 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         // Do Search
         doSearch(2);
-        // run five times to make sure the records are drained to the top queries services
+
+        // Run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
             // Get Top Queries
             request = new Request("GET", "/_insights/top_queries?type=cpu&pretty");
             response = client().performRequest(request);
             Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(top_requests.contains("top_queries"));
-            int top_n_array_size = top_requests.split("timestamp", -1).length - 1;
-            if (top_n_array_size == 0) {
+            String topRequests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            Assert.assertTrue(topRequests.contains("top_queries"));
+
+            // Use the countTopQueries method to determine the number of top queries
+            int topNArraySize = countTopQueries(topRequests);
+
+            if (topNArraySize == 0) {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
                 continue;
             }
-            Assert.assertEquals(2, top_n_array_size);
+            Assert.assertEquals(2, topNArraySize);
         }
     }
 
@@ -121,7 +129,8 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
             + "        \"search.insights.top_queries.memory.top_n_size\" : \"5\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.cpu.window_size\" : \"600s\",\n"
-            + "        \"search.insights.top_queries.cpu.top_n_size\" : 5\n"
+            + "        \"search.insights.top_queries.cpu.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
             + "    }\n"
             + "}";
     }
