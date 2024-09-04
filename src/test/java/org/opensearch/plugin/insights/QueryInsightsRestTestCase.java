@@ -201,7 +201,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.group_by\" : \"similarity\",\n"
-            + "        \"search.insights.top_queries.max_groups\" : 5\n"
+            + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 5\n"
             + "    }\n"
             + "}";
     }
