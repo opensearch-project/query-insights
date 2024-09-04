@@ -6,6 +6,8 @@ Compatible with OpenSearch 2.17.0
 * Fix security based integration tests ([#59](https://github.com/opensearch-project/query-insights/pull/59))
 * Add query shape hash method ([#64](https://github.com/opensearch-project/query-insights/pull/64))
 * Add more integration tests for query insights ([#71](https://github.com/opensearch-project/query-insights/pull/71))
+* Query grouping integration tests ([#85](https://github.com/opensearch-project/query-insights/pull/85))
+* Add additional grouping ITs and refactor ([#89](https://github.com/opensearch-project/query-insights/pull/89))
 
 ### Bug Fixes
 * Make sure listener is started when query metrics enabled ([#74](https://github.com/opensearch-project/query-insights/pull/74))
