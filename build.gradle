@@ -81,6 +81,37 @@ publishing {
       }
     }
   }
+    publications {
+        pluginZip(MavenPublication) { publication ->
+            pom {
+              name = pluginName
+              description = pluginDescription
+              groupId = "org.opensearch.plugin"
+              licenses {
+                license {
+                  name = "The Apache License, Version 2.0"
+                  url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                }
+              }
+              developers {
+                developer {
+                  name = "OpenSearch"
+                  url = "https://github.com/opensearch-project/opensearch-plugin-template-java"
+                }
+              }
+            }
+        }
+    }
+  repositories {
+    maven {
+      name = "Snapshots"
+      url = "https://aws.oss.sonatype.org/content/repositories/snapshots"
+      credentials {
+        username "$System.env.SONATYPE_USERNAME"
+        password "$System.env.SONATYPE_PASSWORD"
+      }
+    }
+  }
 }
 
 checkstyle {
