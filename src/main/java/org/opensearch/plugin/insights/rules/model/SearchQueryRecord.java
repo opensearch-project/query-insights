@@ -9,9 +9,11 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.opensearch.Version;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -41,11 +43,22 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public SearchQueryRecord(final StreamInput in) throws IOException, ClassCastException {
         this.timestamp = in.readLong();
-        measurements = new LinkedHashMap<>();
-        in.readOrderedMap(MetricType::readFromStream, Measurement::readFromStream)
-            .forEach(((metricType, measurement) -> measurements.put(metricType, measurement)));
+        if (in.getVersion().onOrAfter(Version.V_2_17_0)) {
+            measurements = new LinkedHashMap<>();
+            in.readOrderedMap(MetricType::readFromStream, Measurement::readFromStream)
+                .forEach(((metricType, measurement) -> measurements.put(metricType, measurement)));
+            this.groupingId = null;
+        } else {
+            measurements = new HashMap<>();
+            in.readMap(MetricType::readFromStream, StreamInput::readGenericValue).forEach((metricType, o) -> {
+                try {
+                    measurements.put(metricType, new Measurement(metricType.parseValue(o)));
+                } catch (ClassCastException e) {
+                    throw new ClassCastException("Error parsing value for metric type: " + metricType);
+                }
+            });
+        }
         this.attributes = Attribute.readAttributeMap(in);
-        this.groupingId = null;
     }
 
     /**
@@ -155,11 +168,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
-        out.writeMap(
-            measurements,
-            (stream, metricType) -> MetricType.writeTo(out, metricType),
-            (stream, measurement) -> measurement.writeTo(out)
-        );
+        if (out.getVersion().onOrAfter(Version.V_2_17_0)) {
+            out.writeMap(
+                measurements,
+                (stream, metricType) -> MetricType.writeTo(out, metricType),
+                (stream, measurement) -> measurement.writeTo(out)
+            );
+        } else {
+            out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
+        }
         out.writeMap(
             attributes,
             (stream, attribute) -> Attribute.writeTo(out, attribute),

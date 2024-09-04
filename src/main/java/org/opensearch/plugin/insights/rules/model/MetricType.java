@@ -96,4 +96,21 @@ public enum MetricType implements Comparator<Number> {
         }
         return -1;
     }
+
+    /**
+     * Parse a value with the correct type based on MetricType
+     *
+     * @param o the generic object to parse
+     * @return {@link Number}
+     */
+    Number parseValue(final Object o) {
+        switch (this) {
+            case LATENCY:
+            case CPU:
+            case MEMORY:
+                return (Long) o;
+            default:
+                return (Number) o;
+        }
+    }
 }

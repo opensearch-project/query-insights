@@ -117,7 +117,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
-                    TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
+                TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
                 v -> this.queryInsightsService.setMaximumGroups(v),
                 v -> this.queryInsightsService.validateMaximumGroups(v)
             );
