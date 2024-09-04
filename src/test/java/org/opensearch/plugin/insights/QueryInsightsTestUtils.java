@@ -25,9 +25,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import org.opensearch.action.search.SearchType;
@@ -39,7 +41,9 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
@@ -57,17 +61,23 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0);
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFAULT_AGGREGATION_TYPE);
     }
 
     /**
-     * Returns list of randomly generated search query records.
+     * Returns list of randomly generated search query records with specific searchSourceBuilder
      * @param count number of records
      * @param searchSourceBuilder source
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count, SearchSourceBuilder searchSourceBuilder) {
-        List<SearchQueryRecord> records = generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0);
+        List<SearchQueryRecord> records = generateQueryInsightRecords(
+            count,
+            count,
+            System.currentTimeMillis(),
+            0,
+            AggregationType.DEFAULT_AGGREGATION_TYPE
+        );
         for (SearchQueryRecord record : records) {
             record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
         }
@@ -75,23 +85,45 @@ final public class QueryInsightsTestUtils {
     }
 
     /**
+     * Returns list of randomly generated search query records with specific aggregation type for measurements
+     * @param count number of records
+     * @param aggregationType source
+     * @return List of records
+     */
+    public static List<SearchQueryRecord> generateQueryInsightRecords(int count, AggregationType aggregationType) {
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, aggregationType);
+    }
+
+    /**
      * Creates a List of random Query Insight Records for testing purpose
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int lower, int upper, long startTimeStamp, long interval) {
+        return generateQueryInsightRecords(lower, upper, startTimeStamp, interval, AggregationType.NONE);
+    }
+
+    /**
+     * Creates a List of random Query Insight Records for testing purpose with dimenstion type specified
+     */
+    public static List<SearchQueryRecord> generateQueryInsightRecords(
+        int lower,
+        int upper,
+        long startTimeStamp,
+        long interval,
+        AggregationType aggregationType
+    ) {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
         long timestamp = startTimeStamp;
         for (int i = 0; i < countOfRecords; ++i) {
-            Map<MetricType, Number> measurements = Map.of(
-                MetricType.LATENCY,
-                randomLongBetween(1000, 10000),
-                MetricType.CPU,
-                randomLongBetween(1000, 10000),
-                MetricType.MEMORY,
-                randomLongBetween(1000, 10000)
-            );
+            long latencyValue = randomLongBetween(1000, 10000); // Replace with actual method to generate a random long
+            long cpuValue = randomLongBetween(1000, 10000);
+            long memoryValue = randomLongBetween(1000, 10000);
+            Map<MetricType, Measurement> measurements = new LinkedHashMap<>();
+            measurements.put(MetricType.LATENCY, new Measurement(latencyValue, aggregationType));
+            measurements.put(MetricType.CPU, new Measurement(cpuValue, aggregationType));
+            measurements.put(MetricType.MEMORY, new Measurement(memoryValue, aggregationType));
 
-            Map<String, Long> phaseLatencyMap = new HashMap<>();
+            Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
             int countOfPhases = randomIntBetween(2, 5);
             for (int j = 0; j < countOfPhases; ++j) {
                 phaseLatencyMap.put(randomAlphaOfLengthBetween(5, 10), randomLong());
@@ -106,6 +138,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
+            attributes.put(Attribute.QUERY_HASHCODE, Objects.hashCode(i));
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -130,6 +163,49 @@ final public class QueryInsightsTestUtils {
             timestamp += interval;
         }
         return records;
+    }
+
+    public static List<SearchQueryRecord> generateQueryInsightsRecordsWithMeasurement(
+        int count,
+        MetricType metricType,
+        Number measurement
+    ) {
+        List<SearchQueryRecord> records = generateQueryInsightRecords(count);
+
+        for (SearchQueryRecord record : records) {
+            record.getMeasurements().get(metricType).setMeasurement(measurement);
+        }
+        return records;
+    }
+
+    public static List<List<SearchQueryRecord>> generateMultipleQueryInsightsRecordsWithMeasurement(
+        int count,
+        MetricType metricType,
+        List<Number> measurements
+    ) {
+        List<List<SearchQueryRecord>> multipleRecordLists = new ArrayList<>();
+
+        for (int i = 0; i < measurements.size(); i++) {
+            List<SearchQueryRecord> records = generateQueryInsightRecords(count);
+            multipleRecordLists.add(records);
+            for (SearchQueryRecord record : records) {
+                record.getMeasurements().get(metricType).setMeasurement(measurements.get(i));
+            }
+            QueryInsightsTestUtils.populateHashcode(records, i);
+        }
+        return multipleRecordLists;
+    }
+
+    public static void populateSameQueryHashcodes(List<SearchQueryRecord> searchQueryRecords) {
+        for (SearchQueryRecord record : searchQueryRecords) {
+            record.getAttributes().put(Attribute.QUERY_HASHCODE, 1);
+        }
+    }
+
+    public static void populateHashcode(List<SearchQueryRecord> searchQueryRecords, int hash) {
+        for (SearchQueryRecord record : searchQueryRecords) {
+            record.getAttributes().put(Attribute.QUERY_HASHCODE, hash);
+        }
     }
 
     public static TopQueries createRandomTopQueries() {
@@ -161,7 +237,7 @@ final public class QueryInsightsTestUtils {
 
     public static SearchQueryRecord createFixedSearchQueryRecord() {
         long timestamp = 1706574180000L;
-        Map<MetricType, Number> measurements = Map.of(MetricType.LATENCY, 1L);
+        Map<MetricType, Measurement> measurements = Map.of(MetricType.LATENCY, new Measurement(1L));
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
@@ -246,6 +322,8 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
     }
 }
