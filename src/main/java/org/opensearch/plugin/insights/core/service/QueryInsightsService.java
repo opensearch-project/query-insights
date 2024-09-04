@@ -233,9 +233,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
      */
     public void validateMaximumGroups(final int maxGroups) {
-        if (maxGroups < 1 || maxGroups > QueryInsightsSettings.MAX_GROUPS_LIMIT) {
+        if (maxGroups < 0 || maxGroups > QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT) {
             throw new IllegalArgumentException(
-                "Max groups setting" + " should be between 1 and " + QueryInsightsSettings.MAX_GROUPS_LIMIT + ", was (" + maxGroups + ")"
+                "Max groups setting" + " should be between 0 and " + QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT + ", was (" + maxGroups + ")"
             );
         }
     }

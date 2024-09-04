@@ -71,9 +71,9 @@ public class QueryInsightsSettings {
     public static final String PLUGINS_BASE_URI = "/_insights";
 
     public static final GroupingType DEFAULT_GROUPING_TYPE = GroupingType.NONE;
-    public static final int DEFAULT_GROUPS_LIMIT = 100;
+    public static final int DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT = 100;
 
-    public static final int MAX_GROUPS_LIMIT = 10000;
+    public static final int MAX_GROUPS_EXCLUDING_TOPN_LIMIT = 10000;
 
     /**
      * Settings for Top Queries
@@ -129,11 +129,11 @@ public class QueryInsightsSettings {
     );
 
     /**
-     * Define the group_by option for Top N queries to group queries.
+     * Define the max_groups_excluding_topn option for Top N queries to group queries.
      */
-    public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS = Setting.intSetting(
-        TOP_N_QUERIES_SETTING_PREFIX + ".max_groups",
-        DEFAULT_GROUPS_LIMIT,
+    public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_groups_excluding_topn",
+        DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );

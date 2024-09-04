@@ -8,7 +8,7 @@
 
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
@@ -92,7 +92,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         this.groupIdToAggSearchQueryRecord = new ConcurrentHashMap<>();
         this.minHeapTopQueriesStore = topQueriesStore;
         this.topNSize = topNSize;
-        this.maxGroups = QueryInsightsSettings.DEFAULT_GROUPS_LIMIT;
+        this.maxGroups = QueryInsightsSettings.DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT;
         this.maxHeapQueryStore = new PriorityBlockingQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
     }
 
@@ -163,7 +163,6 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     @Override
     public boolean setGroupingType(GroupingType newGroupingType) {
         if (this.groupingType != newGroupingType) {
-            log.info("deshsid setting grouping type in grouper to : " + newGroupingType);
             this.groupingType = newGroupingType;
             drain();
             return true;
@@ -255,7 +254,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         if (maxGroups <= maxHeapQueryStore.size()) {
             log.warn(
                 "Exceeded [{}] setting threshold which is set at {}. Discarding new group with id {}.",
-                TOP_N_QUERIES_MAX_GROUPS.getKey(),
+                TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N.getKey(),
                 maxGroups,
                 groupId
             );
