@@ -206,7 +206,6 @@ public class QueryInsightsSettings {
      * Config key for export index
      */
     public static final String EXPORT_INDEX = "config.index";
-
     /**
      * Settings and defaults for top queries exporters
      */

@@ -21,23 +21,31 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.joda.time.DateTime;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -88,6 +96,11 @@ public class TopQueriesService {
     private final QueryInsightsExporterFactory queryInsightsExporterFactory;
 
     /**
+     * Factory for validating and creating readers
+     */
+    private final QueryInsightsReaderFactory queryInsightsReaderFactory;
+
+    /**
      * The internal OpenSearch thread pool that execute async processing and exporting tasks
      */
     private final ThreadPool threadPool;
@@ -96,22 +109,26 @@ public class TopQueriesService {
      * Exporter for exporting top queries data
      */
     private QueryInsightsExporter exporter;
+    private QueryInsightsReader reader;
 
     private QueryGrouper queryGrouper;
 
     TopQueriesService(
         final MetricType metricType,
         final ThreadPool threadPool,
-        final QueryInsightsExporterFactory queryInsightsExporterFactory
+        final QueryInsightsExporterFactory queryInsightsExporterFactory,
+        QueryInsightsReaderFactory queryInsightsReaderFactory
     ) {
         this.enabled = false;
         this.metricType = metricType;
         this.threadPool = threadPool;
         this.queryInsightsExporterFactory = queryInsightsExporterFactory;
+        this.queryInsightsReaderFactory = queryInsightsReaderFactory;
         this.topNSize = QueryInsightsSettings.DEFAULT_TOP_N_SIZE;
         this.windowSize = QueryInsightsSettings.DEFAULT_WINDOW_SIZE;
         this.windowStart = -1L;
         this.exporter = null;
+        this.reader = null;
         topQueriesStore = new PriorityBlockingQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
@@ -266,13 +283,47 @@ public class TopQueriesService {
     }
 
     /**
-     * Validate provided settings for top queries exporter
+     * Set up the top queries reader based on provided settings
      *
-     * @param settings settings exporter config {@link Settings}
+     * @param settings reader config {@link Settings}
+     * @param namedXContentRegistry NamedXContentRegistry for parsing purposes
      */
-    public void validateExporterConfig(Settings settings) {
-        queryInsightsExporterFactory.validateExporterConfig(settings);
+    public void setReader(final Settings settings, final NamedXContentRegistry namedXContentRegistry) {
+        this.reader = queryInsightsReaderFactory.createReader(
+            settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN),
+            namedXContentRegistry
+        );
+        queryInsightsReaderFactory.updateReader(reader, settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN));
     }
+
+    /**
+     * Validate provided settings for top queries exporter and reader
+     *
+     * @param settings settings exporter/reader config {@link Settings}
+     */
+    public void validateExporterAndReaderConfig(Settings settings) {
+        queryInsightsExporterFactory.validateExporterConfig(settings);
+        queryInsightsReaderFactory.validateReaderConfig(settings);
+    }
+
+    /**
+     * Lambda function to mark if a record is internal
+     */
+    private final Predicate<SearchQueryRecord> checkIfInternal = (record) -> {
+        Map<Attribute, Object> attributes = record.getAttributes();
+        Object indicesObject = attributes.get(Attribute.INDICES);
+        if (indicesObject instanceof Object[]) {
+            Object[] indices = (Object[]) indicesObject;
+            return Arrays.stream(indices).noneMatch(index -> {
+                if (index instanceof String) {
+                    String indexString = (String) index;
+                    return indexString.contains("top_queries");
+                }
+                return false;
+            });
+        }
+        return true;
+    };
 
     /**
      * Get all top queries records that are in the current top n queries store
@@ -281,10 +332,13 @@ public class TopQueriesService {
      * By default, return the records in sorted order.
      *
      * @param includeLastWindow if the top N queries from the last window should be included
+     * @param from start timestamp
+     * @param to end timestamp
      * @return List of the records that are in the query insight store
-     * @throws IllegalArgumentException if query insight is disabled in the cluster
+     * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow) throws IllegalArgumentException {
+    public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to)
+        throws IllegalArgumentException {
         if (!enabled) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
@@ -294,6 +348,53 @@ public class TopQueriesService {
         final List<SearchQueryRecord> queries = new ArrayList<>(topQueriesCurrentSnapshot.get());
         if (includeLastWindow) {
             queries.addAll(topQueriesHistorySnapshot.get());
+        }
+        List<SearchQueryRecord> filterQueries = queries;
+        if (from != null && to != null) {
+            final DateTime start = DateTime.parse(from);
+            final DateTime end = DateTime.parse(to);
+            Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
+                && element.getTimestamp() <= end.getMillis();
+            filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
+        }
+        return Stream.of(filterQueries)
+            .flatMap(Collection::stream)
+            .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Get all historical top queries records that are in local index
+     * <p>
+     * By default, return the records in sorted order.
+     *
+     * @param from start timestamp
+     * @param to end timestamp
+     * @return List of the records that are in local index (if enabled) with timestamps between from and to
+     * @throws IllegalArgumentException if query insights is disabled in the cluster
+     */
+    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to) throws IllegalArgumentException {
+        if (!enabled) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
+            );
+        }
+
+        final List<SearchQueryRecord> queries = new ArrayList<>();
+        if (reader != null) {
+            try {
+                final DateTime start = DateTime.parse(from);
+                final DateTime end = DateTime.parse(to);
+                List<SearchQueryRecord> records = reader.read(from, to);
+                Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
+                    && element.getTimestamp() <= end.getMillis();
+                List<SearchQueryRecord> filteredRecords = records.stream()
+                    .filter(checkIfInternal.and(timeFilter))
+                    .collect(Collectors.toList());
+                queries.addAll(filteredRecords);
+            } catch (Exception e) {
+                logger.error("Failed to read from index: ", e);
+            }
         }
         return Stream.of(queries)
             .flatMap(Collection::stream)
@@ -404,6 +505,7 @@ public class TopQueriesService {
      */
     public void close() throws IOException {
         queryInsightsExporterFactory.closeExporter(this.exporter);
+        queryInsightsReaderFactory.closeReader(this.reader);
     }
 
     /**
