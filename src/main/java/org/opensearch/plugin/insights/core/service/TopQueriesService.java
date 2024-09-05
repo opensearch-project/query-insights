@@ -42,10 +42,10 @@ import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
-import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;

@@ -119,13 +119,13 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         records = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, System.currentTimeMillis() - 1000 * 60 * 10, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(0, topQueriesService.getTopQueriesRecords(true).size());
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null).size());
 
         // Create 10 records at now + 1 minute, to make sure they belong to the current window
         records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(10, topQueriesService.getTopQueriesRecords(true).size());
+        assertEquals(10, topQueriesService.getTopQueriesRecords(true, null, null).size());
     }
 
     public void testRollingWindowsWithDifferentGroup() {
@@ -137,13 +137,13 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(0, topQueriesService.getTopQueriesRecords(true).size());
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null).size());
 
         // Create 10 records at now + 1 minute, to make sure they belong to the current window
         records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(1, topQueriesService.getTopQueriesRecords(true).size());
+        assertEquals(1, topQueriesService.getTopQueriesRecords(true, null, null).size());
     }
 }

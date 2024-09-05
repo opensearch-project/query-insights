@@ -11,12 +11,13 @@ package org.opensearch.plugin.insights.rules.model;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.Version;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.Strings;
@@ -34,7 +35,6 @@ import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
-import org.opensearch.Version;
 
 /**
  * SearchQueryRecord represents a minimal atomic record stored in the Query Insight Framework,
@@ -93,7 +93,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Custom search request labels
      */
     public static final String LABELS = "labels";
-  
+
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
 
@@ -149,7 +149,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static SearchQueryRecord getRecord(SearchHit hit, NamedXContentRegistry namedXContentRegistry) throws IOException {
         long timestamp = 0L;
-        Map<MetricType, Number> measurements = new HashMap<>();
+        Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
         XContentParser parser = XContentType.JSON.xContent()
             .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
@@ -167,7 +167,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case CPU:
                     case MEMORY:
                         MetricType metric = MetricType.fromString(fieldName);
-                        measurements.put(metric, metric.parseValue(parser.longValue()));
+                        measurements.put(metric, new Measurement(metric.parseValue(parser.longValue())));
                         break;
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());

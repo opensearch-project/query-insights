@@ -81,7 +81,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * Query Insights reader factory
      */
     final QueryInsightsReaderFactory queryInsightsReaderFactory;
-  
+
     /**
      * Flags for enabling insight data grouping for different metric types
      */
