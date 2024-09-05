@@ -86,13 +86,13 @@ public class TransportTopQueriesAction extends TransportNodesAction<
             default:
                 size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE);
         }
-        final String[] timeRange = topQueriesRequest.getTimeRange();
-        if (timeRange[0] != null && timeRange[1] != null) {
+        final String from = topQueriesRequest.getFrom();
+        final String to = topQueriesRequest.getTo();
+        if (from != null && to != null) {
             responses.add(
                 new TopQueries(
                     clusterService.localNode(),
-                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType())
-                        .getTopQueriesRecordsFromIndex(timeRange[0], timeRange[1])
+                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType()).getTopQueriesRecordsFromIndex(from, to)
                 )
             );
         }
@@ -112,10 +112,11 @@ public class TransportTopQueriesAction extends TransportNodesAction<
     @Override
     protected TopQueries nodeOperation(final NodeRequest nodeRequest) {
         final TopQueriesRequest request = nodeRequest.request;
-        final String[] timeRange = request.getTimeRange();
+        final String from = request.getFrom();
+        final String to = request.getTo();
         return new TopQueries(
             clusterService.localNode(),
-            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, timeRange[0], timeRange[1])
+            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to)
         );
     }
 

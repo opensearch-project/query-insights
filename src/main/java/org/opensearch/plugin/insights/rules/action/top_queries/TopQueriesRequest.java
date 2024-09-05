@@ -61,11 +61,19 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     }
 
     /**
-     * Get from and to for timestamp request
-     * @return String[] of from and to timestamp
+     * Get from for timestamp request
+     * @return String of fromtimestamp
      */
-    public String[] getTimeRange() {
-        return new String[] { from, to };
+    public String getFrom() {
+        return from;
+    }
+
+    /**
+     * Get to for timestamp request
+     * @return String of to timestamp
+     */
+    public String getTo() {
+        return to;
     }
 
     @Override

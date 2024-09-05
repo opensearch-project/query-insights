@@ -273,7 +273,7 @@ public class TopQueriesService {
      *
      * @param settings settings exporter/reader config {@link Settings}
      */
-    public void validateExporterReaderConfig(Settings settings) {
+    public void validateExporterAndReaderConfig(Settings settings) {
         queryInsightsExporterFactory.validateExporterConfig(settings);
         queryInsightsReaderFactory.validateReaderConfig(settings);
     }
@@ -281,7 +281,7 @@ public class TopQueriesService {
     /**
      * Lambda function to mark if a record is internal
      */
-    private final Predicate<SearchQueryRecord> removeInternal = (record) -> {
+    private final Predicate<SearchQueryRecord> checkIfInternal = (record) -> {
         Map<Attribute, Object> attributes = record.getAttributes();
         Object indicesObject = attributes.get(Attribute.INDICES);
         if (indicesObject instanceof Object[]) {
@@ -327,7 +327,7 @@ public class TopQueriesService {
             final DateTime end = DateTime.parse(to);
             Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
                 && element.getTimestamp() <= end.getMillis();
-            filterQueries = queries.stream().filter(removeInternal.and(timeFilter)).collect(Collectors.toList());
+            filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
         }
         return Stream.of(filterQueries)
             .flatMap(Collection::stream)
@@ -351,16 +351,18 @@ public class TopQueriesService {
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
             );
         }
-        final DateTime start = DateTime.parse(from);
-        final DateTime end = DateTime.parse(to);
 
         final List<SearchQueryRecord> queries = new ArrayList<>();
         if (reader != null) {
             try {
+                final DateTime start = DateTime.parse(from);
+                final DateTime end = DateTime.parse(to);
                 List<SearchQueryRecord> records = reader.read(from, to);
                 Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
                     && element.getTimestamp() <= end.getMillis();
-                List<SearchQueryRecord> filteredRecords = records.stream().filter(timeFilter).collect(Collectors.toList());
+                List<SearchQueryRecord> filteredRecords = records.stream()
+                    .filter(checkIfInternal.and(timeFilter))
+                    .collect(Collectors.toList());
                 queries.addAll(filteredRecords);
             } catch (Exception e) {
                 logger.error("Failed to read from index: ", e);

@@ -121,8 +121,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterSettings.addSettingsUpdateConsumer(
                 getExporterSettings(type),
-                (settings -> setExporterReader(type, settings)),
-                (settings -> validateExporterReaderConfig(type, settings))
+                (settings -> setExporterAndReader(type, settings)),
+                (settings -> validateExporterAndReaderConfig(type, settings))
             );
         }
 
@@ -304,7 +304,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param type {@link MetricType}
      * @param settings exporter and reader settings
      */
-    public void setExporterReader(final MetricType type, final Settings settings) {
+    public void setExporterAndReader(final MetricType type, final Settings settings) {
         if (topQueriesServices.containsKey(type)) {
             TopQueriesService tqs = topQueriesServices.get(type);
             tqs.setExporter(settings);
@@ -326,10 +326,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param type {@link MetricType}
      * @param settings exporter and reader settings
      */
-    public void validateExporterReaderConfig(final MetricType type, final Settings settings) {
+    public void validateExporterAndReaderConfig(final MetricType type, final Settings settings) {
         if (topQueriesServices.containsKey(type)) {
             TopQueriesService tqs = topQueriesServices.get(type);
-            tqs.validateExporterReaderConfig(settings);
+            tqs.validateExporterAndReaderConfig(settings);
         }
     }
 
