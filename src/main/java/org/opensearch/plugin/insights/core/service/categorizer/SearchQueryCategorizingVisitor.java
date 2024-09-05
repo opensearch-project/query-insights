@@ -12,6 +12,7 @@ import java.util.Map;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 
 /**
@@ -21,13 +22,13 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 final class SearchQueryCategorizingVisitor implements QueryBuilderVisitor {
     private final int level;
     private final SearchQueryCounters searchQueryCounters;
-    private final Map<MetricType, Number> measurements;
+    private final Map<MetricType, Measurement> measurements;
 
-    public SearchQueryCategorizingVisitor(SearchQueryCounters searchQueryCounters, Map<MetricType, Number> measurements) {
+    public SearchQueryCategorizingVisitor(SearchQueryCounters searchQueryCounters, Map<MetricType, Measurement> measurements) {
         this(searchQueryCounters, 0, measurements);
     }
 
-    private SearchQueryCategorizingVisitor(SearchQueryCounters counters, int level, Map<MetricType, Number> measurements) {
+    private SearchQueryCategorizingVisitor(SearchQueryCounters counters, int level, Map<MetricType, Measurement> measurements) {
         this.searchQueryCounters = counters;
         this.level = level;
         this.measurements = measurements;

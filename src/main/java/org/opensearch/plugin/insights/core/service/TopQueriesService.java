@@ -26,7 +26,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.PriorityQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -43,6 +43,10 @@ import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
+import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -74,7 +78,7 @@ public class TopQueriesService {
     /**
      * The internal thread-safe store that holds the top n queries insight data
      */
-    private final PriorityQueue<SearchQueryRecord> topQueriesStore;
+    private final PriorityBlockingQueue<SearchQueryRecord> topQueriesStore;
 
     /**
      * The AtomicReference of a snapshot of the current window top queries for getters to consume
@@ -107,6 +111,8 @@ public class TopQueriesService {
     private QueryInsightsExporter exporter;
     private QueryInsightsReader reader;
 
+    private QueryGrouper queryGrouper;
+
     TopQueriesService(
         final MetricType metricType,
         final ThreadPool threadPool,
@@ -123,9 +129,16 @@ public class TopQueriesService {
         this.windowStart = -1L;
         this.exporter = null;
         this.reader = null;
-        topQueriesStore = new PriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
+        topQueriesStore = new PriorityBlockingQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
+        queryGrouper = new MinMaxHeapQueryGrouper(
+            metricType,
+            QueryInsightsSettings.DEFAULT_GROUPING_TYPE,
+            AggregationType.AVERAGE,
+            topQueriesStore,
+            topNSize
+        );
     }
 
     /**
@@ -135,6 +148,7 @@ public class TopQueriesService {
      */
     public void setTopNSize(final int topNSize) {
         this.topNSize = topNSize;
+        this.queryGrouper.updateTopNSize(topNSize);
     }
 
     /**
@@ -184,6 +198,20 @@ public class TopQueriesService {
         this.windowSize = windowSize;
         // reset the window start time since the window size has changed
         this.windowStart = -1L;
+    }
+
+    public void setGrouping(final GroupingType groupingType) {
+        boolean changed = queryGrouper.setGroupingType(groupingType);
+        if (changed) {
+            drain();
+        }
+    }
+
+    public void setMaxGroups(final int maxGroups) {
+        boolean changed = queryGrouper.setMaxGroups(maxGroups);
+        if (changed) {
+            drain();
+        }
     }
 
     /**
@@ -407,10 +435,16 @@ public class TopQueriesService {
     }
 
     private void addToTopNStore(final List<SearchQueryRecord> records) {
-        topQueriesStore.addAll(records);
-        // remove top elements for fix sizing priority queue
-        while (topQueriesStore.size() > topNSize) {
-            topQueriesStore.poll();
+        if (queryGrouper.getGroupingType() != GroupingType.NONE) {
+            for (SearchQueryRecord record : records) {
+                queryGrouper.add(record);
+            }
+        } else {
+            topQueriesStore.addAll(records);
+            // remove top elements for fix sizing priority queue
+            while (topQueriesStore.size() > topNSize) {
+                topQueriesStore.poll();
+            }
         }
     }
 
@@ -430,6 +464,9 @@ public class TopQueriesService {
             }
             topQueriesHistorySnapshot.set(history);
             topQueriesStore.clear();
+            if (queryGrouper.getGroupingType() != GroupingType.NONE) {
+                queryGrouper.drain();
+            }
             topQueriesCurrentSnapshot.set(new ArrayList<>());
             windowStart = newWindowStart;
             // export to the configured sink
@@ -469,5 +506,14 @@ public class TopQueriesService {
     public void close() throws IOException {
         queryInsightsExporterFactory.closeExporter(this.exporter);
         queryInsightsReaderFactory.closeReader(this.reader);
+    }
+
+    /**
+     * Drain internal stores.
+     */
+    private void drain() {
+        topQueriesStore.clear();
+        topQueriesHistorySnapshot.set(new ArrayList<>());
+        topQueriesCurrentSnapshot.set(new ArrayList<>());
     }
 }

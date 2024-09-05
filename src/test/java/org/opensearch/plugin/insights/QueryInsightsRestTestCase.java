@@ -9,10 +9,14 @@
 package org.opensearch.plugin.insights;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
@@ -42,6 +46,7 @@ import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.MediaType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
@@ -184,8 +189,21 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"600s\",\n"
-            + "        \"search.insights.top_queries.latency.top_n_size\" : 5\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
+            + "    }\n"
+            + "}";
+    }
+
+    protected String defaultTopQueryGroupingSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"similarity\",\n"
+            + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 5\n"
             + "    }\n"
             + "}";
     }
@@ -212,5 +230,152 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             Response response = client().performRequest(request);
             Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         }
+    }
+
+    protected void doSearch(String queryType, int times) throws IOException {
+        for (int i = 0; i < times; i++) {
+            // Do Search
+            Request request = new Request("GET", "/my-index-0/_search?size=20&pretty");
+
+            // Set query based on the query type
+            request.setJsonEntity(searchBody(queryType));
+
+            Response response = client().performRequest(request);
+            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        }
+    }
+
+    private String searchBody(String queryType) {
+        switch (queryType) {
+            case "match":
+                // Query shape 1: Match query
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"field1\": \"value1\"\n" + "    }\n" + "  }\n" + "}";
+
+            case "range":
+                // Query shape 2: Range query
+                return "{\n"
+                    + "  \"query\": {\n"
+                    + "    \"range\": {\n"
+                    + "      \"field2\": {\n"
+                    + "        \"gte\": 10,\n"
+                    + "        \"lte\": 50\n"
+                    + "      }\n"
+                    + "    }\n"
+                    + "  }\n"
+                    + "}";
+
+            case "term":
+                // Query shape 3: Term query
+                return "{\n"
+                    + "  \"query\": {\n"
+                    + "    \"term\": {\n"
+                    + "      \"field3\": {\n"
+                    + "        \"value\": \"exact-value\"\n"
+                    + "      }\n"
+                    + "    }\n"
+                    + "  }\n"
+                    + "}";
+
+            default:
+                throw new IllegalArgumentException("Unknown query type: " + queryType);
+        }
+    }
+
+    protected int countTopQueries(String json) {
+        // Basic pattern to match JSON array elements in `top_queries`
+        Pattern pattern = Pattern.compile("\\{\\s*\"timestamp\"");
+        Matcher matcher = pattern.matcher(json);
+
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+
+        return count;
+    }
+
+    protected void waitForEmptyTopQueriesResponse() throws IOException, InterruptedException {
+        boolean isEmpty = false;
+        long timeoutMillis = 70000; // 70 seconds timeout
+        long startTime = System.currentTimeMillis();
+
+        while (!isEmpty && (System.currentTimeMillis() - startTime) < timeoutMillis) {
+            Request request = new Request("GET", "/_insights/top_queries?pretty");
+            Response response = client().performRequest(request);
+
+            if (response.getStatusLine().getStatusCode() != 200) {
+                Thread.sleep(1000); // Sleep before retrying
+                continue;
+            }
+
+            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
+            if (countTopQueries(responseBody) == 0) {
+                isEmpty = true;
+            } else {
+                Thread.sleep(1000); // Sleep before retrying
+            }
+        }
+
+        if (!isEmpty) {
+            throw new IllegalStateException("Top queries response did not become empty within the timeout period");
+        }
+    }
+
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
+        // Ensure records are drained to the top queries service
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+
+        // run five times to make sure the records are drained to the top queries services
+        for (int i = 0; i < 5; i++) {
+            String responseBody = getTopQueries(type);
+
+            int topNArraySize = countTopQueries(responseBody);
+
+            if (topNArraySize < expectedTopQueriesCount) {
+                // Ensure records are drained to the top queries service
+                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+                continue;
+            }
+
+            // Validate that all queries are listed separately (no grouping)
+            Assert.assertEquals(expectedTopQueriesCount, topNArraySize);
+        }
+    }
+
+    protected String getTopQueries(String type) throws IOException {
+        // Base URL
+        String endpoint = "/_insights/top_queries?pretty";
+
+        if (type != null) {
+            switch (type) {
+                case "cpu":
+                case "memory":
+                case "latency":
+                    endpoint = "/_insights/top_queries?type=" + type + "&pretty";
+                    break;
+                case "all":
+                    // Keep the default endpoint (no type parameter)
+                    break;
+                default:
+                    // Throw an exception if the type is invalid
+                    throw new IllegalArgumentException("Invalid type: " + type + ". Valid types are 'all', 'cpu', 'memory', or 'latency'.");
+            }
+        }
+
+        Request request = new Request("GET", endpoint);
+        Response response = client().performRequest(request);
+
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+
+        String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        return responseBody;
+    }
+
+    protected void updateClusterSettings(Supplier<String> settingsSupplier) throws IOException {
+        Request request = new Request("PUT", "/_cluster/settings");
+        request.setJsonEntity(settingsSupplier.get());
+        Response response = client().performRequest(request);
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
     }
 }

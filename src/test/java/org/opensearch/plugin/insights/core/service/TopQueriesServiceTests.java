@@ -18,6 +18,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -109,5 +110,40 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
                 deterministicTaskQueue.runRandomTask();
             }
         }
+    }
+
+    public void testRollingWindowsWithSameGroup() {
+        topQueriesService.setGrouping(GroupingType.SIMILARITY);
+        List<SearchQueryRecord> records;
+        // Create 5 records at Now - 10 minutes to make sure they belong to the last window
+        records = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, System.currentTimeMillis() - 1000 * 60 * 10, 0);
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true).size());
+
+        // Create 10 records at now + 1 minute, to make sure they belong to the current window
+        records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+        assertEquals(10, topQueriesService.getTopQueriesRecords(true).size());
+    }
+
+    public void testRollingWindowsWithDifferentGroup() {
+        topQueriesService.setGrouping(GroupingType.SIMILARITY);
+        List<SearchQueryRecord> records;
+        // Create 5 records at Now - 10 minutes to make sure they belong to the last window
+        records = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, System.currentTimeMillis() - 1000 * 60 * 10, 0);
+        QueryInsightsTestUtils.populateSameQueryHashcodes(records);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true).size());
+
+        // Create 10 records at now + 1 minute, to make sure they belong to the current window
+        records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
+        QueryInsightsTestUtils.populateSameQueryHashcodes(records);
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+        assertEquals(1, topQueriesService.getTopQueriesRecords(true).size());
     }
 }

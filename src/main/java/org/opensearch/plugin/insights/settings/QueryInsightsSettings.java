@@ -16,6 +16,7 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 
 /**
@@ -69,6 +70,11 @@ public class QueryInsightsSettings {
      */
     public static final String PLUGINS_BASE_URI = "/_insights";
 
+    public static final GroupingType DEFAULT_GROUPING_TYPE = GroupingType.NONE;
+    public static final int DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT = 100;
+
+    public static final int MAX_GROUPS_EXCLUDING_TOPN_LIMIT = 10000;
+
     /**
      * Settings for Top Queries
      *
@@ -108,6 +114,26 @@ public class QueryInsightsSettings {
     public static final Setting<TimeValue> TOP_N_LATENCY_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Define the group_by option for Top N queries to group queries.
+     */
+    public static final Setting<String> TOP_N_QUERIES_GROUP_BY = Setting.simpleString(
+        TOP_N_QUERIES_SETTING_PREFIX + ".group_by",
+        DEFAULT_GROUPING_TYPE.getValue(),
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Define the max_groups_excluding_topn option for Top N queries to group queries.
+     */
+    public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_groups_excluding_topn",
+        DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );

@@ -9,6 +9,8 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
@@ -31,7 +33,9 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.Task;
@@ -101,6 +105,26 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
 
+        // Settings endpoints set for grouping top n queries
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                TOP_N_QUERIES_GROUP_BY,
+                v -> this.queryInsightsService.setGrouping(v),
+                v -> this.queryInsightsService.validateGrouping(v)
+            );
+        this.queryInsightsService.validateGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+        this.queryInsightsService.setGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
+                v -> this.queryInsightsService.setMaximumGroups(v),
+                v -> this.queryInsightsService.validateMaximumGroups(v)
+            );
+        this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+        this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+
+        // Settings endpoints set for search query metrics
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
@@ -191,25 +215,32 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         final SearchRequest request = context.getRequest();
         try {
-            Map<MetricType, Number> measurements = new HashMap<>();
+            Map<MetricType, Measurement> measurements = new HashMap<>();
             if (shouldCollect(MetricType.LATENCY)) {
                 measurements.put(
                     MetricType.LATENCY,
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos())
+                    new Measurement(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos()))
                 );
             }
             if (shouldCollect(MetricType.CPU)) {
                 measurements.put(
                     MetricType.CPU,
-                    tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum()
+                    new Measurement(
+                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getCpuTimeInNanos()).mapToLong(Long::longValue).sum()
+                    )
                 );
             }
             if (shouldCollect(MetricType.MEMORY)) {
                 measurements.put(
                     MetricType.MEMORY,
-                    tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
+                    new Measurement(
+                        tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
+                    )
                 );
             }
+
+            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
+
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
             attributes.put(Attribute.SOURCE, request.source());
@@ -217,6 +248,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
+            attributes.put(Attribute.QUERY_HASHCODE, hashcode);
 
             Map<String, Object> labels = new HashMap<>();
             // Retrieve user provided label if exists

@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.Assert;
@@ -20,7 +19,6 @@ import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /** Rest Action tests for Top Queries */
 public class TopQueriesRestIT extends QueryInsightsRestTestCase {
@@ -49,50 +47,22 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
+        waitForEmptyTopQueriesResponse();
+
         // Enable Top N Queries feature
-        Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(defaultTopQueriesSettings());
-        Response response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::defaultTopQueriesSettings);
+
         doSearch(2);
-        // run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
-            // Get Top Queries
-            request = new Request("GET", "/_insights/top_queries?pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(top_requests.contains("top_queries"));
-            int top_n_array_size = top_requests.split("timestamp", -1).length - 1;
-            if (top_n_array_size == 0) {
-                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-                continue;
-            }
-            Assert.assertEquals(2, top_n_array_size);
-        }
+
+        assertTopQueriesCount(2, "latency");
 
         // Enable Top N Queries by resource usage
-        request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(topQueriesByResourceUsagesSettings());
-        response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        updateClusterSettings(this::topQueriesByResourceUsagesSettings);
+
         // Do Search
         doSearch(2);
-        // run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
-            // Get Top Queries
-            request = new Request("GET", "/_insights/top_queries?type=cpu&pretty");
-            response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String top_requests = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue(top_requests.contains("top_queries"));
-            int top_n_array_size = top_requests.split("timestamp", -1).length - 1;
-            if (top_n_array_size == 0) {
-                Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
-                continue;
-            }
-            Assert.assertEquals(2, top_n_array_size);
-        }
+
+        assertTopQueriesCount(2, "cpu");
     }
 
     /**
@@ -117,11 +87,12 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.memory.window_size\" : \"600s\",\n"
+            + "        \"search.insights.top_queries.memory.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.memory.top_n_size\" : \"5\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.cpu.window_size\" : \"600s\",\n"
-            + "        \"search.insights.top_queries.cpu.top_n_size\" : 5\n"
+            + "        \"search.insights.top_queries.cpu.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.cpu.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
             + "    }\n"
             + "}";
     }

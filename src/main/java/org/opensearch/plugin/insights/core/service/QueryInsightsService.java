@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
@@ -29,6 +30,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -79,6 +81,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * Query Insights reader factory
      */
     final QueryInsightsReaderFactory queryInsightsReaderFactory;
+  
+    /**
+     * Flags for enabling insight data grouping for different metric types
+     */
+    private GroupingType groupingType;
 
     private volatile boolean searchQueryMetricsEnabled;
 
@@ -128,16 +135,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
+        this.groupingType = DEFAULT_GROUPING_TYPE;
     }
 
     /**
      * Ingest the query data into in-memory stores
      *
      * @param record the record to ingest
-     * @return SearchQueryRecord
+     * @return true/false
      */
     public boolean addRecord(final SearchQueryRecord record) {
-        boolean shouldAdd = searchQueryMetricsEnabled;
+        boolean shouldAdd = isSearchQueryMetricsFeatureEnabled() || isGroupingEnabled();
         if (!shouldAdd) {
             for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
                 if (!enableCollect.get(entry.getKey())) {
@@ -202,6 +210,67 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Validate grouping given grouping type setting
+     * @param groupingTypeSetting grouping setting
+     */
+    public void validateGrouping(final String groupingTypeSetting) {
+        GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+    }
+
+    /**
+     * Set grouping
+     * @param groupingTypeSetting grouping
+     */
+    public void setGrouping(final String groupingTypeSetting) {
+        GroupingType newGroupingType = GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
+        GroupingType oldGroupingType = groupingType;
+
+        if (oldGroupingType != newGroupingType) {
+            groupingType = newGroupingType;
+
+            for (MetricType metricType : MetricType.allMetricTypes()) {
+                this.topQueriesServices.get(metricType).setGrouping(newGroupingType);
+            }
+        }
+    }
+
+    /**
+     * Set max number of groups
+     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
+     */
+    public void setMaximumGroups(final int maxGroups) {
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            this.topQueriesServices.get(metricType).setMaxGroups(maxGroups);
+        }
+    }
+
+    /**
+     * Validate max number of groups. Should be between 1 and MAX_GROUPS_LIMIT
+     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
+     */
+    public void validateMaximumGroups(final int maxGroups) {
+        if (maxGroups < 0 || maxGroups > QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT) {
+            throw new IllegalArgumentException(
+                "Max groups setting"
+                    + " should be between 0 and "
+                    + QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT
+                    + ", was ("
+                    + maxGroups
+                    + ")"
+            );
+        }
+    }
+
+    /**
+     * Get the grouping type based on the metricType
+     * @return GroupingType
+     */
+
+    public GroupingType getGrouping() {
+        return groupingType;
+    }
+
+    /**
      * Get if the Query Insights data collection is enabled for a MetricType
      *
      * @param metricType {@link MetricType}
@@ -243,8 +312,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Is grouping feature enabled and TopN feature enabled
+     * @return boolean
+     */
+    public boolean isGroupingEnabled() {
+        return this.groupingType != GroupingType.NONE && isTopNFeatureEnabled();
+    }
+
+    /**
      * Enable/Disable search query metrics feature.
      * @param enable enable/disable search query metrics feature
+     * Stops query insights service if no features enabled
      */
     public void enableSearchQueryMetricsFeature(boolean enable) {
         searchQueryMetricsEnabled = enable;
