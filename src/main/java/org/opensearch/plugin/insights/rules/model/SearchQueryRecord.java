@@ -10,8 +10,10 @@ package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.opensearch.Version;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -26,9 +28,11 @@ import org.opensearch.core.xcontent.XContentBuilder;
  * which contains extensive information related to a search query.
  */
 public class SearchQueryRecord implements ToXContentObject, Writeable {
+    public static final String MEASUREMENTS = "measurements";
     private final long timestamp;
-    private final Map<MetricType, Number> measurements;
+    private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
+    private String groupingId;
 
     /**
      * Constructor of SearchQueryRecord
@@ -39,9 +43,21 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public SearchQueryRecord(final StreamInput in) throws IOException, ClassCastException {
         this.timestamp = in.readLong();
-        measurements = new HashMap<>();
-        in.readMap(MetricType::readFromStream, StreamInput::readGenericValue)
-            .forEach(((metricType, o) -> measurements.put(metricType, metricType.parseValue(o))));
+        if (in.getVersion().onOrAfter(Version.V_2_17_0)) {
+            measurements = new LinkedHashMap<>();
+            in.readOrderedMap(MetricType::readFromStream, Measurement::readFromStream)
+                .forEach(((metricType, measurement) -> measurements.put(metricType, measurement)));
+            this.groupingId = null;
+        } else {
+            measurements = new HashMap<>();
+            in.readMap(MetricType::readFromStream, StreamInput::readGenericValue).forEach((metricType, o) -> {
+                try {
+                    measurements.put(metricType, new Measurement(metricType.parseValue(o)));
+                } catch (ClassCastException e) {
+                    throw new ClassCastException("Error parsing value for metric type: " + metricType);
+                }
+            });
+        }
         this.attributes = Attribute.readAttributeMap(in);
     }
 
@@ -52,7 +68,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param measurements A list of Measurement associated with this query
      * @param attributes A list of Attributes associated with this query
      */
-    public SearchQueryRecord(final long timestamp, Map<MetricType, Number> measurements, final Map<Attribute, Object> attributes) {
+    public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
         if (measurements == null) {
             throw new IllegalArgumentException("Measurements cannot be null");
         }
@@ -77,7 +93,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @return the measurement object, or null if not found
      */
     public Number getMeasurement(final MetricType name) {
-        return measurements.get(name);
+        return measurements.get(name).getMeasurement();
     }
 
     /**
@@ -85,7 +101,26 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      *
      * @return a map of measurement names to measurement objects
      */
-    public Map<MetricType, Number> getMeasurements() {
+
+    /**
+     * Add measurement to SearchQueryRecord. Applicable when we are grouping multiple queries based on GroupingType.
+     * @param metricType the name of the measurement
+     * @param numberToAdd The measurement number we want to add to the current measurement.
+     */
+    public void addMeasurement(final MetricType metricType, Number numberToAdd) {
+        measurements.get(metricType).addMeasurement(numberToAdd);
+    }
+
+    /**
+     * Set the aggregation type for measurement
+     * @param name the name of the measurement
+     * @param aggregationType Aggregation type to set
+     */
+    public void setMeasurementAggregation(final MetricType name, AggregationType aggregationType) {
+        measurements.get(name).setAggregationType(aggregationType);
+    }
+
+    public Map<MetricType, Measurement> getMeasurements() {
         return measurements;
     }
 
@@ -115,9 +150,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             builder.field(entry.getKey().toString(), entry.getValue());
         }
-        for (Map.Entry<MetricType, Number> entry : measurements.entrySet()) {
-            builder.field(entry.getKey().toString(), entry.getValue());
+        builder.startObject(MEASUREMENTS);
+        for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
+            builder.field(entry.getKey().toString());  // MetricType as field name
+            entry.getValue().toXContent(builder, params);  // Serialize Measurement object
         }
+        builder.endObject();
         return builder.endObject();
     }
 
@@ -130,7 +168,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
-        out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
+        if (out.getVersion().onOrAfter(Version.V_2_17_0)) {
+            out.writeMap(
+                measurements,
+                (stream, metricType) -> MetricType.writeTo(out, metricType),
+                (stream, measurement) -> measurement.writeTo(out)
+            );
+        } else {
+            out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
+        }
         out.writeMap(
             attributes,
             (stream, attribute) -> Attribute.writeTo(out, attribute),
@@ -180,5 +226,13 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public String toString() {
         return Strings.toString(MediaTypeRegistry.JSON, this);
+    }
+
+    public void setGroupingId(String groupingId) {
+        this.groupingId = groupingId;
+    }
+
+    public String getGroupingId() {
+        return this.groupingId;
     }
 }

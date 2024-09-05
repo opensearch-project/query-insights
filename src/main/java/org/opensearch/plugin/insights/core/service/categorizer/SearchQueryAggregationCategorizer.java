@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.service.categorizer;
 
 import java.util.Collection;
 import java.util.Map;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.search.aggregations.AggregationBuilder;
 import org.opensearch.search.aggregations.PipelineAggregationBuilder;
@@ -39,14 +40,14 @@ public class SearchQueryAggregationCategorizer {
      */
     public void incrementSearchQueryAggregationCounters(
         Collection<AggregationBuilder> aggregatorFactories,
-        Map<MetricType, Number> measurements
+        Map<MetricType, Measurement> measurements
     ) {
         for (AggregationBuilder aggregationBuilder : aggregatorFactories) {
             incrementCountersRecursively(aggregationBuilder, measurements);
         }
     }
 
-    private void incrementCountersRecursively(AggregationBuilder aggregationBuilder, Map<MetricType, Number> measurements) {
+    private void incrementCountersRecursively(AggregationBuilder aggregationBuilder, Map<MetricType, Measurement> measurements) {
         // Increment counters for the current aggregation
         String aggregationType = aggregationBuilder.getType();
         searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, aggregationType), measurements);
