@@ -14,7 +14,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -52,6 +54,16 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
         SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
         assertEquals(record1, record2);
+    }
+
+    public void testFromXContent() {
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord();
+        try (XContentParser recordParser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(recordParser);
+            QueryInsightsTestUtils.checkRecordsEquals(List.of(record), List.of(parsedRecord));
+        } catch (Exception e) {
+            fail("Test should not throw exceptions when parsing search query record");
+        }
     }
 
     /**

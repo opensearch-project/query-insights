@@ -18,7 +18,10 @@ import org.joda.time.format.DateTimeFormatter;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
+import org.opensearch.common.xcontent.LoggingDeprecationHandler;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.index.query.MatchQueryBuilder;
 import org.opensearch.index.query.QueryBuilder;
@@ -104,7 +107,9 @@ public final class LocalIndexReader implements QueryInsightsReader {
             try {
                 SearchResponse searchResponse = client.search(searchRequest).actionGet();
                 for (SearchHit hit : searchResponse.getHits()) {
-                    SearchQueryRecord record = SearchQueryRecord.getRecord(hit, namedXContentRegistry);
+                    XContentParser parser = XContentType.JSON.xContent()
+                        .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
+                    SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
                     records.add(record);
                 }
             } catch (IndexNotFoundException ignored) {} catch (Exception e) {
