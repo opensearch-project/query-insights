@@ -10,18 +10,25 @@ package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
 import java.util.Objects;
+import org.opensearch.core.common.ParsingException;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 
 /**
  * Measurement that is stored in the SearchQueryRecord. Measurement can be of a specific AggregationType
  */
 public class Measurement implements ToXContentObject, Writeable {
     private static int DEFAULT_COUNT = 1;
+
+    private static final String NUMBER = "number";
+    private static final String COUNT = "count";
+    private static final String AGGREGATION_TYPE = "aggregationType";
+
     private AggregationType aggregationType;
     private Number number;
     private int count;
@@ -53,6 +60,21 @@ public class Measurement implements ToXContentObject, Writeable {
      */
     public Measurement(Number number) {
         this(number, DEFAULT_COUNT, AggregationType.DEFAULT_AGGREGATION_TYPE);
+    }
+
+    private Measurement() {}
+
+    /**
+     * Construct a measurement from {@link XContentParser}
+     *
+     * @param parser {@link XContentParser}
+     * @return {@link Measurement}
+     * @throws IOException IOException
+     */
+    public static Measurement fromXContent(XContentParser parser) throws IOException {
+        Measurement builder = new Measurement();
+        builder.parseXContent(parser);
+        return builder;
     }
 
     /**
@@ -150,11 +172,43 @@ public class Measurement implements ToXContentObject, Writeable {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, ToXContent.Params params) throws IOException {
         builder.startObject();
-        builder.field("number", number);
-        builder.field("count", count);
-        builder.field("aggregationType", aggregationType.toString());
+        builder.field(NUMBER, number);
+        builder.field(COUNT, count);
+        builder.field(AGGREGATION_TYPE, aggregationType.toString());
         builder.endObject();
         return builder;
+    }
+
+    /**
+     * Parse a measurement from {@link XContentParser}
+     *
+     * @param parser {@link XContentParser}
+     * @throws IOException IOException
+     */
+    private void parseXContent(XContentParser parser) throws IOException {
+        XContentParser.Token token = parser.currentToken();
+        if (token != XContentParser.Token.START_OBJECT) {
+            throw new ParsingException(
+                parser.getTokenLocation(),
+                "Expected [" + XContentParser.Token.START_OBJECT + "] but found [" + token + "]",
+                parser.getTokenLocation()
+            );
+        } else {
+            String currentFieldName = null;
+            while ((token = parser.nextToken()) != XContentParser.Token.END_OBJECT) {
+                if (token == XContentParser.Token.FIELD_NAME) {
+                    currentFieldName = parser.currentName();
+                } else if (token.isValue()) {
+                    if (NUMBER.equals(currentFieldName)) {
+                        this.number = parser.numberValue();
+                    } else if (COUNT.equals(currentFieldName)) {
+                        this.count = parser.intValue();
+                    } else if (AGGREGATION_TYPE.equals(currentFieldName)) {
+                        this.aggregationType = AggregationType.valueOf(parser.text());
+                    }
+                }
+            }
+        }
     }
 
     @Override
