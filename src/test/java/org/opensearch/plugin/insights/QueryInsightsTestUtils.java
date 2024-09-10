@@ -240,8 +240,19 @@ final public class QueryInsightsTestUtils {
         Map<MetricType, Measurement> measurements = Map.of(MetricType.LATENCY, new Measurement(1L));
 
         Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("expand", 1L);
+        phaseLatencyMap.put("query", 10L);
+        phaseLatencyMap.put("fetch", 1L);
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
+        attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
+        attributes.put(
+            Attribute.TASK_RESOURCE_USAGES,
+            List.of(
+                new TaskResourceInfo("action", 2L, 1L, "id", new TaskResourceUsage(1000L, 2000L)),
+                new TaskResourceInfo("action2", 3L, 1L, "id2", new TaskResourceUsage(2000L, 1000L))
+            )
+        );
 
         return new SearchQueryRecord(timestamp, measurements, attributes);
     }

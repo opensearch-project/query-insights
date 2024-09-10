@@ -18,8 +18,6 @@ import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
-import org.opensearch.common.xcontent.LoggingDeprecationHandler;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -27,12 +25,10 @@ import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
-import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.xcontent.XContentParserUtils;
-import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 
@@ -141,18 +137,17 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     }
 
     /**
-     * Returns a SearchQueryRecord from a SearchHit
+     * Construct a SearchQueryRecord from {@link XContentParser}
      *
-     * @param hit SearchHit to parse into SearchQueryRecord
-     * @param namedXContentRegistry NamedXContentRegistry for parsing purposes
-     * @return SearchQueryRecord
+     * @param parser {@link XContentParser}
+     * @return {@link SearchQueryRecord}
+     * @throws IOException IOException
      */
-    public static SearchQueryRecord getRecord(SearchHit hit, NamedXContentRegistry namedXContentRegistry) throws IOException {
+    public static SearchQueryRecord fromXContent(XContentParser parser) throws IOException {
         long timestamp = 0L;
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
-        XContentParser parser = XContentType.JSON.xContent()
-            .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
+
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
         while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
@@ -167,7 +162,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case CPU:
                     case MEMORY:
                         MetricType metric = MetricType.fromString(fieldName);
-                        measurements.put(metric, new Measurement(metric.parseValue(parser.longValue())));
+                        measurements.put(metric, Measurement.fromXContent(parser));
                         break;
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());
