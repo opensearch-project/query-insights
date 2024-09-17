@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
@@ -33,6 +34,8 @@ import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCatego
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
+import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
@@ -438,5 +441,22 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         // close any unclosed resources
         queryInsightsExporterFactory.closeAllExporters();
         queryInsightsReaderFactory.closeAllReaders();
+    }
+
+    /**
+     * Get health stats for query insights services
+     *
+     * @return QueryInsightsHealthStats
+     */
+    public QueryInsightsHealthStats getHealthStats() {
+        Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = new HashMap<>();
+        for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
+            topQueriesHealthStatsMap.put(entry.getKey(), entry.getValue().getHealthStats());
+        }
+        return new QueryInsightsHealthStats(
+            threadPool.info(QUERY_INSIGHTS_EXECUTOR),
+            this.queryRecordsQueue.size(),
+            topQueriesHealthStatsMap
+        );
     }
 }

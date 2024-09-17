@@ -21,6 +21,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
@@ -145,5 +146,30 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
         assertEquals(1, topQueriesService.getTopQueriesRecords(true, null, null).size());
+    }
+
+    public void testGetHealthStats_EmptyService() {
+        // Get the health stats from an empty TopQueriesService
+        TopQueriesHealthStats healthStats = topQueriesService.getHealthStats();
+        // Validate the health stats
+        assertNotNull(healthStats);
+        assertEquals(0, healthStats.getTopQueriesHeapSize());
+        assertNotNull(healthStats.getQueryGrouperHealthStats());
+        assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupCount());
+        assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupHeapSize());
+    }
+
+    public void testGetHealthStats_WithData() {
+        // Add some mock records to the TopQueriesService
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        topQueriesService.consumeRecords(records);
+        // Get the health stats after adding data
+        TopQueriesHealthStats healthStats = topQueriesService.getHealthStats();
+        // Validate the health stats
+        assertNotNull(healthStats);
+        assertEquals(2, healthStats.getTopQueriesHeapSize()); // Since we added two records
+        assertNotNull(healthStats.getQueryGrouperHealthStats());
+        // Assuming no grouping by default, expect QueryGroupCount to be 2
+        assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupCount());
     }
 }

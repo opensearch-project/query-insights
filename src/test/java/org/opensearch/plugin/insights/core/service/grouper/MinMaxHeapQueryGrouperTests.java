@@ -19,6 +19,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -677,6 +678,24 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         assertEquals(1, minMaxHeapQueryGrouper.numberOfTopGroups());
         assertEquals(850L, topQueriesStore.poll().getMeasurement(MetricType.LATENCY));
         assertEquals(2, minMaxHeapQueryGrouper.numberOfGroups());
+    }
+
+    public void testGetHealthStatsWithEmptyGrouper() {
+        QueryGrouperHealthStats healthStats = minMaxHeapQueryGrouper.getHealthStats();
+        // Expecting 0 group count and 0 heap size since no groups have been added
+        assertEquals(0, healthStats.getQueryGroupCount());
+        assertEquals(0, healthStats.getQueryGroupHeapSize());
+    }
+
+    public void testGetHealthStatsWithGroups() {
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        minMaxHeapQueryGrouper.add(records.get(0));
+        minMaxHeapQueryGrouper.add(records.get(1));
+        QueryGrouperHealthStats healthStats = minMaxHeapQueryGrouper.getHealthStats();
+        // Verify that group count stats reflect the correct number of total groups
+        assertEquals(2, healthStats.getQueryGroupCount());
+        // Verify that heap size reflect the correct number of groups in max heap
+        assertEquals(0, healthStats.getQueryGroupHeapSize());
     }
 
     private MinMaxHeapQueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
