@@ -30,8 +30,11 @@ import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
+import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
 import org.opensearch.plugin.insights.rules.transport.top_queries.TransportTopQueriesAction;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -107,12 +110,15 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
         final IndexNameExpressionResolver indexNameExpressionResolver,
         final Supplier<DiscoveryNodes> nodesInCluster
     ) {
-        return List.of(new RestTopQueriesAction());
+        return List.of(new RestTopQueriesAction(), new RestHealthStatsAction());
     }
 
     @Override
     public List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> getActions() {
-        return List.of(new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class));
+        return List.of(
+            new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class),
+            new ActionPlugin.ActionHandler<>(HealthStatsAction.INSTANCE, TransportHealthStatsAction.class)
+        );
     }
 
     @Override

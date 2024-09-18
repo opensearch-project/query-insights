@@ -74,6 +74,7 @@ public class QueryInsightsSettings {
     public static final int DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT = 100;
 
     public static final int MAX_GROUPS_EXCLUDING_TOPN_LIMIT = 10000;
+    public static final String QUERY_INSIGHTS_HEALTH_STATS_URI = PLUGINS_BASE_URI + "/health_stats";
 
     /**
      * Settings for Top Queries
