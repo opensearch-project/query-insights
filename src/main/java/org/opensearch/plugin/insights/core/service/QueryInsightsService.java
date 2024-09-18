@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.client.Client;
@@ -449,10 +450,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @return QueryInsightsHealthStats
      */
     public QueryInsightsHealthStats getHealthStats() {
-        Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = new HashMap<>();
-        for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
-            topQueriesHealthStatsMap.put(entry.getKey(), entry.getValue().getHealthStats());
-        }
+        Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = topQueriesServices.entrySet()
+            .stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getHealthStats()));
         return new QueryInsightsHealthStats(
             threadPool.info(QUERY_INSIGHTS_EXECUTOR),
             this.queryRecordsQueue.size(),

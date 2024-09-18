@@ -21,8 +21,8 @@ import org.opensearch.core.xcontent.XContentBuilder;
 public class QueryGrouperHealthStats implements ToXContentFragment, Writeable {
     private final int queryGroupCount;
     private final int queryGroupHeapSize;
-    private static final String QUERY_GROUP_COUNT = "QueryGroupCount";
-    private static final String QUERY_GROUP_HEAP_SIZE = "QueryGroupHeapSize";
+    private static final String QUERY_GROUP_COUNT_TOTAL = "QueryGroupCount_Total";
+    private static final String QUERY_GROUP_COUNT_MAX_HEAP = "QueryGroupCount_MaxHeap";
 
     /**
      * Constructor to read QueryGrouperHealthStats from a StreamInput.
@@ -67,8 +67,8 @@ public class QueryGrouperHealthStats implements ToXContentFragment, Writeable {
      */
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.field(QUERY_GROUP_COUNT, queryGroupCount);
-        builder.field(QUERY_GROUP_HEAP_SIZE, queryGroupHeapSize);
+        builder.field(QUERY_GROUP_COUNT_TOTAL, queryGroupCount);
+        builder.field(QUERY_GROUP_COUNT_MAX_HEAP, queryGroupHeapSize);
         return builder;
     }
 

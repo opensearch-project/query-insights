@@ -38,7 +38,6 @@ public class TopQueriesHealthStatsTests extends OpenSearchTestCase {
         // Read from StreamInput
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
         TopQueriesHealthStats deserializedHealthStats = new TopQueriesHealthStats(in);
-        // Assert equality
         assertEquals(healthStats.getTopQueriesHeapSize(), deserializedHealthStats.getTopQueriesHeapSize());
         assertNotNull(deserializedHealthStats.getQueryGrouperHealthStats());
         assertEquals(
@@ -53,14 +52,13 @@ public class TopQueriesHealthStatsTests extends OpenSearchTestCase {
 
     public void testToXContent() throws IOException {
         TopQueriesHealthStats healthStats = new TopQueriesHealthStats(topQueriesHeapSize, queryGrouperHealthStats);
-        // Write to XContent
         XContentBuilder builder = XContentFactory.jsonBuilder();
         builder.startObject();
         healthStats.toXContent(builder, ToXContent.EMPTY_PARAMS);
         builder.endObject();
         String expectedJson = String.format(
             Locale.ROOT,
-            "{\"TopQueriesHeapSize\":%d,\"QueryGroupCount\":%d,\"QueryGroupHeapSize\":%d}",
+            "{\"TopQueriesHeapSize\":%d,\"QueryGroupCount_Total\":%d,\"QueryGroupCount_MaxHeap\":%d}",
             topQueriesHeapSize,
             queryGrouperHealthStats.getQueryGroupCount(),
             queryGrouperHealthStats.getQueryGroupHeapSize()

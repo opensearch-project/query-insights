@@ -149,7 +149,6 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testGetHealthStats_EmptyService() {
-        // Get the health stats from an empty TopQueriesService
         TopQueriesHealthStats healthStats = topQueriesService.getHealthStats();
         // Validate the health stats
         assertNotNull(healthStats);
@@ -160,16 +159,13 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testGetHealthStats_WithData() {
-        // Add some mock records to the TopQueriesService
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
         topQueriesService.consumeRecords(records);
-        // Get the health stats after adding data
         TopQueriesHealthStats healthStats = topQueriesService.getHealthStats();
-        // Validate the health stats
         assertNotNull(healthStats);
         assertEquals(2, healthStats.getTopQueriesHeapSize()); // Since we added two records
         assertNotNull(healthStats.getQueryGrouperHealthStats());
-        // Assuming no grouping by default, expect QueryGroupCount to be 2
+        // Assuming no grouping by default, expect QueryGroupCount to be 0
         assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupCount());
     }
 }

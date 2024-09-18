@@ -694,7 +694,6 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         QueryGrouperHealthStats healthStats = minMaxHeapQueryGrouper.getHealthStats();
         // Verify that group count stats reflect the correct number of total groups
         assertEquals(2, healthStats.getQueryGroupCount());
-        // Verify that heap size reflect the correct number of groups in max heap
         assertEquals(0, healthStats.getQueryGroupHeapSize());
     }
 

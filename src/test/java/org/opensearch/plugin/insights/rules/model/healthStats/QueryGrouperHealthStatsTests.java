@@ -38,21 +38,19 @@ public class QueryGrouperHealthStatsTests extends OpenSearchTestCase {
         // Read from StreamInput
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
         QueryGrouperHealthStats deserializedStats = new QueryGrouperHealthStats(in);
-        // Assert equality
         assertEquals(stats.getQueryGroupCount(), deserializedStats.getQueryGroupCount());
         assertEquals(stats.getQueryGroupHeapSize(), deserializedStats.getQueryGroupHeapSize());
     }
 
     public void testToXContent() throws IOException {
         QueryGrouperHealthStats stats = new QueryGrouperHealthStats(queryGroupCount, queryGroupHeapSize);
-        // Write to XContent
         XContentBuilder builder = XContentFactory.jsonBuilder();
         builder.startObject();
         stats.toXContent(builder, ToXContent.EMPTY_PARAMS);
         builder.endObject();
         String expectedJson = String.format(
             Locale.ROOT,
-            "{\"QueryGroupCount\":%d,\"QueryGroupHeapSize\":%d}",
+            "{\"QueryGroupCount_Total\":%d,\"QueryGroupCount_MaxHeap\":%d}",
             queryGroupCount,
             queryGroupHeapSize
         );

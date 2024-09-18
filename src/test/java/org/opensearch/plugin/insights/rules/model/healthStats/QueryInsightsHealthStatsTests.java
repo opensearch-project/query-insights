@@ -69,7 +69,6 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
         // Read from StreamInput
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
         QueryInsightsHealthStats deserializedHealthStats = new QueryInsightsHealthStats(in);
-        // Assert equality
         assertEquals(healthStats.getQueryRecordsQueueSize(), deserializedHealthStats.getQueryRecordsQueueSize());
         assertNotNull(deserializedHealthStats.getThreadPoolInfo());
         assertNotNull(deserializedHealthStats.getTopQueriesHealthStats());
@@ -77,7 +76,6 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
 
     public void testToXContent() throws IOException {
         QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(threadPoolInfo, queryRecordsQueueSize, topQueriesHealthStats);
-        // Create XContentBuilder to build JSON
         XContentBuilder builder = XContentFactory.jsonBuilder();
         builder.startObject();
 
@@ -99,8 +97,8 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
             + "    \"TopQueriesHealthStats\": {\n"
             + "        \"latency\": {\n"
             + "            \"TopQueriesHeapSize\": 10,\n"
-            + "            \"QueryGroupCount\": 20,\n"
-            + "            \"QueryGroupHeapSize\": 15\n"
+            + "            \"QueryGroupCount_Total\": 20,\n"
+            + "            \"QueryGroupCount_MaxHeap\": 15\n"
             + "        }\n"
             + "    }\n"
             + "}";
