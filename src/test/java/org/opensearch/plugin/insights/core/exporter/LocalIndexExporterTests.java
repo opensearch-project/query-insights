@@ -12,8 +12,11 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Arrays;
 import java.util.List;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
@@ -80,6 +83,14 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("No exception should be thrown when exporting query insights data");
         }
+    }
+
+    public void testExportWithNoRecords() {
+        // Call the export method with no records
+        localIndexExporter.export(null);
+        localIndexExporter.export(List.of());
+        // Verify no interactions with the client
+        verify(client, times(0)).prepareBulk();
     }
 
     public void testClose() {

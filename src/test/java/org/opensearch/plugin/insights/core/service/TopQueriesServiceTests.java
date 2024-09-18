@@ -8,8 +8,11 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
@@ -19,6 +22,7 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -40,6 +44,43 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         topQueriesService.setTopNSize(Integer.MAX_VALUE);
         topQueriesService.setWindowSize(new TimeValue(Long.MAX_VALUE));
         topQueriesService.setEnabled(true);
+    }
+
+    public void testSetAndGetTopNSize() {
+        int newSize = 5;
+        topQueriesService.setTopNSize(newSize);
+        assertEquals(newSize, topQueriesService.getTopNSize());
+    }
+
+    public void testConsumeRecords() {
+        // Prepare some mock SearchQueryRecords
+        SearchQueryRecord record1 = mock(SearchQueryRecord.class);
+        when(record1.getTimestamp()).thenReturn(System.currentTimeMillis());
+        when(record1.getMeasurements()).thenReturn(Collections.singletonMap(MetricType.LATENCY, new Measurement(1000L)));
+        when(record1.getMeasurement(any())).thenReturn(1000L);
+        SearchQueryRecord record2 = mock(SearchQueryRecord.class);
+        when(record2.getTimestamp()).thenReturn(System.currentTimeMillis());
+        when(record2.getMeasurements()).thenReturn(Collections.singletonMap(MetricType.LATENCY, new Measurement(2000L)));
+        when(record2.getMeasurement(any())).thenReturn(2000L);
+        // Consume records
+        topQueriesService.consumeRecords(List.of(record1, record2));
+        // Verify that the topQueriesStore contains the records
+        List<SearchQueryRecord> snapshot = topQueriesService.getTopQueriesCurrentSnapshot();
+        assertEquals(2, snapshot.size());
+    }
+
+    public void testGetTopQueriesRecords() {
+        topQueriesService.setEnabled(true);
+        // Prepare some mock SearchQueryRecords and add to service
+        SearchQueryRecord record1 = mock(SearchQueryRecord.class);
+        when(record1.getTimestamp()).thenReturn(System.currentTimeMillis());
+        when(record1.getMeasurements()).thenReturn(Collections.singletonMap(MetricType.LATENCY, new Measurement(1000L)));
+        topQueriesService.consumeRecords(List.of(record1));
+        // Fetch records
+        List<SearchQueryRecord> result = topQueriesService.getTopQueriesRecords(false, null, null);
+        // Verify the result
+        assertNotNull(result);
+        assertEquals(1, result.size());
     }
 
     public void testIngestQueryDataWithLargeWindow() {
