@@ -9,14 +9,13 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ONE_SPACE_INDENT;
-import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.QUERY_FIELD_DATA_MAP;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.buildFieldDataString;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.common.SetOnce;
 import org.opensearch.index.query.QueryBuilder;
@@ -33,15 +32,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     @Override
     public void accept(QueryBuilder queryBuilder) {
         queryType.set(queryBuilder.getName());
-
-        List<String> fieldDataList = new ArrayList<>();
-        List<Function<Object, String>> methods = QUERY_FIELD_DATA_MAP.get(queryBuilder.getClass());
-        if (methods != null) {
-            for (Function<Object, String> lambda : methods) {
-                fieldDataList.add(lambda.apply(queryBuilder));
-            }
-        }
-        fieldData.set(String.join(", ", fieldDataList));
+        fieldData.set(buildFieldDataString(queryBuilder));
     }
 
     @Override
@@ -101,7 +92,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     public String prettyPrintTree(String indent, Boolean showFields) {
         StringBuilder outputBuilder = new StringBuilder(indent).append(queryType.get());
         if (showFields) {
-            outputBuilder.append(" [").append(fieldData.get()).append("]");
+            outputBuilder.append(fieldData.get());
         }
         outputBuilder.append("\n");
         for (Map.Entry<BooleanClause.Occur, List<QueryShapeVisitor>> entry : childVisitors.entrySet()) {
