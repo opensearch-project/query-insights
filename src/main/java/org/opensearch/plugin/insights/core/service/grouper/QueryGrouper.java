@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.service.grouper;
 
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
 
 /**
  * Interface for grouping search queries based on grouping type for the metric type.
@@ -57,4 +58,11 @@ public interface QueryGrouper {
      * @param topNSize the new top N size
      */
     void updateTopNSize(int topNSize);
+
+    /**
+     * Get health stats of the QueryGrouperService
+     *
+     * @return QueryGrouperHealthStats
+     */
+    QueryGrouperHealthStats getHealthStats();
 }
