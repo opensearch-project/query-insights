@@ -8,7 +8,9 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
@@ -17,6 +19,9 @@ import org.joda.time.format.DateTimeFormat;
 import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -27,10 +32,16 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
 
     private final Client client = mock(Client.class);
     private QueryInsightsExporterFactory queryInsightsExporterFactory;
+    private MetricsRegistry metricsRegistry;
 
     @Before
     public void setup() {
         queryInsightsExporterFactory = new QueryInsightsExporterFactory(client);
+        metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
+            invocation -> mock(Counter.class)
+        );
+        OperationalMetricsCounter.initialize("cluster", metricsRegistry);
     }
 
     public void testValidateConfigWhenResetExporter() {
