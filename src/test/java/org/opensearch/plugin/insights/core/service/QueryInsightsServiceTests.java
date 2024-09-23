@@ -12,25 +12,32 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
+import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.threadpool.ScalingExecutorBuilder;
+import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.
  */
 public class QueryInsightsServiceTests extends OpenSearchTestCase {
-    private final ThreadPool threadPool = mock(ThreadPool.class);
+    private ThreadPool threadPool;
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsService queryInsightsService;
@@ -42,6 +49,10 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
+        this.threadPool = new TestThreadPool(
+            "QueryInsightsHealthStatsTests",
+            new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
+        );
         queryInsightsService = new QueryInsightsService(
             clusterSettings,
             threadPool,
@@ -53,6 +64,12 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
         queryInsightsServiceSpy = spy(queryInsightsService);
+    }
+
+    @Override
+    public void tearDown() throws Exception {
+        super.tearDown();
+        ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
     }
 
     public void testAddRecordToLimitAndDrain() {
@@ -163,5 +180,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
         queryInsightsService.drainRecords();
         assertEquals(2, queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size());
+    }
+
+    public void testGetHealthStats() {
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        queryInsightsService.addRecord(records.get(0));
+        QueryInsightsHealthStats healthStats = queryInsightsService.getHealthStats();
+        assertNotNull(healthStats);
+        assertEquals(threadPool.info(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR), healthStats.getThreadPoolInfo());
+        assertEquals(1, healthStats.getQueryRecordsQueueSize());
+        Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = healthStats.getTopQueriesHealthStats();
+        assertNotNull(topQueriesHealthStatsMap);
+        assertEquals(3, topQueriesHealthStatsMap.size());
+        assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.LATENCY));
+        assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.CPU));
+        assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.MEMORY));
     }
 }
