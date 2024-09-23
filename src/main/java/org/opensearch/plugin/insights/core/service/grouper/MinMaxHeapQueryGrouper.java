@@ -20,6 +20,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
 /**
@@ -39,12 +40,12 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     /**
      * Metric type for the current grouping service
      */
-    private MetricType metricType;
+    private final MetricType metricType;
 
     /**
      * Aggregation type for the current grouping service
      */
-    private AggregationType aggregationType;
+    private final AggregationType aggregationType;
     /**
      * Map storing groupingId to Tuple containing Aggregate search query record and boolean.
      * SearchQueryRecord: Aggregate search query record to store the aggregate of a metric type based on the aggregation type..
@@ -53,18 +54,18 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * boolean: True if the aggregate record is in the Top N queries priority query (min heap) and False if the aggregate
      * record is in the Max Heap
      */
-    private ConcurrentHashMap<String, Tuple<SearchQueryRecord, Boolean>> groupIdToAggSearchQueryRecord;
+    private final ConcurrentHashMap<String, Tuple<SearchQueryRecord, Boolean>> groupIdToAggSearchQueryRecord;
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
-    private PriorityBlockingQueue<SearchQueryRecord> minHeapTopQueriesStore;
+    private final PriorityBlockingQueue<SearchQueryRecord> minHeapTopQueriesStore;
     /**
      * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
      * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
      * records is updated and it now qualifies as part of the Top N, the record is moved from the Max heap to the Min heap,
      * and the records are rearranged accordingly.
      */
-    private PriorityBlockingQueue<SearchQueryRecord> maxHeapQueryStore;
+    private final PriorityBlockingQueue<SearchQueryRecord> maxHeapQueryStore;
 
     /**
      * Top N size based on the configuration set
@@ -80,11 +81,11 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     private int maxGroups;
 
     public MinMaxHeapQueryGrouper(
-        MetricType metricType,
-        GroupingType groupingType,
-        AggregationType aggregationType,
-        PriorityBlockingQueue<SearchQueryRecord> topQueriesStore,
-        int topNSize
+        final MetricType metricType,
+        final GroupingType groupingType,
+        final AggregationType aggregationType,
+        final PriorityBlockingQueue<SearchQueryRecord> topQueriesStore,
+        final int topNSize
     ) {
         this.groupingType = groupingType;
         this.metricType = metricType;
@@ -103,7 +104,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @return return the search query record that represents the group
      */
     @Override
-    public SearchQueryRecord add(SearchQueryRecord searchQueryRecord) {
+    public SearchQueryRecord add(final SearchQueryRecord searchQueryRecord) {
         if (groupingType == GroupingType.NONE) {
             throw new IllegalArgumentException("Do not use addQueryToGroup when GroupingType is None");
         }
@@ -120,8 +121,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         // Add to min PQ and promote to max
         // If max PQ is empty return else try to promote record from max to min
         if (!groupIdToAggSearchQueryRecord.containsKey(groupId)) {
-            boolean maxGroupsLimitReached = checkMaxGroupsLimitReached(groupId);
-            if (maxGroupsLimitReached) {
+            if (checkMaxGroupsLimitReached(groupId)) {
                 return null;
             }
             aggregateSearchQueryRecord = searchQueryRecord;
@@ -158,7 +158,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @return grouping type changed
      */
     @Override
-    public boolean setGroupingType(GroupingType newGroupingType) {
+    public boolean setGroupingType(final GroupingType newGroupingType) {
         if (this.groupingType != newGroupingType) {
             this.groupingType = newGroupingType;
             drain();
@@ -183,7 +183,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @return max groups changed
      */
     @Override
-    public boolean setMaxGroups(int maxGroups) {
+    public boolean setMaxGroups(final int maxGroups) {
         if (this.maxGroups != maxGroups) {
             this.maxGroups = maxGroups;
             drain();
@@ -197,17 +197,21 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @param newSize new size
      */
     @Override
-    public void updateTopNSize(int newSize) {
+    public void updateTopNSize(final int newSize) {
         this.topNSize = newSize;
     }
 
-    private void addToMinPQ(SearchQueryRecord searchQueryRecord, String groupId) {
+    private void addToMinPQ(final SearchQueryRecord searchQueryRecord, final String groupId) {
         minHeapTopQueriesStore.add(searchQueryRecord);
         groupIdToAggSearchQueryRecord.put(groupId, new Tuple<>(searchQueryRecord, true));
         overflow();
     }
 
-    private void addAndPromote(SearchQueryRecord searchQueryRecord, SearchQueryRecord aggregateSearchQueryRecord, String groupId) {
+    private void addAndPromote(
+        final SearchQueryRecord searchQueryRecord,
+        final SearchQueryRecord aggregateSearchQueryRecord,
+        final String groupId
+    ) {
         Number measurementToAdd = searchQueryRecord.getMeasurement(metricType);
         aggregateSearchQueryRecord.addMeasurement(metricType, measurementToAdd);
         addToMinPQ(aggregateSearchQueryRecord, groupId);
@@ -228,7 +232,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         }
     }
 
-    private boolean checkMaxGroupsLimitReached(String groupId) {
+    private boolean checkMaxGroupsLimitReached(final String groupId) {
         if (maxGroups <= maxHeapQueryStore.size() && minHeapTopQueriesStore.size() >= topNSize) {
             log.warn(
                 "Exceeded [{}] setting threshold which is set at {}. Discarding new group with id {}.",
@@ -259,11 +263,11 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     }
 
     /**
-     * Get groupingId. This should be query hashcode for SIMILARITY grouping and user_id for USER_ID grouping.
+     * Get groupingId. This should be the query hashcode for SIMILARITY grouping and user_id for USER_ID grouping.
      * @param searchQueryRecord record
      * @return Grouping Id
      */
-    private String getGroupingId(SearchQueryRecord searchQueryRecord) {
+    private String getGroupingId(final SearchQueryRecord searchQueryRecord) {
         switch (groupingType) {
             case SIMILARITY:
                 return searchQueryRecord.getAttributes().get(Attribute.QUERY_HASHCODE).toString();
@@ -272,5 +276,14 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             default:
                 throw new IllegalArgumentException("The following grouping type is not supported : " + groupingType);
         }
+    }
+
+    /**
+     * Get health stats of the MinMaxHeapQueryGrouperService
+     *
+     * @return QueryGrouperHealthStats
+     */
+    public QueryGrouperHealthStats getHealthStats() {
+        return new QueryGrouperHealthStats(this.groupIdToAggSearchQueryRecord.size(), this.maxHeapQueryStore.size());
     }
 }

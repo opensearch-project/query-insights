@@ -62,7 +62,7 @@ public enum MetricType implements Comparator<Number> {
      * @param metricType the MetricType to write
      * @throws IOException IOException
      */
-    static void writeTo(final StreamOutput out, final MetricType metricType) throws IOException {
+    public static void writeTo(final StreamOutput out, final MetricType metricType) throws IOException {
         out.writeString(metricType.toString());
     }
 

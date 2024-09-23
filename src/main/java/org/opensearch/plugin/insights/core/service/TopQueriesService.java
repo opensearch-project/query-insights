@@ -49,6 +49,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.threadpool.ThreadPool;
 
@@ -515,5 +516,14 @@ public class TopQueriesService {
         topQueriesStore.clear();
         topQueriesHistorySnapshot.set(new ArrayList<>());
         topQueriesCurrentSnapshot.set(new ArrayList<>());
+    }
+
+    /**
+     * Get top queries service health stats
+     *
+     * @return TopQueriesHealthStats
+     */
+    public TopQueriesHealthStats getHealthStats() {
+        return new TopQueriesHealthStats(this.topQueriesStore.size(), this.queryGrouper.getHealthStats());
     }
 }
