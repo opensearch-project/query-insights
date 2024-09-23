@@ -40,6 +40,8 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
@@ -265,6 +267,7 @@ public class TopQueriesService {
                 try {
                     queryInsightsExporterFactory.closeExporter(this.exporter);
                 } catch (IOException e) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
                     logger.error("Fail to close the current exporter when updating exporter, error: ", e);
                 }
                 this.exporter = queryInsightsExporterFactory.createExporter(
@@ -278,6 +281,7 @@ public class TopQueriesService {
                 queryInsightsExporterFactory.closeExporter(this.exporter);
                 this.exporter = null;
             } catch (IOException e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
                 logger.error("Fail to close the current exporter when disabling exporter, error: ", e);
             }
         }

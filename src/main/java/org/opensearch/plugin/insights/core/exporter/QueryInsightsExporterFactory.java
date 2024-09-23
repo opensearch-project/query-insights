@@ -22,6 +22,8 @@ import org.apache.logging.log4j.Logger;
 import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 
 /**
  * Factory class for validating and creating exporters based on provided settings
@@ -59,6 +61,7 @@ public class QueryInsightsExporterFactory {
         try {
             type = SinkType.parse(settings.get(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE));
         } catch (IllegalArgumentException e) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
             throw new IllegalArgumentException(
                 String.format(
                     Locale.ROOT,
@@ -77,6 +80,7 @@ public class QueryInsightsExporterFactory {
                 try {
                     DateTimeFormat.forPattern(indexPattern);
                 } catch (Exception e) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_INDEX_PATTERN_EXCEPTIONS);
                     throw new IllegalArgumentException(
                         String.format(Locale.ROOT, "Invalid index pattern [%s] configured for the exporter", indexPattern)
                     );

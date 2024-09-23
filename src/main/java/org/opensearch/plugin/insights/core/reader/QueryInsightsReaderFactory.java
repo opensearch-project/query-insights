@@ -21,6 +21,8 @@ import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 
 /**
  * Factory class for validating and creating Readers based on provided settings
@@ -57,6 +59,7 @@ public class QueryInsightsReaderFactory {
         try {
             DateTimeFormat.forPattern(indexPattern);
         } catch (Exception e) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_INDEX_PATTERN_EXCEPTIONS);
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Invalid index pattern [%s] configured for the Reader", indexPattern)
             );
