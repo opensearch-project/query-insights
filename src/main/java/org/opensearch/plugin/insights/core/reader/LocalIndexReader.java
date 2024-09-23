@@ -27,6 +27,8 @@ import org.opensearch.index.query.MatchQueryBuilder;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.RangeQueryBuilder;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -113,6 +115,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
                     records.add(record);
                 }
             } catch (IndexNotFoundException ignored) {} catch (Exception e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
                 logger.error("Unable to parse search hit: ", e);
             }
             curr = curr.plusDays(1);

@@ -22,6 +22,8 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
@@ -90,10 +92,12 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
 
                 @Override
                 public void onFailure(Exception e) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
                     logger.error("Failed to execute bulk operation for query insights data: ", e);
                 }
             });
         } catch (final Exception e) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
             logger.error("Unable to index query insights data: ", e);
         }
     }
