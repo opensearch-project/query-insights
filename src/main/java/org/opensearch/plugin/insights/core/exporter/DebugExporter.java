@@ -20,12 +20,23 @@ public final class DebugExporter implements QueryInsightsExporter {
     /**
      * Logger of the debug exporter
      */
-    private final Logger logger = LogManager.getLogger();
+    private final Logger logger;
 
     /**
-     * Constructor of DebugExporter
+     * Private constructor for singleton pattern.
      */
-    private DebugExporter() {}
+    private DebugExporter() {
+        this.logger = LogManager.getLogger();
+    }
+
+    /**
+     * Package-private constructor for injecting a custom logger, used for testing
+     *
+     * @param logger
+     */
+    DebugExporter(Logger logger) {
+        this.logger = logger;
+    }
 
     private static class InstanceHolder {
         private static final DebugExporter INSTANCE = new DebugExporter();
@@ -34,7 +45,7 @@ public final class DebugExporter implements QueryInsightsExporter {
     /**
      Get the singleton instance of DebugExporter
      *
-     @return DebugExporter instance
+     * @return DebugExporter instance
      */
     public static DebugExporter getInstance() {
         return InstanceHolder.INSTANCE;
