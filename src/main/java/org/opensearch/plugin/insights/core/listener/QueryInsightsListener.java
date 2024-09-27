@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -239,7 +240,16 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 );
             }
 
-            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
+            Set<String> successfulShardIndices = searchRequestContext.getSuccessfulSearchShardIndices();
+            if (successfulShardIndices == null) {
+                successfulShardIndices = Collections.emptySet();
+            }
+            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(
+                request.source(),
+                false,
+                clusterService.state().getMetadata(),
+                successfulShardIndices
+            );
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));

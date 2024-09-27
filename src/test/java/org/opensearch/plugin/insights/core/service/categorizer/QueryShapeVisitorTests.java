@@ -8,6 +8,10 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import static org.mockito.Mockito.mock;
+
+import java.util.Set;
+import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.ConstantScoreQueryBuilder;
 import org.opensearch.index.query.MatchQueryBuilder;
@@ -27,7 +31,7 @@ public final class QueryShapeVisitorTests extends OpenSearchTestCase {
                     .mustNot(new RegexpQueryBuilder("color", "red.*"))
             )
             .must(new TermsQueryBuilder("genre", "action", "drama", "romance"));
-        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor();
+        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor(mock(Metadata.class), Set.of());
         builder.visit(shapeVisitor);
         assertEquals(
             "{\"type\":\"bool\",\"must\"[{\"type\":\"term\"},{\"type\":\"terms\"}],\"filter\"[{\"type\":\"constant_score\",\"filter\"[{\"type\":\"range\"}]}],\"should\"[{\"type\":\"bool\",\"must\"[{\"type\":\"match\"}],\"must_not\"[{\"type\":\"regexp\"}]}]}",

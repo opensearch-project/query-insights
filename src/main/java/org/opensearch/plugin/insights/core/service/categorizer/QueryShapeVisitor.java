@@ -16,7 +16,9 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.apache.lucene.search.BooleanClause;
+import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.common.SetOnce;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
@@ -28,11 +30,23 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     private final SetOnce<String> queryType = new SetOnce<>();
     private final SetOnce<String> fieldData = new SetOnce<>();
     private final Map<BooleanClause.Occur, List<QueryShapeVisitor>> childVisitors = new EnumMap<>(BooleanClause.Occur.class);
+    private final Metadata metadata;
+    private final Set<String> searchIndices;
+
+    /**
+     * Default constructor
+     * @param metadata contains index mappings
+     * @param searchIndices successful indices searched
+     */
+    public QueryShapeVisitor(Metadata metadata, Set<String> searchIndices) {
+        this.metadata = metadata;
+        this.searchIndices = searchIndices;
+    }
 
     @Override
     public void accept(QueryBuilder queryBuilder) {
         queryType.set(queryBuilder.getName());
-        fieldData.set(buildFieldDataString(queryBuilder));
+        fieldData.set(buildFieldDataString(queryBuilder, metadata, searchIndices));
     }
 
     @Override
@@ -47,7 +61,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
 
             @Override
             public void accept(QueryBuilder qb) {
-                currentChild = new QueryShapeVisitor();
+                currentChild = new QueryShapeVisitor(metadata, searchIndices);
                 childVisitorList.add(currentChild);
                 currentChild.accept(qb);
             }
@@ -106,9 +120,4 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
         }
         return outputBuilder.toString();
     }
-
-    /**
-     * Default constructor
-     */
-    public QueryShapeVisitor() {}
 }
