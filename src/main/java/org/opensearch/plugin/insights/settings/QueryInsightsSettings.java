@@ -142,14 +142,14 @@ public class QueryInsightsSettings {
     );
 
     public static final Setting<Boolean> TOP_N_QUERIES_GROUPING_FIELD_NAME = Setting.boolSetting(
-        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".field_name",
+        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".attributes.field_name",
         false,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
 
     public static final Setting<Boolean> TOP_N_QUERIES_GROUPING_FIELD_TYPE = Setting.boolSetting(
-        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".field_type",
+        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".attributes.field_type",
         false,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
