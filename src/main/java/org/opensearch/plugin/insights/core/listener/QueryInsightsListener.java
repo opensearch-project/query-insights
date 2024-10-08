@@ -9,7 +9,13 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.*;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
 import java.util.Collections;
 import java.util.HashMap;
