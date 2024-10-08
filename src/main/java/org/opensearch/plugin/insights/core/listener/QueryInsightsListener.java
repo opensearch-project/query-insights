@@ -262,11 +262,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 );
             }
 
-            String hashcode = "";
-            if (queryInsightsService.isGroupingEnabled()) {
-                hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), groupingFieldNameEnabled);
-            }
-
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
             attributes.put(Attribute.SOURCE, request.source());
@@ -274,7 +269,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
-            attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+
+            if (queryInsightsService.isGroupingEnabled()) {
+                String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), groupingFieldNameEnabled);
+                attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+            }
 
             Map<String, Object> labels = new HashMap<>();
             // Retrieve user provided label if exists
