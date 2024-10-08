@@ -9,11 +9,7 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.*;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,6 +50,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private final QueryInsightsService queryInsightsService;
     private final ClusterService clusterService;
+    private boolean groupingFieldNameEnabled;
+    private boolean groupingFieldTypeEnabled;
 
     /**
      * Constructor for QueryInsightsListener
@@ -64,6 +62,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     @Inject
     public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
         this(clusterService, queryInsightsService, false);
+        groupingFieldNameEnabled = false;
+        groupingFieldTypeEnabled = false;
     }
 
     /**
@@ -126,9 +126,18 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
         this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
 
+        // Internal settings for grouping attributes
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUPING_FIELD_NAME, this::setGroupingFieldNameEnabled);
+        setGroupingFieldNameEnabled(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUPING_FIELD_NAME));
+
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUPING_FIELD_TYPE, this::setGroupingFieldTypeEnabled);
+        setGroupingFieldTypeEnabled(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUPING_FIELD_TYPE));
+
         // Settings endpoints set for search query metrics
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, v -> setSearchQueryMetricsEnabled(v));
+            .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
     }
 
@@ -152,6 +161,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void setSearchQueryMetricsEnabled(boolean searchQueryMetricsEnabled) {
         this.queryInsightsService.enableSearchQueryMetricsFeature(searchQueryMetricsEnabled);
         updateQueryInsightsState();
+    }
+
+    public void setGroupingFieldNameEnabled(Boolean fieldNameEnabled) {
+        this.groupingFieldNameEnabled = fieldNameEnabled;
+    }
+
+    public void setGroupingFieldTypeEnabled(Boolean fieldTypeEnabled) {
+        this.groupingFieldTypeEnabled = fieldTypeEnabled;
     }
 
     /**
@@ -241,7 +258,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 );
             }
 
-            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
+            String hashcode = "";
+            if (queryInsightsService.isGroupingEnabled()) {
+                hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), groupingFieldNameEnabled);
+            }
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
