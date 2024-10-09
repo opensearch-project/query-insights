@@ -15,6 +15,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,7 @@ import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.action.search.SearchRequestOperationsListener;
 import org.opensearch.action.search.SearchTask;
+import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
@@ -54,6 +56,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private final QueryInsightsService queryInsightsService;
     private final ClusterService clusterService;
+    private final QueryShapeGenerator queryShapeGenerator;
 
     /**
      * Constructor for QueryInsightsListener
@@ -81,6 +84,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
+        this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
         // Expected metricTypes are Latency, CPU, and Memory.
@@ -241,7 +245,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 );
             }
 
-            String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), false);
+            String hashcode = queryShapeGenerator.getShapeHashCodeAsString(
+                request.source(),
+                false,
+                searchRequestContext.getSuccessfulSearchShardIndices()
+            );
+
+            String shape = queryShapeGenerator.buildShape(request.source(), true, searchRequestContext.getSuccessfulSearchShardIndices());
+            System.out.println("===== Query Shape =====");
+            System.out.println(shape);
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));

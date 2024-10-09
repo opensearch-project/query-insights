@@ -87,11 +87,6 @@ public final class SearchQueryCategorizer {
         incrementQueryTypeCounters(source.query(), measurements);
         incrementQueryAggregationCounters(source.aggregations(), measurements);
         incrementQuerySortCounters(source.sorts(), measurements);
-
-        if (logger.isTraceEnabled()) {
-            String searchShape = QueryShapeGenerator.buildShape(source, true);
-            logger.trace(searchShape);
-        }
     }
 
     private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Measurement> measurements) {

@@ -9,15 +9,16 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ONE_SPACE_INDENT;
-import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.buildFieldDataString;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.common.SetOnce;
+import org.opensearch.core.index.Index;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 
@@ -28,11 +29,13 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     private final SetOnce<String> queryType = new SetOnce<>();
     private final SetOnce<String> fieldData = new SetOnce<>();
     private final Map<BooleanClause.Occur, List<QueryShapeVisitor>> childVisitors = new EnumMap<>(BooleanClause.Occur.class);
+    private final QueryShapeGenerator queryShapeGenerator;
+    private final Set<Index> successfulSearchShardIndices;
 
     @Override
     public void accept(QueryBuilder queryBuilder) {
         queryType.set(queryBuilder.getName());
-        fieldData.set(buildFieldDataString(queryBuilder));
+        fieldData.set(queryShapeGenerator.buildFieldDataString(queryBuilder, successfulSearchShardIndices));
     }
 
     @Override
@@ -47,7 +50,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
 
             @Override
             public void accept(QueryBuilder qb) {
-                currentChild = new QueryShapeVisitor();
+                currentChild = new QueryShapeVisitor(queryShapeGenerator, successfulSearchShardIndices);
                 childVisitorList.add(currentChild);
                 currentChild.accept(qb);
             }
@@ -110,5 +113,8 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     /**
      * Default constructor
      */
-    public QueryShapeVisitor() {}
+    public QueryShapeVisitor(QueryShapeGenerator queryShapeGenerator, Set<Index> successfulSearchShardIndices) {
+        this.queryShapeGenerator = queryShapeGenerator;
+        this.successfulSearchShardIndices = successfulSearchShardIndices;
+    }
 }
