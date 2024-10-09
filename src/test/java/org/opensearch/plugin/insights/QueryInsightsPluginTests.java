@@ -77,6 +77,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_MEMORY_EXPORTER_SETTINGS,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
+                QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,
+                QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE,
                 QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING
             ),
             queryInsightsPlugin.getSettings()
