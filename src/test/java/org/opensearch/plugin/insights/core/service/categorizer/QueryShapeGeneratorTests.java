@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.apache.lucene.search.join.ScoreMode;
 import org.opensearch.cluster.ClusterState;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.service.ClusterService;
@@ -52,7 +53,9 @@ import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.OpenSearchTestCase;
 
 public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
-    final Set<Index> successfulSearchShardIndices = Set.of(new Index("index1", UUID.randomUUID().toString()));
+    final Index index1 = new Index("index1", UUID.randomUUID().toString());
+    final Index index2 = new Index("index2", UUID.randomUUID().toString());
+    final Set<Index> successfulSearchShardIndices = Set.of(index1);
     final QueryShapeGenerator queryShapeGenerator;
 
     private ClusterService mockClusterService;
@@ -70,18 +73,17 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
         when(mockClusterState.metadata()).thenReturn(mockMetaData);
     }
 
-    public void setUpMockMappings(String indexName, Map<String, Object> mappingProperties) throws IOException {
+    public void setUpMockMappings(Index index, Map<String, Object> mappingProperties) throws IOException {
         MappingMetadata mockMappingMetadata = mock(MappingMetadata.class);
-
         when(mockMappingMetadata.getSourceAsMap()).thenReturn(mappingProperties);
-
-        final Map<String, MappingMetadata> indexMappingMap = Map.of(indexName, mockMappingMetadata);
-        when(mockMetaData.findMappings(any(), any())).thenReturn(indexMappingMap);
+        IndexMetadata indexMetadata = mock(IndexMetadata.class);
+        when(indexMetadata.mapping()).thenReturn(mockMappingMetadata);
+        when(mockMetaData.index(index)).thenReturn(indexMetadata);
     }
 
     public void testBasicSearchWithFieldNameAndType() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -113,7 +115,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     // If field type is not found we leave the field type blank
     public void testFieldTypeNotFound() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(
@@ -139,7 +141,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testEmptyMappings() throws IOException {
         setUpMockMappings(
-            "index1",
+            successfulSearchShardIndices.iterator().next(),
             Map.of(
                 "properties",
                 Map.of() // No fields defined
@@ -170,9 +172,9 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     // Field type should be inferred from both the mappings
     public void testMultipleIndexMappings() throws IOException {
-        setUpMockMappings("index2", Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
+        setUpMockMappings(index2, Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
 
-        setUpMockMappings("index1", Map.of("properties", Map.of("field2", Map.of("type", "text"), "field4", Map.of("type", "long"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("field2", Map.of("type", "text"), "field4", Map.of("type", "long"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder();
 
@@ -190,7 +192,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testDifferentFieldTypes() throws IOException {
         setUpMockMappings(
-            "index1",
+            successfulSearchShardIndices.iterator().next(),
             Map.of(
                 "properties",
                 Map.of(
@@ -222,7 +224,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testFieldWithNestedProperties() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -251,7 +253,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testFieldWithArrayType() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of("field1", Map.of("type", "keyword"), "field2", Map.of("type", "text"), "field3", Map.of("type", "keyword"))
@@ -277,7 +279,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithDateType() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("dateField", Map.of("type", "date"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("dateField", Map.of("type", "date"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(boolQuery().filter(rangeQuery("dateField").gte("2024-01-01").lte("2024-12-31")));
@@ -288,7 +290,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithGeoPointType() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("location", Map.of("type", "geo_point"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("location", Map.of("type", "geo_point"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(boolQuery().filter(geoDistanceQuery("location").point(40.73, -74.1).distance(200, DistanceUnit.KILOMETERS)));
@@ -299,7 +301,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithBinaryType() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("binaryField", Map.of("type", "binary"))));
+        setUpMockMappings(successfulSearchShardIndices.iterator().next(), Map.of("properties", Map.of("binaryField", Map.of("type", "binary"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(boolQuery().must(termQuery("binaryField", "base64EncodedString")));
@@ -311,7 +313,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testFieldWithMixedTypes() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -339,7 +341,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithInvalidQueries() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(
@@ -353,7 +355,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testFieldWithDeeplyNestedStructure() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -378,7 +380,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     // We are not parsing fields for scripts
     public void testFieldWithScriptedQuery() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("scriptedField", Map.of("type", "long"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("scriptedField", Map.of("type", "long"))));
 
         Script script = new Script(
             ScriptType.INLINE,
@@ -398,7 +400,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testDynamicTemplateMappingWithTypeInference() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "dynamic_templates",
                 List.of(
@@ -424,7 +426,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithIpAddressType() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("ip_address", Map.of("type", "ip", "ignore_malformed", true))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("ip_address", Map.of("type", "ip", "ignore_malformed", true))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(boolQuery().must(termQuery("ip_address", "192.168.1.1")).filter(termQuery("ip_address", "invalid_ip")));
@@ -442,7 +444,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     // Nested query not working as expected
     public void testNestedQueryType() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -475,7 +477,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testFlatObjectQueryType() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of(
@@ -515,7 +517,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testQueryTypeWithSorting() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of("age", Map.of("type", "integer"), "name", Map.of("type", "keyword"), "score", Map.of("type", "float"))
@@ -535,7 +537,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testQueryTypeWithAggregations() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("price", Map.of("type", "double"), "category", Map.of("type", "keyword"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("price", Map.of("type", "double"), "category", Map.of("type", "keyword"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(matchAllQuery())
@@ -551,7 +553,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     // No field name and type being parsed for pipeline aggregations
     public void testQueryTypeWithPipelineAggregation() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("sales", Map.of("type", "double"), "timestamp", Map.of("type", "date"))));
+        setUpMockMappings(index1, Map.of("properties", Map.of("sales", Map.of("type", "double"), "timestamp", Map.of("type", "date"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(matchAllQuery())
@@ -579,7 +581,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     // Should cache empty value when we do not find a field type to avoid doing the search again
     public void testFieldTypeCachingForNonExistentField() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of(
                 "properties",
                 Map.of("age", Map.of("type", "integer"), "name", Map.of("type", "keyword"), "score", Map.of("type", "float"))
@@ -603,7 +605,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     public void testMultifieldQueryCombined() throws IOException {
         setUpMockMappings(
-            "index1",
+            index1,
             Map.of("properties", Map.of("title", Map.of("type", "text", "fields", Map.of("raw", Map.of("type", "keyword")))))
         );
 

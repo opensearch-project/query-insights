@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -18,7 +17,7 @@ import java.util.Set;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.cluster.ClusterChangedEvent;
 import org.opensearch.cluster.ClusterStateListener;
-import org.opensearch.cluster.metadata.MappingMetadata;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.hash.MurmurHash3;
@@ -149,20 +148,12 @@ public class QueryShapeGenerator implements ClusterStateListener {
     }
 
     private Map<String, Object> getPropertiesMapForIndex(Index index) {
-        Map<String, MappingMetadata> indexMapping;
-        try {
-            indexMapping = clusterService.state().metadata().findMappings(new String[] { index.getName() }, input -> str -> true);
-        } catch (IOException e) {
-            // If an error occurs while retrieving mappings, return an empty map
+        IndexMetadata indexMetadata = clusterService.state().metadata().index(index);
+        if (indexMetadata == null) {
             return Collections.emptyMap();
         }
 
-        MappingMetadata mappingMetadata = indexMapping.get(index.getName());
-        if (mappingMetadata == null) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Object> propertiesMap = (Map<String, Object>) mappingMetadata.getSourceAsMap().get("properties");
+        Map<String, Object> propertiesMap = (Map<String, Object>) indexMetadata.mapping().getSourceAsMap().get("properties");
         if (propertiesMap == null) {
             return Collections.emptyMap();
         }
