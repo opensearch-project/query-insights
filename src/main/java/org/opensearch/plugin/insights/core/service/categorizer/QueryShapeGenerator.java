@@ -15,9 +15,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.cluster.ClusterChangedEvent;
 import org.opensearch.cluster.ClusterStateListener;
@@ -388,8 +385,7 @@ public class QueryShapeGenerator implements ClusterStateListener {
         fieldType = getFieldTypeFromProperties(fieldName, propertiesAsMap);
 
         // Cache field type or NO_FIELD_TYPE_VALUE if not found
-        indicesFieldTypeCache.getOrInitialize(index)
-            .putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
+        indicesFieldTypeCache.getOrInitialize(index).putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
 
         return fieldType;
     }

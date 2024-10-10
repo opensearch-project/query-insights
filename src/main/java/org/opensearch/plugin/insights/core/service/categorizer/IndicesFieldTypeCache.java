@@ -1,5 +1,7 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.RamUsageEstimator;
@@ -10,10 +12,6 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.index.Index;
-import org.opensearch.indices.fielddata.cache.IndicesFieldDataCache;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 
 public class IndicesFieldTypeCache {
 
@@ -26,7 +24,7 @@ public class IndicesFieldTypeCache {
     private final Cache<Index, IndexFieldMap> cache;
 
     public IndicesFieldTypeCache(Settings settings) {
-        final long sizeInBytes = -1; //TODO: INDICES_FIELD_TYPE_CACHE_SIZE_KEY.get(settings).getBytes();
+        final long sizeInBytes = -1; // TODO: INDICES_FIELD_TYPE_CACHE_SIZE_KEY.get(settings).getBytes();
         CacheBuilder<Index, IndexFieldMap> cacheBuilder = CacheBuilder.<Index, IndexFieldMap>builder();
         if (sizeInBytes > 0) {
             cacheBuilder.setMaximumWeight(sizeInBytes).weigher((k, v) -> RamUsageEstimator.sizeOfObject(k) + v.weight());
@@ -55,6 +53,7 @@ public class IndicesFieldTypeCache {
     static class IndexFieldMap {
         private ConcurrentHashMap<String, String> fieldTypeMap;
         private CounterMetric weight;
+
         IndexFieldMap() {
             fieldTypeMap = new ConcurrentHashMap<>();
             weight = new CounterMetric();
@@ -70,9 +69,9 @@ public class IndicesFieldTypeCache {
                 weight.inc(RamUsageEstimator.sizeOf(key) + RamUsageEstimator.sizeOf(value));
             }
         }
+
         public long weight() {
             return weight.count();
         }
     }
 }
-
