@@ -274,7 +274,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
-                String queryShape = queryShapeGenerator.buildShape(
+                final String queryShape = queryShapeGenerator.buildShape(
                     request.source(),
                     groupingFieldNameEnabled,
                     groupingFieldTypeEnabled,

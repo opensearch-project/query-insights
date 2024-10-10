@@ -604,8 +604,28 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
         queryShapeGeneratorSpy.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
 
-        verify(queryShapeGeneratorSpy, times(2)).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
+        verify(queryShapeGeneratorSpy, times(4)).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
         verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), eq(successfulSearchShardIndices));
+    }
+
+    public void testMultifieldQueryCombined() throws IOException {
+        setUpMockMappings(
+            "index1",
+            Map.of("properties", Map.of("title", Map.of("type", "text", "fields", Map.of("raw", Map.of("type", "keyword")))))
+        );
+
+        SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
+            .query(boolQuery().must(matchQuery("title", "eg")).should(termQuery("title.raw", "e_g")));
+
+        String shapeShowFieldsTrue = queryShapeGenerator.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
+
+        String expectedShowFieldsTrue = "bool []\n"
+            + "  must:\n"
+            + "    match [title, text]\n"
+            + "  should:\n"
+            + "    term [title.raw, keyword]\n";
+
+        assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
     }
 
     public void testComplexSearch() {

@@ -39,12 +39,10 @@ public class QueryShapeGenerator {
     private final ClusterService clusterService;
     private final String NO_FIELD_TYPE_VALUE = "";
     private final ConcurrentHashMap<Index, ConcurrentHashMap<String, String>> fieldTypeMap;
-    private final Map<Index, Map<String, ?>> propertiesCache;
 
     public QueryShapeGenerator(ClusterService clusterService) {
         this.clusterService = clusterService;
         this.fieldTypeMap = new ConcurrentHashMap<>();
-        this.propertiesCache = new ConcurrentHashMap<>();
     }
 
     /**
@@ -324,21 +322,19 @@ public class QueryShapeGenerator {
             }
         }
 
-        Map<String, MappingMetadata> allIndicesMap = getStringMappingMetadataMap(successfulSearchShardIndices);
-        if (allIndicesMap == null) return null;
-
-        return findFieldTypeInMappings(fieldName, successfulSearchShardIndices, allIndicesMap);
-    }
-
-    private String findFieldTypeInMappings(
-        String fieldName,
-        Set<Index> successfulSearchShardIndices,
-        Map<String, MappingMetadata> allIndicesMap
-    ) {
         for (Index index : successfulSearchShardIndices) {
-            String fieldType = getFieldTypeFromMapping(index, fieldName, allIndicesMap.get(index.getName()));
+            Map<String, MappingMetadata> indexMapping = null;
+            try {
+                indexMapping = clusterService.state().metadata().findMappings(new String[] { index.getName() }, input -> str -> true);
+            } catch (IOException e) {
+                // Skip the current index
+                continue;
+            }
+            MappingMetadata mappingMetadata = indexMapping.get(index.getName());
+            fieldType = getFieldTypeFromMapping(index, fieldName, mappingMetadata);
             if (fieldType != null) {
-                cacheFieldType(index, fieldName, fieldType);
+                String finalFieldType = fieldType;
+                fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> finalFieldType);
                 return fieldType;
             }
         }
@@ -346,13 +342,11 @@ public class QueryShapeGenerator {
     }
 
     String getFieldTypeFromMapping(Index index, String fieldName, MappingMetadata mappingMetadata) {
-        // Get properties from cache or mapping metadata
-        Map<String, ?> propertiesAsMap = propertiesCache.computeIfAbsent(index, k -> {
-            if (mappingMetadata != null) {
-                return (Map<String, ?>) mappingMetadata.getSourceAsMap().get("properties");
-            }
-            return null;
-        });
+        // Get properties directly from the mapping metadata
+        Map<String, ?> propertiesAsMap = null;
+        if (mappingMetadata != null) {
+            propertiesAsMap = (Map<String, ?>) mappingMetadata.getSourceAsMap().get("properties");
+        }
 
         // Recursively find the field type from properties
         if (propertiesAsMap != null) {
@@ -360,15 +354,11 @@ public class QueryShapeGenerator {
 
             // Cache the NO_FIELD_TYPE_VALUE result if no field type is found in this index
             if (fieldType == null) {
-                cacheFieldType(index, fieldName, NO_FIELD_TYPE_VALUE);
+                fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> fieldType);
             }
             return fieldType;
         }
         return null;
-    }
-
-    private void cacheFieldType(Index index, String fieldName, String fieldType) {
-        fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).put(fieldName, fieldType);
     }
 
     private String findFieldTypeInProperties(Map<String, ?> properties, String[] fieldParts, int index) {
@@ -389,23 +379,19 @@ public class QueryShapeGenerator {
                 return findFieldTypeInProperties(nestedProperties, fieldParts, index + 1);
             }
 
-            // If it has a 'type' key, return the type
+            // If it has a 'fields' key, handle multifields (e.g., title.raw) and is not the parent field (parent field case handled below)
+            if (currentMappingMap.containsKey("fields") && index + 1 < fieldParts.length) {
+                Map<String, ?> fieldsMap = (Map<String, ?>) currentMappingMap.get("fields");
+                return findFieldTypeInProperties(fieldsMap, fieldParts, index + 1); // Recursively check subfield
+            }
+
+            // If it has a 'type' key, return the type. Also handles parent field case in multifields
             if (currentMappingMap.containsKey("type")) {
                 return currentMappingMap.get("type").toString();
             }
         }
 
         return null;
-    }
-
-    private Map<String, MappingMetadata> getStringMappingMetadataMap(Set<Index> successfulSearchShardIndices) {
-        try {
-            return clusterService.state()
-                .metadata()
-                .findMappings(successfulSearchShardIndices.stream().map(Index::getName).toArray(String[]::new), input -> (str -> true));
-        } catch (IOException e) {
-            return null;
-        }
     }
 
     String getFieldTypeFromCache(String fieldName, Set<Index> successfulSearchShardIndices) {
