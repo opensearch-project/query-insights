@@ -301,7 +301,10 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     }
 
     public void testFieldWithBinaryType() throws IOException {
-        setUpMockMappings(successfulSearchShardIndices.iterator().next(), Map.of("properties", Map.of("binaryField", Map.of("type", "binary"))));
+        setUpMockMappings(
+            successfulSearchShardIndices.iterator().next(),
+            Map.of("properties", Map.of("binaryField", Map.of("type", "binary")))
+        );
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder()
             .query(boolQuery().must(termQuery("binaryField", "base64EncodedString")));
