@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ONE_SPACE_INDENT;
-import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.buildFieldDataString;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -18,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.common.SetOnce;
+import org.opensearch.core.index.Index;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 
@@ -28,11 +28,16 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     private final SetOnce<String> queryType = new SetOnce<>();
     private final SetOnce<String> fieldData = new SetOnce<>();
     private final Map<BooleanClause.Occur, List<QueryShapeVisitor>> childVisitors = new EnumMap<>(BooleanClause.Occur.class);
+    private final QueryShapeGenerator queryShapeGenerator;
+    private final Map<String, Object> propertiesAsMap;
+    private final Index index;
+    private final Boolean showFieldName;
+    private final Boolean showFieldType;
 
     @Override
     public void accept(QueryBuilder queryBuilder) {
         queryType.set(queryBuilder.getName());
-        fieldData.set(buildFieldDataString(queryBuilder));
+        fieldData.set(queryShapeGenerator.buildFieldDataString(queryBuilder, propertiesAsMap, index, showFieldName, showFieldType));
     }
 
     @Override
@@ -47,7 +52,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
 
             @Override
             public void accept(QueryBuilder qb) {
-                currentChild = new QueryShapeVisitor();
+                currentChild = new QueryShapeVisitor(queryShapeGenerator, propertiesAsMap, index, showFieldName, showFieldType);
                 childVisitorList.add(currentChild);
                 currentChild.accept(qb);
             }
@@ -85,13 +90,15 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
 
     /**
      * Pretty print the query builder tree
-     * @param indent indent size
-     * @param showFields whether to print field data
+     *
+     * @param indent        indent size
+     * @param showFieldName    whether to print field name
+     * @param showFieldType
      * @return Query builder tree as a pretty string
      */
-    public String prettyPrintTree(String indent, Boolean showFields) {
+    public String prettyPrintTree(String indent, Boolean showFieldName, Boolean showFieldType) {
         StringBuilder outputBuilder = new StringBuilder(indent).append(queryType.get());
-        if (showFields) {
+        if (showFieldName || showFieldType) {
             outputBuilder.append(fieldData.get());
         }
         outputBuilder.append("\n");
@@ -101,7 +108,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
                 .append(entry.getKey().name().toLowerCase(Locale.ROOT))
                 .append(":\n");
             for (QueryShapeVisitor child : entry.getValue()) {
-                outputBuilder.append(child.prettyPrintTree(indent + ONE_SPACE_INDENT.repeat(4), showFields));
+                outputBuilder.append(child.prettyPrintTree(indent + ONE_SPACE_INDENT.repeat(4), showFieldName, showFieldType));
             }
         }
         return outputBuilder.toString();
@@ -110,5 +117,17 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     /**
      * Default constructor
      */
-    public QueryShapeVisitor() {}
+    public QueryShapeVisitor(
+        QueryShapeGenerator queryShapeGenerator,
+        Map<String, Object> propertiesAsMap,
+        Index index,
+        Boolean showFieldName,
+        Boolean showFieldType
+    ) {
+        this.queryShapeGenerator = queryShapeGenerator;
+        this.propertiesAsMap = propertiesAsMap;
+        this.index = index;
+        this.showFieldName = showFieldName;
+        this.showFieldType = showFieldType;
+    }
 }
