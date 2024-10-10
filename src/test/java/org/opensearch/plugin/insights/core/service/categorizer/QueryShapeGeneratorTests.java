@@ -37,6 +37,7 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.hash.MurmurHash3;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.DistanceUnit;
 import org.opensearch.core.compress.CompressorRegistry;
 import org.opensearch.core.index.Index;
@@ -65,6 +66,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
     public QueryShapeGeneratorTests() {
         CompressorRegistry.defaultCompressor();
         this.mockClusterService = mock(ClusterService.class);
+        when(mockClusterService.getSettings()).thenReturn(Settings.EMPTY);
         this.mockClusterState = mock(ClusterState.class);
         this.mockMetaData = mock(Metadata.class);
         this.queryShapeGenerator = new QueryShapeGenerator(mockClusterService);
