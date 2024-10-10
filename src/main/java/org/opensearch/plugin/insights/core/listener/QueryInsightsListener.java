@@ -58,6 +58,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final ClusterService clusterService;
     private boolean groupingFieldNameEnabled;
     private boolean groupingFieldTypeEnabled;
+    private final QueryShapeGenerator queryShapeGenerator;
 
     /**
      * Constructor for QueryInsightsListener
@@ -87,6 +88,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
+        this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
         // Expected metricTypes are Latency, CPU, and Memory.
@@ -270,9 +272,25 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
 
-            if (queryInsightsService.isGroupingEnabled()) {
-                String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), groupingFieldNameEnabled);
-                attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+            if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
+                // Generate the query shape only if grouping is enabled or trace logging is enabled
+                final String queryShape = queryShapeGenerator.buildShape(
+                    request.source(),
+                    groupingFieldNameEnabled,
+                    groupingFieldTypeEnabled,
+                    searchRequestContext.getSuccessfulSearchShardIndices()
+                );
+
+                // Print the query shape if tracer is enabled
+                if (log.isTraceEnabled()) {
+                    log.trace("Query Shape:\n{}", queryShape);
+                }
+
+                // Add hashcode attribute when grouping is enabled
+                if (queryInsightsService.isGroupingEnabled()) {
+                    String hashcode = queryShapeGenerator.getShapeHashCodeAsString(queryShape);
+                    attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+                }
             }
 
             Map<String, Object> labels = new HashMap<>();
