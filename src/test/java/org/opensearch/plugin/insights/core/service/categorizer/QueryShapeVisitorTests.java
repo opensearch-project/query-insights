@@ -9,9 +9,11 @@
 package org.opensearch.plugin.insights.core.service.categorizer;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.ConstantScoreQueryBuilder;
 import org.opensearch.index.query.MatchQueryBuilder;
@@ -31,8 +33,10 @@ public final class QueryShapeVisitorTests extends OpenSearchTestCase {
                     .mustNot(new RegexpQueryBuilder("color", "red.*"))
             )
             .must(new TermsQueryBuilder("genre", "action", "drama", "romance"));
+        final ClusterService mockClusterService = mock(ClusterService.class);
+        when(mockClusterService.getSettings()).thenReturn(Settings.EMPTY);
         QueryShapeVisitor shapeVisitor = new QueryShapeVisitor(
-            new QueryShapeGenerator(mock(ClusterService.class)),
+            new QueryShapeGenerator(mockClusterService),
             new HashMap<>(),
             null,
             false,
