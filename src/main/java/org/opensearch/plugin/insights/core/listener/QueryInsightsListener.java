@@ -58,6 +58,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final ClusterService clusterService;
     private boolean groupingFieldNameEnabled;
     private boolean groupingFieldTypeEnabled;
+    private final QueryShapeGenerator queryShapeGenerator;
 
     /**
      * Constructor for QueryInsightsListener
@@ -87,6 +88,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
+        this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
         // Expected metricTypes are Latency, CPU, and Memory.
@@ -271,7 +273,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
 
             if (queryInsightsService.isGroupingEnabled()) {
-                String hashcode = QueryShapeGenerator.getShapeHashCodeAsString(request.source(), groupingFieldNameEnabled);
+                String hashcode = queryShapeGenerator.getShapeHashCodeAsString(
+                    request.source(),
+                    groupingFieldNameEnabled,
+                    groupingFieldTypeEnabled,
+                    searchRequestContext.getSuccessfulSearchShardIndices()
+                );
                 attributes.put(Attribute.QUERY_HASHCODE, hashcode);
             }
 
