@@ -31,7 +31,6 @@ import org.opensearch.env.NodeEnvironment;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
-import org.opensearch.plugin.insights.core.service.categorizer.IndicesFieldTypeCache;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
@@ -146,7 +145,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,
             QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE,
             QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING,
-            IndicesFieldTypeCache.INDICES_FIELD_TYPE_CACHE_SIZE_KEY
+            QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
         );
     }
 }

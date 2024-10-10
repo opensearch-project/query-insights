@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.settings;
 
 import org.opensearch.common.settings.Setting;
+import org.opensearch.core.common.unit.ByteSizeValue;
 
 /**
  * Settings for Query Categorization
@@ -22,6 +23,12 @@ public class QueryCategorizationSettings {
         false,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
+    );
+
+    public static final Setting<ByteSizeValue> SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY = Setting.memorySizeSetting(
+        "search.query.fieldtype.cache.size",
+        "0.1%",
+        Setting.Property.NodeScope
     );
 
     /**
