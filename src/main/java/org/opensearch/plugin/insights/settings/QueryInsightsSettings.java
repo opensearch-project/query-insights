@@ -82,6 +82,8 @@ public class QueryInsightsSettings {
     public static final String TOP_QUERIES_BASE_URI = PLUGINS_BASE_URI + "/top_queries";
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
+    /** Default prefix for top N queries grouping feature */
+    public static final String TOP_N_QUERIES_GROUPING_SETTING_PREFIX = "search.insights.top_queries.grouping";
     /** Default prefix for top N queries by latency feature */
     public static final String TOP_N_LATENCY_QUERIES_PREFIX = TOP_N_QUERIES_SETTING_PREFIX + ".latency";
     /** Default prefix for top N queries by cpu feature */
@@ -136,6 +138,20 @@ public class QueryInsightsSettings {
         DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
+    );
+
+    public static final Setting<Boolean> TOP_N_QUERIES_GROUPING_FIELD_NAME = Setting.boolSetting(
+        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".attributes.field_name",
+        false,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    public static final Setting<Boolean> TOP_N_QUERIES_GROUPING_FIELD_TYPE = Setting.boolSetting(
+        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".attributes.field_type",
+        false,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
     );
 
     /**
