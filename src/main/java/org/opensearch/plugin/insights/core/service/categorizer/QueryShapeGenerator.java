@@ -16,8 +16,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+
 import org.apache.lucene.util.BytesRef;
+import org.opensearch.cluster.ClusterChangedEvent;
+import org.opensearch.cluster.ClusterStateListener;
 import org.opensearch.cluster.metadata.MappingMetadata;
+import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.hash.MurmurHash3;
 import org.opensearch.core.common.io.stream.NamedWriteable;
@@ -33,16 +38,36 @@ import org.opensearch.search.sort.SortBuilder;
 /**
  * Class to generate query shape
  */
-public class QueryShapeGenerator {
+public class QueryShapeGenerator implements ClusterStateListener {
     static final String EMPTY_STRING = "";
     static final String ONE_SPACE_INDENT = " ";
     private final ClusterService clusterService;
     private final String NO_FIELD_TYPE_VALUE = "";
-    private final ConcurrentHashMap<Index, ConcurrentHashMap<String, String>> fieldTypeMap;
+    private final IndicesFieldTypeCache indicesFieldTypeCache;
 
     public QueryShapeGenerator(ClusterService clusterService) {
         this.clusterService = clusterService;
-        this.fieldTypeMap = new ConcurrentHashMap<>();
+        clusterService.addListener(this);
+        this.indicesFieldTypeCache = new IndicesFieldTypeCache(clusterService.getSettings());
+    }
+
+    public void clusterChanged(ClusterChangedEvent event) {
+        final List<Index> indicesDeleted = event.indicesDeleted();
+        for (Index index : indicesDeleted) {
+            // remove the deleted index mapping from field type cache
+            indicesFieldTypeCache.invalidate(index);
+        }
+
+        if (event.metadataChanged()) {
+            final Metadata previousMetadata = event.previousState().metadata();
+            final Metadata currentMetadata = event.state().metadata();
+            for (Index index : indicesFieldTypeCache.keySet()) {
+                if (previousMetadata.index(index) != currentMetadata.index(index)) {
+                    // remove the updated index mapping from field type cache
+                    indicesFieldTypeCache.invalidate(index);
+                }
+            }
+        }
     }
 
     /**
@@ -363,7 +388,7 @@ public class QueryShapeGenerator {
         fieldType = getFieldTypeFromProperties(fieldName, propertiesAsMap);
 
         // Cache field type or NO_FIELD_TYPE_VALUE if not found
-        fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>())
+        indicesFieldTypeCache.getOrInitialize(index)
             .putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
 
         return fieldType;
@@ -406,6 +431,6 @@ public class QueryShapeGenerator {
     }
 
     String getFieldTypeFromCache(String fieldName, Index index) {
-        return fieldTypeMap.getOrDefault(index, new ConcurrentHashMap<>()).get(fieldName);
+        return indicesFieldTypeCache.getOrInitialize(index).get(fieldName);
     }
 }
