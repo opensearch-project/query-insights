@@ -112,8 +112,12 @@ public class QueryShapeGenerator {
         Boolean showFieldType,
         Set<Index> successfulSearchShardIndices
     ) {
-        Index firstIndex = successfulSearchShardIndices.iterator().next();
-        Map<String, Object> propertiesAsMap = getPropertiesMapForIndex(firstIndex);
+        Index firstIndex = null;
+        Map<String, Object> propertiesAsMap = null;
+        if (successfulSearchShardIndices != null) {
+            firstIndex = successfulSearchShardIndices.iterator().next();
+            propertiesAsMap = getPropertiesMapForIndex(firstIndex);
+        }
 
         StringBuilder shape = new StringBuilder();
         shape.append(buildQueryShape(source.query(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
@@ -345,65 +349,56 @@ public class QueryShapeGenerator {
     }
 
     String getFieldType(String fieldName, Map<String, Object> propertiesAsMap, Index index) {
+        if (propertiesAsMap == null || index == null) {
+            return null;
+        }
+        // Attempt to get field type from cache
         String fieldType = getFieldTypeFromCache(fieldName, index);
-        if (fieldType != null) {
-            if (fieldType.equals(NO_FIELD_TYPE_VALUE)) {
-                return null;
-            } else {
-                return fieldType;
-            }
-        }
 
-        fieldType = getFieldTypeFromMapping(index, fieldName, propertiesAsMap);
         if (fieldType != null) {
-            String finalFieldType = fieldType;
-            fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> finalFieldType);
             return fieldType;
         }
-        return null;
+
+        // Retrieve field type from mapping and cache it if found
+        fieldType = getFieldTypeFromProperties(fieldName, propertiesAsMap);
+
+        // Cache field type or NO_FIELD_TYPE_VALUE if not found
+        fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>())
+            .putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
+
+        return fieldType;
     }
 
-    String getFieldTypeFromMapping(Index index, String fieldName, Map<String, Object> propertiesAsMap) {
-        // Recursively find the field type from properties
-        if (propertiesAsMap != null) {
-            String fieldType = findFieldTypeInProperties(propertiesAsMap, fieldName.split("\\."), 0);
-
-            // Cache the NO_FIELD_TYPE_VALUE result if no field type is found in this index
-            if (fieldType == null) {
-                fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> fieldType);
-            }
-            return fieldType;
-        }
-        return null;
-    }
-
-    private String findFieldTypeInProperties(Map<String, ?> properties, String[] fieldParts, int index) {
-        if (index >= fieldParts.length) {
+    String getFieldTypeFromProperties(String fieldName, Map<String, Object> propertiesAsMap) {
+        if (propertiesAsMap == null) {
             return null;
         }
 
-        String currentField = fieldParts[index];
-        Object currentMapping = properties.get(currentField);
+        String[] fieldParts = fieldName.split("\\.");
+        Map<String, ?> currentProperties = propertiesAsMap;
 
-        // Check if current mapping is a map and contains further nested properties or a type
-        if (currentMapping instanceof Map) {
-            Map<String, ?> currentMappingMap = (Map<String, ?>) currentMapping;
+        for (int depth = 0; depth < fieldParts.length; depth++) {
+            Object currentMapping = currentProperties.get(fieldParts[depth]);
 
-            // If it has a 'properties' key, go into the nested object
-            if (currentMappingMap.containsKey("properties")) {
-                Map<String, ?> nestedProperties = (Map<String, ?>) currentMappingMap.get("properties");
-                return findFieldTypeInProperties(nestedProperties, fieldParts, index + 1);
-            }
+            if (currentMapping instanceof Map) {
+                Map<String, ?> currentMap = (Map<String, ?>) currentMapping;
 
-            // If it has a 'fields' key, handle multifields (e.g., title.raw) and is not the parent field (parent field case handled below)
-            if (currentMappingMap.containsKey("fields") && index + 1 < fieldParts.length) {
-                Map<String, ?> fieldsMap = (Map<String, ?>) currentMappingMap.get("fields");
-                return findFieldTypeInProperties(fieldsMap, fieldParts, index + 1); // Recursively check subfield
-            }
-
-            // If it has a 'type' key, return the type. Also handles parent field case in multifields
-            if (currentMappingMap.containsKey("type")) {
-                return currentMappingMap.get("type").toString();
+                // Navigate into nested properties if available
+                if (currentMap.containsKey("properties")) {
+                    currentProperties = (Map<String, ?>) currentMap.get("properties");
+                }
+                // Handle multifields (e.g., title.raw)
+                else if (currentMap.containsKey("fields") && depth + 1 < fieldParts.length) {
+                    currentProperties = (Map<String, ?>) currentMap.get("fields");
+                }
+                // Return type if found
+                else if (currentMap.containsKey("type")) {
+                    return (String) currentMap.get("type");
+                } else {
+                    return null;
+                }
+            } else {
+                return null;
             }
         }
 
@@ -411,13 +406,6 @@ public class QueryShapeGenerator {
     }
 
     String getFieldTypeFromCache(String fieldName, Index index) {
-        Map<String, String> indexMap = fieldTypeMap.get(index);
-        if (indexMap != null) {
-            String fieldType = indexMap.get(fieldName);
-            if (fieldType != null) {
-                return fieldType;
-            }
-        }
-        return null;
+        return fieldTypeMap.getOrDefault(index, new ConcurrentHashMap<>()).get(fieldName);
     }
 }

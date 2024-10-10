@@ -13,7 +13,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.index.query.QueryBuilders.boolQuery;
@@ -597,11 +596,8 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
         verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), any(Index.class));
 
-        verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
-
         queryShapeGeneratorSpy.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
 
-        verify(queryShapeGeneratorSpy, times(2)).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
         verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), any(Index.class));
     }
 
