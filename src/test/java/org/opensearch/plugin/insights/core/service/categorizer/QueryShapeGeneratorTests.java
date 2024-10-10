@@ -53,10 +53,7 @@ import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.OpenSearchTestCase;
 
 public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
-    final Set<Index> successfulSearchShardIndices = Set.of(
-        new Index("index1", UUID.randomUUID().toString()),
-        new Index("index2", UUID.randomUUID().toString())
-    );
+    final Set<Index> successfulSearchShardIndices = Set.of(new Index("index1", UUID.randomUUID().toString()));
     final QueryShapeGenerator queryShapeGenerator;
 
     private ClusterService mockClusterService;
@@ -174,9 +171,9 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
     // Field type should be inferred from both the mappings
     public void testMultipleIndexMappings() throws IOException {
-        setUpMockMappings("index1", Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
+        setUpMockMappings("index2", Map.of("properties", Map.of("field1", Map.of("type", "keyword"))));
 
-        setUpMockMappings("index2", Map.of("properties", Map.of("field2", Map.of("type", "text"), "field4", Map.of("type", "long"))));
+        setUpMockMappings("index1", Map.of("properties", Map.of("field2", Map.of("type", "text"), "field4", Map.of("type", "long"))));
 
         SearchSourceBuilder sourceBuilder = SearchSourceBuilderUtils.createQuerySearchSourceBuilder();
 
@@ -188,7 +185,7 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
             + "    match [field2, text]\n"
             + "    range [field4, long]\n"
             + "  should:\n"
-            + "    regexp [field3]\n"; // No field type found
+            + "    regexp [field3]\n";
         assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
     }
 
@@ -598,14 +595,14 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
         queryShapeGeneratorSpy.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
 
-        verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), eq(successfulSearchShardIndices));
+        verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), any(Index.class));
 
         verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
 
         queryShapeGeneratorSpy.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
 
-        verify(queryShapeGeneratorSpy, times(4)).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
-        verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), eq(successfulSearchShardIndices));
+        verify(queryShapeGeneratorSpy, times(2)).getFieldTypeFromMapping(any(Index.class), eq(nonExistentField), any());
+        verify(queryShapeGeneratorSpy, atLeastOnce()).getFieldTypeFromCache(eq(nonExistentField), any(Index.class));
     }
 
     public void testMultifieldQueryCombined() throws IOException {

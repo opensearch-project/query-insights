@@ -15,7 +15,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import org.apache.lucene.search.BooleanClause;
 import org.opensearch.common.SetOnce;
 import org.opensearch.core.index.Index;
@@ -30,14 +29,15 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
     private final SetOnce<String> fieldData = new SetOnce<>();
     private final Map<BooleanClause.Occur, List<QueryShapeVisitor>> childVisitors = new EnumMap<>(BooleanClause.Occur.class);
     private final QueryShapeGenerator queryShapeGenerator;
-    private final Set<Index> successfulSearchShardIndices;
+    private final Map<String, Object> propertiesAsMap;
+    private final Index index;
     private final Boolean showFieldName;
     private final Boolean showFieldType;
 
     @Override
     public void accept(QueryBuilder queryBuilder) {
         queryType.set(queryBuilder.getName());
-        fieldData.set(queryShapeGenerator.buildFieldDataString(queryBuilder, successfulSearchShardIndices, showFieldName, showFieldType));
+        fieldData.set(queryShapeGenerator.buildFieldDataString(queryBuilder, propertiesAsMap, index, showFieldName, showFieldType));
     }
 
     @Override
@@ -52,7 +52,7 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
 
             @Override
             public void accept(QueryBuilder qb) {
-                currentChild = new QueryShapeVisitor(queryShapeGenerator, successfulSearchShardIndices, showFieldName, showFieldType);
+                currentChild = new QueryShapeVisitor(queryShapeGenerator, propertiesAsMap, index, showFieldName, showFieldType);
                 childVisitorList.add(currentChild);
                 currentChild.accept(qb);
             }
@@ -119,12 +119,14 @@ public final class QueryShapeVisitor implements QueryBuilderVisitor {
      */
     public QueryShapeVisitor(
         QueryShapeGenerator queryShapeGenerator,
-        Set<Index> successfulSearchShardIndices,
+        Map<String, Object> propertiesAsMap,
+        Index index,
         Boolean showFieldName,
         Boolean showFieldType
     ) {
         this.queryShapeGenerator = queryShapeGenerator;
-        this.successfulSearchShardIndices = successfulSearchShardIndices;
+        this.propertiesAsMap = propertiesAsMap;
+        this.index = index;
         this.showFieldName = showFieldName;
         this.showFieldType = showFieldType;
     }

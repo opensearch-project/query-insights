@@ -112,11 +112,35 @@ public class QueryShapeGenerator {
         Boolean showFieldType,
         Set<Index> successfulSearchShardIndices
     ) {
+        Index firstIndex = successfulSearchShardIndices.iterator().next();
+        Map<String, Object> propertiesAsMap = getPropertiesMapForIndex(firstIndex);
+
         StringBuilder shape = new StringBuilder();
-        shape.append(buildQueryShape(source.query(), showFieldName, showFieldType, successfulSearchShardIndices));
-        shape.append(buildAggregationShape(source.aggregations(), showFieldName, showFieldType, successfulSearchShardIndices));
-        shape.append(buildSortShape(source.sorts(), showFieldName, showFieldType, successfulSearchShardIndices));
+        shape.append(buildQueryShape(source.query(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
+        shape.append(buildAggregationShape(source.aggregations(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
+        shape.append(buildSortShape(source.sorts(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
         return shape.toString();
+    }
+
+    private Map<String, Object> getPropertiesMapForIndex(Index index) {
+        Map<String, MappingMetadata> indexMapping;
+        try {
+            indexMapping = clusterService.state().metadata().findMappings(new String[] { index.getName() }, input -> str -> true);
+        } catch (IOException e) {
+            // If an error occurs while retrieving mappings, return an empty map
+            return Collections.emptyMap();
+        }
+
+        MappingMetadata mappingMetadata = indexMapping.get(index.getName());
+        if (mappingMetadata == null) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Object> propertiesMap = (Map<String, Object>) mappingMetadata.getSourceAsMap().get("properties");
+        if (propertiesMap == null) {
+            return Collections.emptyMap();
+        }
+        return propertiesMap;
     }
 
     /**
@@ -125,19 +149,21 @@ public class QueryShapeGenerator {
      * @param queryBuilder          search request query builder
      * @param showFieldName         whether to append field names
      * @param showFieldType         whether to append field types
-     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @param propertiesAsMap       properties
+     * @param index                 index
      * @return Query-section shape as a String
      */
     String buildQueryShape(
         QueryBuilder queryBuilder,
         Boolean showFieldName,
         Boolean showFieldType,
-        Set<Index> successfulSearchShardIndices
+        Map<String, Object> propertiesAsMap,
+        Index index
     ) {
         if (queryBuilder == null) {
             return EMPTY_STRING;
         }
-        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor(this, successfulSearchShardIndices, showFieldName, showFieldType);
+        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor(this, propertiesAsMap, index, showFieldName, showFieldType);
         queryBuilder.visit(shapeVisitor);
         return shapeVisitor.prettyPrintTree(EMPTY_STRING, showFieldName, showFieldType);
     }
@@ -148,14 +174,16 @@ public class QueryShapeGenerator {
      * @param aggregationsBuilder    search request aggregation builder
      * @param showFieldName          whether to append field names
      * @param showFieldType          whether to append field types
-     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @param propertiesAsMap       properties
+     * @param index                 index
      * @return Aggregation shape as a String
      */
     String buildAggregationShape(
         AggregatorFactories.Builder aggregationsBuilder,
         Boolean showFieldName,
         Boolean showFieldType,
-        Set<Index> successfulSearchShardIndices
+        Map<String, Object> propertiesAsMap,
+        Index index
     ) {
         if (aggregationsBuilder == null) {
             return EMPTY_STRING;
@@ -167,7 +195,8 @@ public class QueryShapeGenerator {
             new StringBuilder(),
             showFieldName,
             showFieldType,
-            successfulSearchShardIndices
+            propertiesAsMap,
+            index
         );
         return aggregationShape.toString();
     }
@@ -179,7 +208,8 @@ public class QueryShapeGenerator {
         StringBuilder baseIndent,
         Boolean showFieldName,
         Boolean showFieldType,
-        Set<Index> successfulSearchShardIndices
+        Map<String, Object> propertiesAsMap,
+        Index index
     ) {
         //// Normal Aggregations ////
         if (aggregationBuilders.isEmpty() == false) {
@@ -190,7 +220,7 @@ public class QueryShapeGenerator {
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append(baseIndent).append(ONE_SPACE_INDENT.repeat(2)).append(aggBuilder.getType());
             if (showFieldName || showFieldType) {
-                stringBuilder.append(buildFieldDataString(aggBuilder, successfulSearchShardIndices, showFieldName, showFieldType));
+                stringBuilder.append(buildFieldDataString(aggBuilder, propertiesAsMap, index, showFieldName, showFieldType));
             }
             stringBuilder.append("\n");
 
@@ -203,7 +233,8 @@ public class QueryShapeGenerator {
                     baseIndent.append(ONE_SPACE_INDENT.repeat(4)),
                     showFieldName,
                     showFieldType,
-                    successfulSearchShardIndices
+                    propertiesAsMap,
+                    index
                 );
                 baseIndent.delete(0, 4);
             }
@@ -246,14 +277,16 @@ public class QueryShapeGenerator {
      * @param sortBuilderList        search request sort builders list
      * @param showFieldName          whether to append field names
      * @param showFieldType          whether to append field types
-     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @param propertiesAsMap       properties
+     * @param index                 index
      * @return Sort shape as a String
      */
     String buildSortShape(
         List<SortBuilder<?>> sortBuilderList,
         Boolean showFieldName,
         Boolean showFieldType,
-        Set<Index> successfulSearchShardIndices
+        Map<String, Object> propertiesAsMap,
+        Index index
     ) {
         if (sortBuilderList == null || sortBuilderList.isEmpty()) {
             return EMPTY_STRING;
@@ -266,7 +299,7 @@ public class QueryShapeGenerator {
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append(ONE_SPACE_INDENT.repeat(2)).append(sortBuilder.order());
             if (showFieldName || showFieldType) {
-                stringBuilder.append(buildFieldDataString(sortBuilder, successfulSearchShardIndices, showFieldName, showFieldType));
+                stringBuilder.append(buildFieldDataString(sortBuilder, propertiesAsMap, index, showFieldName, showFieldType));
             }
             shapeStrings.add(stringBuilder.toString());
         }
@@ -281,7 +314,8 @@ public class QueryShapeGenerator {
      * Builds a field data string from a builder.
      *
      * @param builder                  aggregation or sort builder
-     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @param propertiesAsMap       properties
+     * @param index                 index
      * @param showFieldName            whether to include field names
      * @param showFieldType            whether to include field types
      * @return Field data string
@@ -289,7 +323,8 @@ public class QueryShapeGenerator {
      */
     String buildFieldDataString(
         NamedWriteable builder,
-        Set<Index> successfulSearchShardIndices,
+        Map<String, Object> propertiesAsMap,
+        Index index,
         Boolean showFieldName,
         Boolean showFieldType
     ) {
@@ -300,7 +335,7 @@ public class QueryShapeGenerator {
                 fieldDataList.add(fieldName);
             }
             if (showFieldType) {
-                String fieldType = getFieldType(fieldName, successfulSearchShardIndices);
+                String fieldType = getFieldType(fieldName, propertiesAsMap, index);
                 if (fieldType != null && !fieldType.isEmpty()) {
                     fieldDataList.add(fieldType);
                 }
@@ -309,11 +344,8 @@ public class QueryShapeGenerator {
         return " [" + String.join(", ", fieldDataList) + "]";
     }
 
-    String getFieldType(String fieldName, Set<Index> successfulSearchShardIndices) {
-        if (successfulSearchShardIndices == null) {
-            return null;
-        }
-        String fieldType = getFieldTypeFromCache(fieldName, successfulSearchShardIndices);
+    String getFieldType(String fieldName, Map<String, Object> propertiesAsMap, Index index) {
+        String fieldType = getFieldTypeFromCache(fieldName, index);
         if (fieldType != null) {
             if (fieldType.equals(NO_FIELD_TYPE_VALUE)) {
                 return null;
@@ -322,32 +354,16 @@ public class QueryShapeGenerator {
             }
         }
 
-        for (Index index : successfulSearchShardIndices) {
-            Map<String, MappingMetadata> indexMapping = null;
-            try {
-                indexMapping = clusterService.state().metadata().findMappings(new String[] { index.getName() }, input -> str -> true);
-            } catch (IOException e) {
-                // Skip the current index
-                continue;
-            }
-            MappingMetadata mappingMetadata = indexMapping.get(index.getName());
-            fieldType = getFieldTypeFromMapping(index, fieldName, mappingMetadata);
-            if (fieldType != null) {
-                String finalFieldType = fieldType;
-                fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> finalFieldType);
-                return fieldType;
-            }
+        fieldType = getFieldTypeFromMapping(index, fieldName, propertiesAsMap);
+        if (fieldType != null) {
+            String finalFieldType = fieldType;
+            fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>()).computeIfAbsent(fieldName, k -> finalFieldType);
+            return fieldType;
         }
         return null;
     }
 
-    String getFieldTypeFromMapping(Index index, String fieldName, MappingMetadata mappingMetadata) {
-        // Get properties directly from the mapping metadata
-        Map<String, ?> propertiesAsMap = null;
-        if (mappingMetadata != null) {
-            propertiesAsMap = (Map<String, ?>) mappingMetadata.getSourceAsMap().get("properties");
-        }
-
+    String getFieldTypeFromMapping(Index index, String fieldName, Map<String, Object> propertiesAsMap) {
         // Recursively find the field type from properties
         if (propertiesAsMap != null) {
             String fieldType = findFieldTypeInProperties(propertiesAsMap, fieldName.split("\\."), 0);
@@ -394,14 +410,12 @@ public class QueryShapeGenerator {
         return null;
     }
 
-    String getFieldTypeFromCache(String fieldName, Set<Index> successfulSearchShardIndices) {
-        for (Index index : successfulSearchShardIndices) {
-            Map<String, String> indexMap = fieldTypeMap.get(index);
-            if (indexMap != null) {
-                String fieldType = indexMap.get(fieldName);
-                if (fieldType != null) {
-                    return fieldType;
-                }
+    String getFieldTypeFromCache(String fieldName, Index index) {
+        Map<String, String> indexMap = fieldTypeMap.get(index);
+        if (indexMap != null) {
+            String fieldType = indexMap.get(fieldName);
+            if (fieldType != null) {
+                return fieldType;
             }
         }
         return null;
