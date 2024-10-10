@@ -272,14 +272,25 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
 
-            if (queryInsightsService.isGroupingEnabled()) {
-                String hashcode = queryShapeGenerator.getShapeHashCodeAsString(
+            if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
+                // Generate the query shape only if grouping is enabled or trace logging is enabled
+                String queryShape = queryShapeGenerator.buildShape(
                     request.source(),
                     groupingFieldNameEnabled,
                     groupingFieldTypeEnabled,
                     searchRequestContext.getSuccessfulSearchShardIndices()
                 );
-                attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+
+                // Print the query shape if tracer is enabled
+                if (log.isTraceEnabled()) {
+                    log.trace("Query Shape:\n{}", queryShape);
+                }
+
+                // Add hashcode attribute when grouping is enabled
+                if (queryInsightsService.isGroupingEnabled()) {
+                    String hashcode = queryShapeGenerator.getShapeHashCodeAsString(queryShape);
+                    attributes.put(Attribute.QUERY_HASHCODE, hashcode);
+                }
             }
 
             Map<String, Object> labels = new HashMap<>();

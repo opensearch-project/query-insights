@@ -88,6 +88,18 @@ public class QueryShapeGenerator {
     }
 
     /**
+     * Gets the hash code of the query shape as a string.
+     *
+     * @param queryShape            query shape as input
+     * @return Hash code of the query shape as a string
+     */
+    public String getShapeHashCodeAsString(String queryShape) {
+        final BytesRef shapeBytes = new BytesRef(queryShape);
+        MurmurHash3.Hash128 hashcode = MurmurHash3.hash128(shapeBytes.bytes, 0, shapeBytes.length, 0, new MurmurHash3.Hash128());
+        return Long.toHexString(hashcode.h1) + Long.toHexString(hashcode.h2);
+    }
+
+    /**
      * Builds the search query shape given a source.
      *
      * @param source                search request source
@@ -300,6 +312,9 @@ public class QueryShapeGenerator {
     }
 
     String getFieldType(String fieldName, Set<Index> successfulSearchShardIndices) {
+        if (successfulSearchShardIndices == null) {
+            return null;
+        }
         String fieldType = getFieldTypeFromCache(fieldName, successfulSearchShardIndices);
         if (fieldType != null) {
             if (fieldType.equals(NO_FIELD_TYPE_VALUE)) {
