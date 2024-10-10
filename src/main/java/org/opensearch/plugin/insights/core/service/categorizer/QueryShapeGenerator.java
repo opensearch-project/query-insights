@@ -8,13 +8,20 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.lucene.util.BytesRef;
+import org.opensearch.cluster.metadata.MappingMetadata;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.hash.MurmurHash3;
 import org.opensearch.core.common.io.stream.NamedWriteable;
+import org.opensearch.core.index.Index;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.WithFieldName;
 import org.opensearch.search.aggregations.AggregationBuilder;
@@ -29,61 +36,159 @@ import org.opensearch.search.sort.SortBuilder;
 public class QueryShapeGenerator {
     static final String EMPTY_STRING = "";
     static final String ONE_SPACE_INDENT = " ";
+    private final ClusterService clusterService;
+    private final String NO_FIELD_TYPE_VALUE = "";
+    private final ConcurrentHashMap<Index, ConcurrentHashMap<String, String>> fieldTypeMap;
+
+    public QueryShapeGenerator(ClusterService clusterService) {
+        this.clusterService = clusterService;
+        this.fieldTypeMap = new ConcurrentHashMap<>();
+    }
 
     /**
-     * Method to get query shape hash code given a source
-     * @param source search request source
-     * @param showFields whether to include field data in query shape
-     * @return Hash code of query shape as a MurmurHash3.Hash128 object (128-bit)
+     * Gets the hash code of the query shape given a search source.
+     *
+     * @param source                search request source
+     * @param showFieldName         whether to include field names in the query shape
+     * @param showFieldType         whether to include field types in the query shape
+     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @return Hash code of the query shape as a MurmurHash3.Hash128 object (128-bit)
      */
-    public static MurmurHash3.Hash128 getShapeHashCode(SearchSourceBuilder source, Boolean showFields) {
-        final String shape = buildShape(source, showFields);
+    public MurmurHash3.Hash128 getShapeHashCode(
+        SearchSourceBuilder source,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Set<Index> successfulSearchShardIndices
+    ) {
+        final String shape = buildShape(source, showFieldName, showFieldType, successfulSearchShardIndices);
         final BytesRef shapeBytes = new BytesRef(shape);
         return MurmurHash3.hash128(shapeBytes.bytes, 0, shapeBytes.length, 0, new MurmurHash3.Hash128());
     }
 
-    public static String getShapeHashCodeAsString(SearchSourceBuilder source, Boolean showFields) {
-        MurmurHash3.Hash128 hashcode = getShapeHashCode(source, showFields);
+    /**
+     * Gets the hash code of the query shape as a string.
+     *
+     * @param source                search request source
+     * @param showFieldName         whether to include field names in the query shape
+     * @param showFieldType         whether to include field types in the query shape
+     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @return Hash code of the query shape as a string
+     */
+    public String getShapeHashCodeAsString(
+        SearchSourceBuilder source,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Set<Index> successfulSearchShardIndices
+    ) {
+        MurmurHash3.Hash128 hashcode = getShapeHashCode(source, showFieldName, showFieldType, successfulSearchShardIndices);
         String hashAsString = Long.toHexString(hashcode.h1) + Long.toHexString(hashcode.h2);
         return hashAsString;
     }
 
     /**
-     * Method to build search query shape given a source
-     * @param source search request source
-     * @param showFields whether to append field data
-     * @return Search query shape as String
+     * Gets the hash code of the query shape as a string.
+     *
+     * @param queryShape            query shape as input
+     * @return Hash code of the query shape as a string
      */
-    public static String buildShape(SearchSourceBuilder source, Boolean showFields) {
+    public String getShapeHashCodeAsString(String queryShape) {
+        final BytesRef shapeBytes = new BytesRef(queryShape);
+        MurmurHash3.Hash128 hashcode = MurmurHash3.hash128(shapeBytes.bytes, 0, shapeBytes.length, 0, new MurmurHash3.Hash128());
+        return Long.toHexString(hashcode.h1) + Long.toHexString(hashcode.h2);
+    }
+
+    /**
+     * Builds the search query shape given a source.
+     *
+     * @param source                search request source
+     * @param showFieldName         whether to append field names
+     * @param showFieldType         whether to append field types
+     * @param successfulSearchShardIndices the set of indices that were successfully searched
+     * @return Search query shape as a String
+     */
+    public String buildShape(
+        SearchSourceBuilder source,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Set<Index> successfulSearchShardIndices
+    ) {
+        Index firstIndex = null;
+        Map<String, Object> propertiesAsMap = null;
+        if (successfulSearchShardIndices != null) {
+            firstIndex = successfulSearchShardIndices.iterator().next();
+            propertiesAsMap = getPropertiesMapForIndex(firstIndex);
+        }
+
         StringBuilder shape = new StringBuilder();
-        shape.append(buildQueryShape(source.query(), showFields));
-        shape.append(buildAggregationShape(source.aggregations(), showFields));
-        shape.append(buildSortShape(source.sorts(), showFields));
+        shape.append(buildQueryShape(source.query(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
+        shape.append(buildAggregationShape(source.aggregations(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
+        shape.append(buildSortShape(source.sorts(), showFieldName, showFieldType, propertiesAsMap, firstIndex));
         return shape.toString();
     }
 
-    /**
-     * Method to build query-section shape
-     * @param queryBuilder search request query builder
-     * @param showFields whether to append field data
-     * @return Query-section shape as String
-     */
-    static String buildQueryShape(QueryBuilder queryBuilder, Boolean showFields) {
-        if (queryBuilder == null) {
-            return EMPTY_STRING;
+    private Map<String, Object> getPropertiesMapForIndex(Index index) {
+        Map<String, MappingMetadata> indexMapping;
+        try {
+            indexMapping = clusterService.state().metadata().findMappings(new String[] { index.getName() }, input -> str -> true);
+        } catch (IOException e) {
+            // If an error occurs while retrieving mappings, return an empty map
+            return Collections.emptyMap();
         }
-        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor();
-        queryBuilder.visit(shapeVisitor);
-        return shapeVisitor.prettyPrintTree(EMPTY_STRING, showFields);
+
+        MappingMetadata mappingMetadata = indexMapping.get(index.getName());
+        if (mappingMetadata == null) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Object> propertiesMap = (Map<String, Object>) mappingMetadata.getSourceAsMap().get("properties");
+        if (propertiesMap == null) {
+            return Collections.emptyMap();
+        }
+        return propertiesMap;
     }
 
     /**
-     * Method to build aggregation shape
-     * @param aggregationsBuilder search request aggregation builder
-     * @param showFields whether to append field data
-     * @return Aggregation shape as String
+     * Builds the query-section shape.
+     *
+     * @param queryBuilder          search request query builder
+     * @param showFieldName         whether to append field names
+     * @param showFieldType         whether to append field types
+     * @param propertiesAsMap       properties
+     * @param index                 index
+     * @return Query-section shape as a String
      */
-    static String buildAggregationShape(AggregatorFactories.Builder aggregationsBuilder, Boolean showFields) {
+    String buildQueryShape(
+        QueryBuilder queryBuilder,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Map<String, Object> propertiesAsMap,
+        Index index
+    ) {
+        if (queryBuilder == null) {
+            return EMPTY_STRING;
+        }
+        QueryShapeVisitor shapeVisitor = new QueryShapeVisitor(this, propertiesAsMap, index, showFieldName, showFieldType);
+        queryBuilder.visit(shapeVisitor);
+        return shapeVisitor.prettyPrintTree(EMPTY_STRING, showFieldName, showFieldType);
+    }
+
+    /**
+     * Builds the aggregation shape.
+     *
+     * @param aggregationsBuilder    search request aggregation builder
+     * @param showFieldName          whether to append field names
+     * @param showFieldType          whether to append field types
+     * @param propertiesAsMap       properties
+     * @param index                 index
+     * @return Aggregation shape as a String
+     */
+    String buildAggregationShape(
+        AggregatorFactories.Builder aggregationsBuilder,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Map<String, Object> propertiesAsMap,
+        Index index
+    ) {
         if (aggregationsBuilder == null) {
             return EMPTY_STRING;
         }
@@ -92,17 +197,23 @@ public class QueryShapeGenerator {
             aggregationsBuilder.getPipelineAggregatorFactories(),
             new StringBuilder(),
             new StringBuilder(),
-            showFields
+            showFieldName,
+            showFieldType,
+            propertiesAsMap,
+            index
         );
         return aggregationShape.toString();
     }
 
-    static StringBuilder recursiveAggregationShapeBuilder(
+    StringBuilder recursiveAggregationShapeBuilder(
         Collection<AggregationBuilder> aggregationBuilders,
         Collection<PipelineAggregationBuilder> pipelineAggregations,
         StringBuilder outputBuilder,
         StringBuilder baseIndent,
-        Boolean showFields
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Map<String, Object> propertiesAsMap,
+        Index index
     ) {
         //// Normal Aggregations ////
         if (aggregationBuilders.isEmpty() == false) {
@@ -112,8 +223,8 @@ public class QueryShapeGenerator {
         for (AggregationBuilder aggBuilder : aggregationBuilders) {
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append(baseIndent).append(ONE_SPACE_INDENT.repeat(2)).append(aggBuilder.getType());
-            if (showFields) {
-                stringBuilder.append(buildFieldDataString(aggBuilder));
+            if (showFieldName || showFieldType) {
+                stringBuilder.append(buildFieldDataString(aggBuilder, propertiesAsMap, index, showFieldName, showFieldType));
             }
             stringBuilder.append("\n");
 
@@ -124,7 +235,10 @@ public class QueryShapeGenerator {
                     aggBuilder.getPipelineAggregations(),
                     stringBuilder,
                     baseIndent.append(ONE_SPACE_INDENT.repeat(4)),
-                    showFields
+                    showFieldName,
+                    showFieldType,
+                    propertiesAsMap,
+                    index
                 );
                 baseIndent.delete(0, 4);
             }
@@ -162,12 +276,22 @@ public class QueryShapeGenerator {
     }
 
     /**
-     * Method to build sort shape
-     * @param sortBuilderList search request sort builders list
-     * @param showFields whether to append field data
-     * @return Sort shape as String
+     * Builds the sort shape.
+     *
+     * @param sortBuilderList        search request sort builders list
+     * @param showFieldName          whether to append field names
+     * @param showFieldType          whether to append field types
+     * @param propertiesAsMap       properties
+     * @param index                 index
+     * @return Sort shape as a String
      */
-    static String buildSortShape(List<SortBuilder<?>> sortBuilderList, Boolean showFields) {
+    String buildSortShape(
+        List<SortBuilder<?>> sortBuilderList,
+        Boolean showFieldName,
+        Boolean showFieldType,
+        Map<String, Object> propertiesAsMap,
+        Index index
+    ) {
         if (sortBuilderList == null || sortBuilderList.isEmpty()) {
             return EMPTY_STRING;
         }
@@ -178,8 +302,8 @@ public class QueryShapeGenerator {
         for (SortBuilder<?> sortBuilder : sortBuilderList) {
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.append(ONE_SPACE_INDENT.repeat(2)).append(sortBuilder.order());
-            if (showFields) {
-                stringBuilder.append(buildFieldDataString(sortBuilder));
+            if (showFieldName || showFieldType) {
+                stringBuilder.append(buildFieldDataString(sortBuilder, propertiesAsMap, index, showFieldName, showFieldType));
             }
             shapeStrings.add(stringBuilder.toString());
         }
@@ -191,15 +315,97 @@ public class QueryShapeGenerator {
     }
 
     /**
-     * Method to build field data
-     * @return String: comma separated list with leading space in square brackets
+     * Builds a field data string from a builder.
+     *
+     * @param builder                  aggregation or sort builder
+     * @param propertiesAsMap       properties
+     * @param index                 index
+     * @param showFieldName            whether to include field names
+     * @param showFieldType            whether to include field types
+     * @return Field data string
      * Ex: " [my_field, width:5]"
      */
-    static String buildFieldDataString(NamedWriteable builder) {
+    String buildFieldDataString(
+        NamedWriteable builder,
+        Map<String, Object> propertiesAsMap,
+        Index index,
+        Boolean showFieldName,
+        Boolean showFieldType
+    ) {
         List<String> fieldDataList = new ArrayList<>();
         if (builder instanceof WithFieldName) {
-            fieldDataList.add(((WithFieldName) builder).fieldName());
+            String fieldName = ((WithFieldName) builder).fieldName();
+            if (showFieldName) {
+                fieldDataList.add(fieldName);
+            }
+            if (showFieldType) {
+                String fieldType = getFieldType(fieldName, propertiesAsMap, index);
+                if (fieldType != null && !fieldType.isEmpty()) {
+                    fieldDataList.add(fieldType);
+                }
+            }
         }
         return " [" + String.join(", ", fieldDataList) + "]";
+    }
+
+    String getFieldType(String fieldName, Map<String, Object> propertiesAsMap, Index index) {
+        if (propertiesAsMap == null || index == null) {
+            return null;
+        }
+        // Attempt to get field type from cache
+        String fieldType = getFieldTypeFromCache(fieldName, index);
+
+        if (fieldType != null) {
+            return fieldType;
+        }
+
+        // Retrieve field type from mapping and cache it if found
+        fieldType = getFieldTypeFromProperties(fieldName, propertiesAsMap);
+
+        // Cache field type or NO_FIELD_TYPE_VALUE if not found
+        fieldTypeMap.computeIfAbsent(index, k -> new ConcurrentHashMap<>())
+            .putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
+
+        return fieldType;
+    }
+
+    String getFieldTypeFromProperties(String fieldName, Map<String, Object> propertiesAsMap) {
+        if (propertiesAsMap == null) {
+            return null;
+        }
+
+        String[] fieldParts = fieldName.split("\\.");
+        Map<String, ?> currentProperties = propertiesAsMap;
+
+        for (int depth = 0; depth < fieldParts.length; depth++) {
+            Object currentMapping = currentProperties.get(fieldParts[depth]);
+
+            if (currentMapping instanceof Map) {
+                Map<String, ?> currentMap = (Map<String, ?>) currentMapping;
+
+                // Navigate into nested properties if available
+                if (currentMap.containsKey("properties")) {
+                    currentProperties = (Map<String, ?>) currentMap.get("properties");
+                }
+                // Handle multifields (e.g., title.raw)
+                else if (currentMap.containsKey("fields") && depth + 1 < fieldParts.length) {
+                    currentProperties = (Map<String, ?>) currentMap.get("fields");
+                }
+                // Return type if found
+                else if (currentMap.containsKey("type")) {
+                    return (String) currentMap.get("type");
+                } else {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    String getFieldTypeFromCache(String fieldName, Index index) {
+        return fieldTypeMap.getOrDefault(index, new ConcurrentHashMap<>()).get(fieldName);
     }
 }
