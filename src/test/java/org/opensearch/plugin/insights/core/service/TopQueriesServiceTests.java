@@ -23,6 +23,7 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
 
@@ -34,10 +35,17 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     private final ThreadPool threadPool = mock(ThreadPool.class);
     private final QueryInsightsExporterFactory queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
     private final QueryInsightsReaderFactory queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
+    private final Counter topQueriesApiUsageCounter = mock(Counter.class);
 
     @Before
     public void setup() {
-        topQueriesService = new TopQueriesService(MetricType.LATENCY, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory);
+        topQueriesService = new TopQueriesService(
+            MetricType.LATENCY,
+            threadPool,
+            queryInsightsExporterFactory,
+            queryInsightsReaderFactory,
+            topQueriesApiUsageCounter
+        );
         topQueriesService.setTopNSize(Integer.MAX_VALUE);
         topQueriesService.setWindowSize(new TimeValue(Long.MAX_VALUE));
         topQueriesService.setEnabled(true);
