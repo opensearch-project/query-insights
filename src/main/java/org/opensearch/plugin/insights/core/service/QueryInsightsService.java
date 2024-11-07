@@ -40,7 +40,6 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
-import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
@@ -123,26 +122,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client);
         this.queryInsightsReaderFactory = new QueryInsightsReaderFactory(client);
         this.namedXContentRegistry = namedXContentRegistry;
-
-        Counter topQueriesApiUsageCounter = metricsRegistry.createCounter(
-            "search.insights.top_queries.count",
-            "Counter for the number of API requests for Top N queries",
-            "number"
-        );
-
         // initialize top n queries services and configurations consumers
         topQueriesServices = new HashMap<>();
         for (MetricType metricType : MetricType.allMetricTypes()) {
             enableCollect.put(metricType, false);
             topQueriesServices.put(
                 metricType,
-                new TopQueriesService(
-                    metricType,
-                    threadPool,
-                    queryInsightsExporterFactory,
-                    queryInsightsReaderFactory,
-                    topQueriesApiUsageCounter
-                )
+                new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
             );
         }
         for (MetricType type : MetricType.allMetricTypes()) {
