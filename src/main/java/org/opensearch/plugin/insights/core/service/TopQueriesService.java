@@ -348,9 +348,13 @@ public class TopQueriesService {
      */
     public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to)
         throws IllegalArgumentException {
-        OperationalMetricsCounter.getInstance().incrementCounter(
-            OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
-            Tags.create().addTag(METRIC_TYPE_TAG, this.metricType.name()).addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name()));
+        OperationalMetricsCounter.getInstance()
+            .incrementCounter(
+                OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
+                Tags.create()
+                    .addTag(METRIC_TYPE_TAG, this.metricType.name())
+                    .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
+            );
         if (!enabled) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
