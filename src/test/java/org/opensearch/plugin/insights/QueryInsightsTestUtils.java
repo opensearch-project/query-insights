@@ -139,6 +139,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
             attributes.put(Attribute.QUERY_HASHCODE, Objects.hashCode(i));
+            attributes.put(Attribute.TYPE, "query");
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(

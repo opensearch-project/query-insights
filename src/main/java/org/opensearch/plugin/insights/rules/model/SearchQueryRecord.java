@@ -89,6 +89,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Custom search request labels
      */
     public static final String LABELS = "labels";
+    /**
+     * Type of the query record (either 'query' or 'group')
+     */
+    public static final String TYPE = "type";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -167,6 +171,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());
                         break;
+                    case TYPE:
+                        attributes.put(Attribute.TYPE, parser.text());
                     case SOURCE:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                         attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(parser, false));

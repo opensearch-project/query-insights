@@ -29,6 +29,8 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
  */
 public class MinMaxHeapQueryGrouper implements QueryGrouper {
 
+    private static final String GROUP_TYPE = "group";
+
     /**
      * Logger
      */
@@ -127,6 +129,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             aggregateSearchQueryRecord = searchQueryRecord;
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
+            aggregateSearchQueryRecord.addAttribute(Attribute.TYPE, GROUP_TYPE);
             addToMinPQ(aggregateSearchQueryRecord, groupId);
         } else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();

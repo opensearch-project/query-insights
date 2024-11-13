@@ -60,7 +60,11 @@ public enum Attribute {
     /**
      * Unique hashcode used to group similar queries
      */
-    QUERY_HASHCODE;
+    QUERY_HASHCODE,
+    /**
+     * Type of the query record (either 'query' or 'group')
+     */
+    TYPE;
 
     /**
      * Read an Attribute from a StreamInput

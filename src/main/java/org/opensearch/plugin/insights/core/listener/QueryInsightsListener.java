@@ -51,6 +51,7 @@ import org.opensearch.tasks.Task;
  */
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
     private static final ToXContent.Params FORMAT_PARAMS = new ToXContent.MapParams(Collections.singletonMap("pretty", "false"));
+    private static final String DEFAULT_TYPE = "query";
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
 
@@ -271,6 +272,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
+            attributes.put(Attribute.TYPE, DEFAULT_TYPE);
 
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
