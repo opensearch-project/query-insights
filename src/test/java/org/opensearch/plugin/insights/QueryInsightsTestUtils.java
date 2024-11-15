@@ -46,6 +46,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Type;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -139,7 +140,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
             attributes.put(Attribute.QUERY_HASHCODE, Objects.hashCode(i));
-            attributes.put(Attribute.TYPE, "query");
+            attributes.put(Attribute.TYPE, Type.query);
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(

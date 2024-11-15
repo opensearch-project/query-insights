@@ -42,6 +42,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Type;
 import org.opensearch.tasks.Task;
 
 /**
@@ -51,7 +52,7 @@ import org.opensearch.tasks.Task;
  */
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
     private static final ToXContent.Params FORMAT_PARAMS = new ToXContent.MapParams(Collections.singletonMap("pretty", "false"));
-    private static final String DEFAULT_TYPE = "query";
+    private static final Type DEFAULT_TYPE = Type.query;
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
 

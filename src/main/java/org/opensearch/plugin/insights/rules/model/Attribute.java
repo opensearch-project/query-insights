@@ -101,8 +101,10 @@ public enum Attribute {
             out.writeList((List<? extends Writeable>) attributeValue);
         } else if (attributeValue instanceof SearchSourceBuilder) {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
+        } else if (attributeValue instanceof Type) {
+            out.writeString(((Type) attributeValue).getValue());
         } else {
-            out.writeGenericValue(attributeValue);
+        out.writeGenericValue(attributeValue);
         }
     }
 
@@ -120,6 +122,8 @@ public enum Attribute {
         } else if (attribute == Attribute.SOURCE) {
             SearchSourceBuilder builder = new SearchSourceBuilder(in);
             return builder;
+        } else if (attribute == Attribute.TYPE) {
+            return Type.valueOf(in.readString());
         } else {
             return in.readGenericValue();
         }

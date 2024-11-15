@@ -19,6 +19,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Type;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -706,12 +707,12 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
 
         for (SearchQueryRecord record : records) {
-            assertEquals("query", record.getAttributes().get(Attribute.TYPE));
+            assertEquals(Type.query, record.getAttributes().get(Attribute.TYPE));
         }
         SearchQueryRecord groupedRecord;
         for (SearchQueryRecord record : records) {
             groupedRecord = minMaxHeapQueryGrouper.add(record);
-            assertEquals("group", groupedRecord.getAttributes().get(Attribute.TYPE));
+            assertEquals(Type.group, groupedRecord.getAttributes().get(Attribute.TYPE));
         }
     }
 }
