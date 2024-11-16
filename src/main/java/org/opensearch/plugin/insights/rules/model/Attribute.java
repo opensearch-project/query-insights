@@ -62,9 +62,9 @@ public enum Attribute {
      */
     QUERY_HASHCODE,
     /**
-     * Type of the query record (either 'query' or 'group')
+     * Grouping type of the query record (none, similarity)
      */
-    TYPE;
+    GROUP_BY;
 
     /**
      * Read an Attribute from a StreamInput
@@ -101,10 +101,10 @@ public enum Attribute {
             out.writeList((List<? extends Writeable>) attributeValue);
         } else if (attributeValue instanceof SearchSourceBuilder) {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
-        } else if (attributeValue instanceof Type) {
-            out.writeString(((Type) attributeValue).getValue());
+        } else if (attributeValue instanceof GroupingType) {
+            out.writeString(((GroupingType) attributeValue).getValue());
         } else {
-        out.writeGenericValue(attributeValue);
+            out.writeGenericValue(attributeValue);
         }
     }
 
@@ -122,8 +122,8 @@ public enum Attribute {
         } else if (attribute == Attribute.SOURCE) {
             SearchSourceBuilder builder = new SearchSourceBuilder(in);
             return builder;
-        } else if (attribute == Attribute.TYPE) {
-            return Type.valueOf(in.readString());
+        } else if (attribute == Attribute.GROUP_BY) {
+            return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {
             return in.readGenericValue();
         }

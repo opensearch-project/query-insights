@@ -17,7 +17,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +32,6 @@ import org.opensearch.action.search.SearchTask;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -42,7 +40,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.rules.model.Type;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.tasks.Task;
 
 /**
@@ -51,8 +49,6 @@ import org.opensearch.tasks.Task;
  * either for each request or for each phase.
  */
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
-    private static final ToXContent.Params FORMAT_PARAMS = new ToXContent.MapParams(Collections.singletonMap("pretty", "false"));
-    private static final Type DEFAULT_TYPE = Type.query;
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
 
@@ -273,7 +269,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
-            attributes.put(Attribute.TYPE, DEFAULT_TYPE);
+            attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
 
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
