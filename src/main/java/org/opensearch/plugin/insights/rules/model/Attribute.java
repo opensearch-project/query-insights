@@ -60,7 +60,11 @@ public enum Attribute {
     /**
      * Unique hashcode used to group similar queries
      */
-    QUERY_HASHCODE;
+    QUERY_HASHCODE,
+    /**
+     * Grouping type of the query record (none, similarity)
+     */
+    GROUP_BY;
 
     /**
      * Read an Attribute from a StreamInput
@@ -97,6 +101,8 @@ public enum Attribute {
             out.writeList((List<? extends Writeable>) attributeValue);
         } else if (attributeValue instanceof SearchSourceBuilder) {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
+        } else if (attributeValue instanceof GroupingType) {
+            out.writeString(((GroupingType) attributeValue).getValue());
         } else {
             out.writeGenericValue(attributeValue);
         }
@@ -116,6 +122,8 @@ public enum Attribute {
         } else if (attribute == Attribute.SOURCE) {
             SearchSourceBuilder builder = new SearchSourceBuilder(in);
             return builder;
+        } else if (attribute == Attribute.GROUP_BY) {
+            return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {
             return in.readGenericValue();
         }

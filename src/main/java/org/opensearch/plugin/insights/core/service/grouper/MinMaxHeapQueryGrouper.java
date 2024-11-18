@@ -127,6 +127,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             aggregateSearchQueryRecord = searchQueryRecord;
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
+            aggregateSearchQueryRecord.addAttribute(Attribute.GROUP_BY, groupingType);
             addToMinPQ(aggregateSearchQueryRecord, groupId);
         } else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();
