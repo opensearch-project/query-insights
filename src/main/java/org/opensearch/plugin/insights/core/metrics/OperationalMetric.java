@@ -18,7 +18,8 @@ public enum OperationalMetric {
     INVALID_INDEX_PATTERN_EXCEPTIONS("Number of invalid index pattern exceptions"),
     DATA_INGEST_EXCEPTIONS("Number of exceptions during data ingest in Query Insights"),
     QUERY_CATEGORIZE_EXCEPTIONS("Number of exceptions when categorizing the queries"),
-    EXPORTER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the exporter");
+    EXPORTER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the exporter"),
+    TOP_N_QUERIES_USAGE_COUNT("Number of times the top n queries API is used");
 
     private final String description;
 
