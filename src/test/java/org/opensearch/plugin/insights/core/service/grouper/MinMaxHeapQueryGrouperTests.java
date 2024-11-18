@@ -700,4 +700,18 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
     private MinMaxHeapQueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
         return new MinMaxHeapQueryGrouper(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
     }
+
+    public void testAttributeTypeSetToGroup() {
+        int numOfRecords = 10;
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(numOfRecords);
+
+        for (SearchQueryRecord record : records) {
+            assertEquals(GroupingType.NONE, record.getAttributes().get(Attribute.GROUP_BY));
+        }
+        SearchQueryRecord groupedRecord;
+        for (SearchQueryRecord record : records) {
+            groupedRecord = minMaxHeapQueryGrouper.add(record);
+            assertEquals(GroupingType.SIMILARITY, groupedRecord.getAttributes().get(Attribute.GROUP_BY));
+        }
+    }
 }
