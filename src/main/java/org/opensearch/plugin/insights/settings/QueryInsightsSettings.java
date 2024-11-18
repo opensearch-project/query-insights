@@ -62,7 +62,7 @@ public class QueryInsightsSettings {
     /** Default N size for top N queries */
     public static final int MAX_N_SIZE = 100;
     /** Default window size in seconds to keep the top N queries with latency data in query insight store */
-    public static final TimeValue DEFAULT_WINDOW_SIZE = new TimeValue(60, TimeUnit.SECONDS);
+    public static final TimeValue DEFAULT_WINDOW_SIZE = new TimeValue(1, TimeUnit.MINUTES);
     /** Default top N size to keep the data in query insight store */
     public static final int DEFAULT_TOP_N_SIZE = 3;
     /**
