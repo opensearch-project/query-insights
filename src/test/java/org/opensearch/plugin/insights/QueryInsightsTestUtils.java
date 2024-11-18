@@ -43,6 +43,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -139,6 +140,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
             attributes.put(Attribute.QUERY_HASHCODE, Objects.hashCode(i));
+            attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
