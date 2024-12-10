@@ -59,6 +59,11 @@ configurations {
   zipArchive
 }
 
+java {
+    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_21
+}
+
 publishing {
   publications {
     pluginZip(MavenPublication) { publication ->
