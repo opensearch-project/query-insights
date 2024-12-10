@@ -6,9 +6,6 @@ on:
   pull_request:
     branches:
       - "*"
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-
 jobs:
   Get-CI-Image-Tag:
     uses: opensearch-project/opensearch-build/.github/workflows/get-ci-image-tag.yml@main
@@ -19,7 +16,7 @@ jobs:
     needs: Get-CI-Image-Tag
     strategy:
       matrix:
-        java: [11, 17, 21]
+        java: [21]
         os: [ ubuntu-latest ]
     name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -27,13 +24,14 @@ jobs:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
       # this image tag is subject to change as more dependencies and updates will arrive over time
       image: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-version-linux }}
-      # need to switch to root so that github actions can install runner binary on container without permission issues.
-      options: --user root
-
+      options: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-options }}
     steps:
+      - name: Run start commands
+        run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
+
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Setup Java ${{ matrix.java }}
@@ -77,7 +75,7 @@ jobs:
       WORKING_DIR: ${{ matrix.working_directory }}.
     strategy:
       matrix:
-        java: [11, 17]
+        java: [21]
         os: [ windows-latest, macos-latest ]
         include:
           - os: windows-latest
