@@ -8,10 +8,8 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -70,21 +68,6 @@ public class QueryInsightsExporterFactory {
                     SinkType.allSinkTypes()
                 )
             );
-        }
-        switch (type) {
-            case LOCAL_INDEX:
-                final String indexPattern = settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
-                if (indexPattern.length() == 0) {
-                    throw new IllegalArgumentException("Empty index pattern configured for the exporter");
-                }
-                try {
-                    DateTimeFormat.forPattern(indexPattern);
-                } catch (Exception e) {
-                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_INDEX_PATTERN_EXCEPTIONS);
-                    throw new IllegalArgumentException(
-                        String.format(Locale.ROOT, "Invalid index pattern [%s] configured for the exporter", indexPattern)
-                    );
-                }
         }
     }
 

@@ -220,10 +220,6 @@ public class QueryInsightsSettings {
      */
     public static final String EXPORTER_TYPE = "type";
     /**
-     * Config key for export index
-     */
-    public static final String EXPORT_INDEX = "config.index";
-    /**
      * Settings and defaults for top queries exporters
      */
     private static final String TOP_N_LATENCY_QUERIES_EXPORTER_PREFIX = TOP_N_LATENCY_QUERIES_PREFIX + ".exporter.";
