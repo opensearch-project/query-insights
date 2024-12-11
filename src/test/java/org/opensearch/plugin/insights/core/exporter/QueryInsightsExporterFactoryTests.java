@@ -11,9 +11,7 @@ package org.opensearch.plugin.insights.core.exporter;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
 
 import org.joda.time.format.DateTimeFormat;
 import org.junit.Before;
@@ -59,20 +57,6 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.put(EXPORTER_TYPE, "some_invalid_type").build();
         assertThrows(IllegalArgumentException.class, () -> { queryInsightsExporterFactory.validateExporterConfig(settings); });
-    }
-
-    public void testInvalidLocalIndexConfig() {
-        Settings.Builder settingsBuilder = Settings.builder();
-        assertThrows(IllegalArgumentException.class, () -> {
-            queryInsightsExporterFactory.validateExporterConfig(
-                settingsBuilder.put(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE).put(EXPORT_INDEX, "").build()
-            );
-        });
-        assertThrows(IllegalArgumentException.class, () -> {
-            queryInsightsExporterFactory.validateExporterConfig(
-                settingsBuilder.put(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE).put(EXPORT_INDEX, "some_invalid_pattern").build()
-            );
-        });
     }
 
     public void testCreateAndCloseExporter() {

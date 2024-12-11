@@ -8,21 +8,14 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
-
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 
 /**
  * Factory class for validating and creating Readers based on provided settings
@@ -43,27 +36,6 @@ public class QueryInsightsReaderFactory {
     public QueryInsightsReaderFactory(final Client client) {
         this.client = client;
         this.Readers = new HashSet<>();
-    }
-
-    /**
-     * Validate Reader sink config
-     *
-     * @param settings Reader sink config {@link Settings}
-     * @throws IllegalArgumentException if provided Reader sink config settings are invalid
-     */
-    public void validateReaderConfig(final Settings settings) throws IllegalArgumentException {
-        final String indexPattern = settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
-        if (indexPattern.isEmpty()) {
-            throw new IllegalArgumentException("Empty index pattern configured for the Reader");
-        }
-        try {
-            DateTimeFormat.forPattern(indexPattern);
-        } catch (Exception e) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_INDEX_PATTERN_EXCEPTIONS);
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Invalid index pattern [%s] configured for the Reader", indexPattern)
-            );
-        }
     }
 
     /**
