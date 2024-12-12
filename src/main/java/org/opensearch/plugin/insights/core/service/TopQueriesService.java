@@ -11,7 +11,6 @@ package org.opensearch.plugin.insights.core.service;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 
 import java.io.IOException;
@@ -262,7 +261,7 @@ public class TopQueriesService {
         if (settings.get(EXPORTER_TYPE) != null) {
             SinkType expectedType = SinkType.parse(settings.get(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE));
             if (exporter != null && expectedType == SinkType.getSinkTypeFromExporter(exporter)) {
-                queryInsightsExporterFactory.updateExporter(exporter, settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN));
+                queryInsightsExporterFactory.updateExporter(exporter, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
             } else {
                 try {
                     queryInsightsExporterFactory.closeExporter(this.exporter);
@@ -272,7 +271,7 @@ public class TopQueriesService {
                 }
                 this.exporter = queryInsightsExporterFactory.createExporter(
                     SinkType.parse(settings.get(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE)),
-                    settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN)
+                    DEFAULT_TOP_N_QUERIES_INDEX_PATTERN
                 );
             }
         } else {
@@ -294,11 +293,8 @@ public class TopQueriesService {
      * @param namedXContentRegistry NamedXContentRegistry for parsing purposes
      */
     public void setReader(final Settings settings, final NamedXContentRegistry namedXContentRegistry) {
-        this.reader = queryInsightsReaderFactory.createReader(
-            settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN),
-            namedXContentRegistry
-        );
-        queryInsightsReaderFactory.updateReader(reader, settings.get(EXPORT_INDEX, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN));
+        this.reader = queryInsightsReaderFactory.createReader(DEFAULT_TOP_N_QUERIES_INDEX_PATTERN, namedXContentRegistry);
+        queryInsightsReaderFactory.updateReader(reader, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
     }
 
     /**
@@ -308,7 +304,6 @@ public class TopQueriesService {
      */
     public void validateExporterAndReaderConfig(Settings settings) {
         queryInsightsExporterFactory.validateExporterConfig(settings);
-        queryInsightsReaderFactory.validateReaderConfig(settings);
     }
 
     /**

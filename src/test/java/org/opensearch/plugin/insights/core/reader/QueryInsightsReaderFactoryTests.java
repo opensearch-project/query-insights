@@ -12,12 +12,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORT_INDEX;
 
 import org.joda.time.format.DateTimeFormat;
 import org.junit.Before;
 import org.opensearch.client.Client;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.telemetry.metrics.Counter;
@@ -43,22 +41,6 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
             invocation -> mock(Counter.class)
         );
         OperationalMetricsCounter.initialize("cluster", metricsRegistry);
-    }
-
-    public void testValidateConfigWhenResetReader() {
-        Settings.Builder settingsBuilder = Settings.builder();
-        Settings settings = settingsBuilder.build();
-        try {
-            queryInsightsReaderFactory.validateReaderConfig(settings);
-        } catch (Exception e) {
-            fail("No exception should be thrown when setting is null");
-        }
-    }
-
-    public void testInvalidReaderTypeConfig() {
-        Settings.Builder settingsBuilder = Settings.builder();
-        Settings settings = settingsBuilder.put(EXPORT_INDEX, "some_invalid_type").build();
-        assertThrows(IllegalArgumentException.class, () -> { queryInsightsReaderFactory.validateReaderConfig(settings); });
     }
 
     public void testCreateAndCloseReader() {
