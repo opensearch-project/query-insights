@@ -8,25 +8,31 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
@@ -54,7 +60,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
         );
         queryInsightsService = new QueryInsightsService(
-            clusterSettings,
+            new ClusterService(settings, clusterSettings, threadPool),
             threadPool,
             client,
             NoopMetricsRegistry.INSTANCE,
@@ -64,6 +70,12 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
         queryInsightsServiceSpy = spy(queryInsightsService);
+
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
+            invocation -> mock(Counter.class)
+        );
+        OperationalMetricsCounter.initialize("cluster", metricsRegistry);
     }
 
     @Override

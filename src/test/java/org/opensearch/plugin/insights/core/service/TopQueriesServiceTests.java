@@ -11,6 +11,7 @@ package org.opensearch.plugin.insights.core.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.validateExporterDeleteAfter;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -179,5 +180,16 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertNotNull(healthStats.getQueryGrouperHealthStats());
         // Assuming no grouping by default, expect QueryGroupCount to be 0
         assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupCount());
+    }
+
+    public void testValidateExporterDeleteAfter() {
+        assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(-1); });
+        assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(0); });
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(181); });
+        assertEquals(
+            "Invalid exporter delete_after_days setting [181], value should be an integer between 1 and 180.",
+            exception.getMessage()
+        );
+
     }
 }

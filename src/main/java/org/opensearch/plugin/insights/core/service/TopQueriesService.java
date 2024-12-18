@@ -11,6 +11,8 @@ package org.opensearch.plugin.insights.core.service;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 
 import java.io.IOException;
@@ -33,9 +35,11 @@ import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joda.time.DateTime;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
@@ -535,5 +539,46 @@ public class TopQueriesService {
      */
     public TopQueriesHealthStats getHealthStats() {
         return new TopQueriesHealthStats(this.topQueriesStore.size(), this.queryGrouper.getHealthStats());
+    }
+
+    /**
+     * Validate the exporter delete after value
+     *
+     * @param deleteAfter exporter and reader settings
+     */
+    static void validateExporterDeleteAfter(final int deleteAfter) {
+        if (deleteAfter < MIN_DELETE_AFTER_VALUE || deleteAfter > MAX_DELETE_AFTER_VALUE) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "Invalid exporter delete_after_days setting [%d], value should be an integer between %d and %d.",
+                    deleteAfter,
+                    MIN_DELETE_AFTER_VALUE,
+                    MAX_DELETE_AFTER_VALUE
+                )
+            );
+        }
+    }
+
+    /**
+     * Set exporter delete after if exporter is a {@link LocalIndexExporter}
+     *
+     * @param deleteAfter the number of days after which Top N local indices should be deleted
+     */
+    void setExporterDeleteAfter(final int deleteAfter) {
+        if (exporter != null && exporter.getClass() == LocalIndexExporter.class) {
+            ((LocalIndexExporter) exporter).setDeleteAfter(deleteAfter);
+        }
+    }
+
+    /**
+     * Delete Top N local indices older than the configured data retention period
+     */
+    void deleteExpiredIndices(final Map<String, IndexMetadata> indexMetadataMap) {
+        if (exporter != null && exporter.getClass() == LocalIndexExporter.class) {
+            threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
+                .execute(() -> ((LocalIndexExporter) exporter).deleteExpiredIndices(indexMetadataMap));
+        }
     }
 }
