@@ -13,6 +13,8 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.matchesPattern;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 
 import java.util.List;
 import org.joda.time.format.DateTimeFormat;
@@ -94,5 +96,15 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         DateTimeFormatter newFormatter = mock(DateTimeFormatter.class);
         localIndexExporter.setIndexPattern(newFormatter);
         assert (localIndexExporter.getIndexPattern() == newFormatter);
+    }
+
+    public void testMatchesPattern() {
+        DateTimeFormatter formatter = DateTimeFormat.forPattern(DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
+        assertTrue(matchesPattern("top_queries-2024.01.01", formatter));
+        assertTrue(matchesPattern("top_queries-2025.12.12", formatter));
+        assertFalse(matchesPattern("top_queries-", formatter));
+        assertFalse(matchesPattern("top_queries-2025.12", formatter));
+        assertFalse(matchesPattern("top_queries-2025.12.12.00.00", formatter));
+        assertFalse(matchesPattern("2025.12.12", formatter));
     }
 }
