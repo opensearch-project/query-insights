@@ -8,7 +8,9 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -17,12 +19,15 @@ import org.opensearch.cluster.coordination.DeterministicTaskQueue;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
 
@@ -34,6 +39,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     private final ThreadPool threadPool = mock(ThreadPool.class);
     private final QueryInsightsExporterFactory queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
     private final QueryInsightsReaderFactory queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
+    private MetricsRegistry metricsRegistry;
 
     @Before
     public void setup() {
@@ -41,6 +47,12 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         topQueriesService.setTopNSize(Integer.MAX_VALUE);
         topQueriesService.setWindowSize(new TimeValue(Long.MAX_VALUE));
         topQueriesService.setEnabled(true);
+
+        metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
+            invocation -> mock(Counter.class)
+        );
+        OperationalMetricsCounter.initialize("cluster", metricsRegistry);
     }
 
     public void testIngestQueryDataWithLargeWindow() {

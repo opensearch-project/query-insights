@@ -52,6 +52,7 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.threadpool.ThreadPool;
 
 /**
@@ -59,6 +60,9 @@ import org.opensearch.threadpool.ThreadPool;
  * with high latency or resource usage
  */
 public class TopQueriesService {
+    private static final String METRIC_TYPE_TAG = "metric_type";
+    private static final String GROUPBY_TAG = "groupby";
+
     /**
      * Logger of the local index exporter
      */
@@ -339,6 +343,13 @@ public class TopQueriesService {
      */
     public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to)
         throws IllegalArgumentException {
+        OperationalMetricsCounter.getInstance()
+            .incrementCounter(
+                OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
+                Tags.create()
+                    .addTag(METRIC_TYPE_TAG, this.metricType.name())
+                    .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
+            );
         if (!enabled) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
