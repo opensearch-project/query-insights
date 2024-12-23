@@ -8,13 +8,13 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
-import org.joda.time.format.DateTimeFormatter;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
@@ -91,18 +91,21 @@ public final class LocalIndexReader implements QueryInsightsReader {
         if (from == null || to == null) {
             return records;
         }
-        final DateTime start = DateTime.parse(from);
-        DateTime end = DateTime.parse(to);
-        if (end.compareTo(DateTime.now(DateTimeZone.UTC)) > 0) {
-            end = DateTime.now(DateTimeZone.UTC);
+        final ZonedDateTime start = ZonedDateTime.parse(from);
+        ZonedDateTime end = ZonedDateTime.parse(to);
+        ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        if (end.isAfter(now)) {
+            end = now;
         }
-        DateTime curr = start;
-        while (curr.compareTo(end.plusDays(1).withTimeAtStartOfDay()) < 0) {
+        ZonedDateTime curr = start;
+        while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String index = getDateTimeFromFormat(curr);
             SearchRequest searchRequest = new SearchRequest(index);
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
-            RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp").from(start.getMillis()).to(end.getMillis());
+            RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
+                .from(start.toInstant().toEpochMilli())
+                .to(end.toInstant().toEpochMilli());
             QueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
             searchSourceBuilder.query(query);
             searchRequest.source(searchSourceBuilder);
@@ -132,7 +135,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
         logger.debug("Closing the LocalIndexReader..");
     }
 
-    private String getDateTimeFromFormat(DateTime current) {
-        return indexPattern.print(current);
+    private String getDateTimeFromFormat(ZonedDateTime current) {
+        return current.format(indexPattern);
     }
 }

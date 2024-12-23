@@ -11,11 +11,11 @@ package org.opensearch.plugin.insights.rules.resthandler.top_queries;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_BASE_URI;
 import static org.opensearch.rest.RestRequest.Method.GET;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.joda.time.DateTime;
 import org.opensearch.client.node.NodeClient;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.Strings;
@@ -67,7 +67,7 @@ public class RestTopQueriesAction extends BaseRestHandler {
 
     private static boolean isNotISODate(final String dateTime) {
         try {
-            DateTime.parse(dateTime);
+            ZonedDateTime.parse(dateTime);
             return false;
         } catch (Exception e) {
             return true;

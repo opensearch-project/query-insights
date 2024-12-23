@@ -9,11 +9,12 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 
@@ -46,7 +47,11 @@ public class QueryInsightsReaderFactory {
      * @return QueryInsightsReader the created Reader
      */
     public QueryInsightsReader createReader(String indexPattern, NamedXContentRegistry namedXContentRegistry) {
-        QueryInsightsReader Reader = new LocalIndexReader(client, DateTimeFormat.forPattern(indexPattern), namedXContentRegistry);
+        QueryInsightsReader Reader = new LocalIndexReader(
+            client,
+            DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
+            namedXContentRegistry
+        );
         this.Readers.add(Reader);
         return Reader;
     }
@@ -60,7 +65,7 @@ public class QueryInsightsReaderFactory {
      */
     public QueryInsightsReader updateReader(QueryInsightsReader Reader, String indexPattern) {
         if (Reader.getClass() == LocalIndexReader.class) {
-            ((LocalIndexReader) Reader).setIndexPattern(DateTimeFormat.forPattern(indexPattern));
+            ((LocalIndexReader) Reader).setIndexPattern(DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT));
         }
         return Reader;
     }
