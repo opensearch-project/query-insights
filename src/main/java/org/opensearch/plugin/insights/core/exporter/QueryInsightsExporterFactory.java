@@ -12,12 +12,12 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFA
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
 
 import java.io.IOException;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.format.DateTimeFormat;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -80,7 +80,7 @@ public class QueryInsightsExporterFactory {
      */
     public QueryInsightsExporter createExporter(SinkType type, String indexPattern) {
         if (SinkType.LOCAL_INDEX.equals(type)) {
-            QueryInsightsExporter exporter = new LocalIndexExporter(client, DateTimeFormat.forPattern(indexPattern));
+            QueryInsightsExporter exporter = new LocalIndexExporter(client, DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT));
             this.exporters.add(exporter);
             return exporter;
         }
@@ -96,7 +96,7 @@ public class QueryInsightsExporterFactory {
      */
     public QueryInsightsExporter updateExporter(QueryInsightsExporter exporter, String indexPattern) {
         if (exporter.getClass() == LocalIndexExporter.class) {
-            ((LocalIndexExporter) exporter).setIndexPattern(DateTimeFormat.forPattern(indexPattern));
+            ((LocalIndexExporter) exporter).setIndexPattern(DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT));
         }
         return exporter;
     }

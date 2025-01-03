@@ -13,7 +13,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 
-import org.joda.time.format.DateTimeFormat;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -55,9 +56,9 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     }
 
     public void testUpdateReader() {
-        LocalIndexReader reader = new LocalIndexReader(client, DateTimeFormat.forPattern(format), namedXContentRegistry);
+        LocalIndexReader reader = new LocalIndexReader(client, DateTimeFormatter.ofPattern(format, Locale.ROOT), namedXContentRegistry);
         queryInsightsReaderFactory.updateReader(reader, "yyyy-MM-dd-HH");
-        assertEquals(DateTimeFormat.forPattern("yyyy-MM-dd-HH"), reader.getIndexPattern());
+        assertEquals(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT).toString(), reader.getIndexPattern().toString());
     }
 
 }

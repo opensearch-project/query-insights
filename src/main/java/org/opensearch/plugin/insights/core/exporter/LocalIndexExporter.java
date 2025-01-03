@@ -8,12 +8,12 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
-import org.joda.time.format.DateTimeFormatter;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
@@ -111,6 +111,6 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     private String getDateTimeFromFormat() {
-        return indexPattern.print(DateTime.now(DateTimeZone.UTC));
+        return indexPattern.format(ZonedDateTime.now(ZoneOffset.UTC));
     }
 }
