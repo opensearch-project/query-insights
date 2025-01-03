@@ -13,15 +13,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.search.TotalHits;
-import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
 import org.junit.Before;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
@@ -41,7 +41,7 @@ import org.opensearch.test.OpenSearchTestCase;
  * Granular tests for the {@link LocalIndexReaderTests} class.
  */
 public class LocalIndexReaderTests extends OpenSearchTestCase {
-    private final DateTimeFormatter format = DateTimeFormat.forPattern("YYYY.MM.dd");
+    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("YYYY.MM.dd", Locale.ROOT);
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private LocalIndexReader localIndexReader;
@@ -55,7 +55,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
     public void testReadRecords() {
         ActionFuture<SearchResponse> responseActionFuture = mock(ActionFuture.class);
         Map<String, Object> sourceMap = new HashMap<>();
-        sourceMap.put("timestamp", DateTime.now(DateTimeZone.UTC).getMillis());
+        sourceMap.put("timestamp", ZonedDateTime.now(ZoneOffset.UTC).toInstant().toEpochMilli());
         sourceMap.put("indices", Collections.singletonList("my-index-0"));
         sourceMap.put("source", Map.of());
         sourceMap.put("labels", Map.of());
@@ -83,7 +83,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         when(searchResponse.getHits()).thenReturn(searchHits);
         when(responseActionFuture.actionGet()).thenReturn(searchResponse);
         when(client.search(any(SearchRequest.class))).thenReturn(responseActionFuture);
-        String time = DateTime.now(DateTimeZone.UTC).toString();
+        String time = ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_DATE_TIME);
         List<SearchQueryRecord> records = List.of();
         try {
             records = localIndexReader.read(time, time);
@@ -103,7 +103,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
     }
 
     public void testGetAndSetIndexPattern() {
-        DateTimeFormatter newFormatter = mock(DateTimeFormatter.class);
+        final DateTimeFormatter newFormatter = DateTimeFormatter.ofPattern("YYYY-MM-dd", Locale.ROOT);
         localIndexReader.setIndexPattern(newFormatter);
         assert (localIndexReader.getIndexPattern() == newFormatter);
     }

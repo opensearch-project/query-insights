@@ -13,7 +13,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
 
-import org.joda.time.format.DateTimeFormat;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import org.junit.Before;
 import org.opensearch.client.Client;
 import org.opensearch.common.settings.Settings;
@@ -76,9 +77,9 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
     }
 
     public void testUpdateExporter() {
-        LocalIndexExporter exporter = new LocalIndexExporter(client, DateTimeFormat.forPattern("yyyy-MM-dd"));
+        LocalIndexExporter exporter = new LocalIndexExporter(client, DateTimeFormatter.ofPattern(format, Locale.ROOT));
         queryInsightsExporterFactory.updateExporter(exporter, "yyyy-MM-dd-HH");
-        assertEquals(DateTimeFormat.forPattern("yyyy-MM-dd-HH"), exporter.getIndexPattern());
+        assertEquals(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT).toString(), exporter.getIndexPattern().toString());
     }
 
 }
