@@ -14,9 +14,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
+import java.time.format.DateTimeFormatter;
 import java.util.List;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
+import java.util.Locale;
 import org.junit.Before;
 import org.opensearch.action.bulk.BulkAction;
 import org.opensearch.action.bulk.BulkRequestBuilder;
@@ -31,7 +31,7 @@ import org.opensearch.test.OpenSearchTestCase;
  * Granular tests for the {@link LocalIndexExporterTests} class.
  */
 public class LocalIndexExporterTests extends OpenSearchTestCase {
-    private final DateTimeFormatter format = DateTimeFormat.forPattern("YYYY.MM.dd");
+    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("YYYY.MM.dd", Locale.ROOT);
     private final Client client = mock(Client.class);
     private LocalIndexExporter localIndexExporter;
 
@@ -91,7 +91,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
     }
 
     public void testGetAndSetIndexPattern() {
-        DateTimeFormatter newFormatter = mock(DateTimeFormatter.class);
+        final DateTimeFormatter newFormatter = DateTimeFormatter.ofPattern("YYYY-MM-dd", Locale.ROOT);
         localIndexExporter.setIndexPattern(newFormatter);
         assert (localIndexExporter.getIndexPattern() == newFormatter);
     }

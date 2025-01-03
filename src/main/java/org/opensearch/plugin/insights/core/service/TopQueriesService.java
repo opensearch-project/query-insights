@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,7 +33,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joda.time.DateTime;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -362,10 +362,10 @@ public class TopQueriesService {
         }
         List<SearchQueryRecord> filterQueries = queries;
         if (from != null && to != null) {
-            final DateTime start = DateTime.parse(from);
-            final DateTime end = DateTime.parse(to);
-            Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
-                && element.getTimestamp() <= end.getMillis();
+            final ZonedDateTime start = ZonedDateTime.parse(from);
+            final ZonedDateTime end = ZonedDateTime.parse(to);
+            Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
+                && element.getTimestamp() <= end.toInstant().toEpochMilli();
             filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
         }
         return Stream.of(filterQueries)
@@ -394,11 +394,11 @@ public class TopQueriesService {
         final List<SearchQueryRecord> queries = new ArrayList<>();
         if (reader != null) {
             try {
-                final DateTime start = DateTime.parse(from);
-                final DateTime end = DateTime.parse(to);
+                final ZonedDateTime start = ZonedDateTime.parse(from);
+                final ZonedDateTime end = ZonedDateTime.parse(to);
                 List<SearchQueryRecord> records = reader.read(from, to);
-                Predicate<SearchQueryRecord> timeFilter = element -> start.getMillis() <= element.getTimestamp()
-                    && element.getTimestamp() <= end.getMillis();
+                Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
+                    && element.getTimestamp() <= end.toInstant().toEpochMilli();
                 List<SearchQueryRecord> filteredRecords = records.stream()
                     .filter(checkIfInternal.and(timeFilter))
                     .collect(Collectors.toList());
