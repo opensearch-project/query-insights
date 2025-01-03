@@ -8,16 +8,22 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE;
+
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
@@ -36,6 +42,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
     private final Logger logger = LogManager.getLogger();
     private final Client client;
     private DateTimeFormatter indexPattern;
+    private int deleteAfter;
 
     /**
      * Constructor of LocalIndexExporter
@@ -46,6 +53,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
     public LocalIndexExporter(final Client client, final DateTimeFormatter indexPattern) {
         this.indexPattern = indexPattern;
         this.client = client;
+        this.deleteAfter = DEFAULT_DELETE_AFTER_VALUE;
     }
 
     /**
@@ -61,11 +69,9 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
      * Setter of indexPattern
      *
      * @param indexPattern index pattern
-     * @return the current LocalIndexExporter
      */
-    public LocalIndexExporter setIndexPattern(DateTimeFormatter indexPattern) {
+    void setIndexPattern(DateTimeFormatter indexPattern) {
         this.indexPattern = indexPattern;
-        return this;
     }
 
     /**
@@ -112,5 +118,50 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
 
     private String getDateTimeFromFormat() {
         return indexPattern.format(ZonedDateTime.now(ZoneOffset.UTC));
+    }
+
+    /**
+     * Set local index exporter data retention period
+     *
+     * @param deleteAfter the number of days after which Top N local indices should be deleted
+     */
+    public void setDeleteAfter(final int deleteAfter) {
+        this.deleteAfter = deleteAfter;
+    }
+
+    /**
+     * Delete Top N local indices older than the configured data retention period
+     *
+     * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
+     */
+    public void deleteExpiredIndices(final Map<String, IndexMetadata> indexMetadataMap) {
+        long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(deleteAfter);
+        for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+            String indexName = entry.getKey();
+            if (!matchesPattern(indexName, indexPattern)) {
+                continue;
+            }
+            if (entry.getValue().getCreationDate() <= expirationMillisLong) {
+                // delete this index
+                client.admin().indices().delete(new DeleteIndexRequest(indexName));
+            }
+        }
+    }
+
+    /**
+     * Checks if the input string matches the given DateTimeFormatter pattern.
+     *
+     * @param input The input string to check.
+     * @param formatter The DateTimeFormatter to validate the string against.
+     * @return true if the string matches the pattern, false otherwise.
+     */
+    static boolean matchesPattern(final String input, final DateTimeFormatter formatter) {
+        try {
+            // Try parsing the input with the given formatter
+            formatter.parse(input);
+            return true;  // String matches the pattern
+        } catch (Exception e) {
+            return false;  // String does not match the pattern
+        }
     }
 }
