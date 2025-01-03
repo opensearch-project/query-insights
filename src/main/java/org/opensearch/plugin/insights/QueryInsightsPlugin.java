@@ -82,7 +82,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
         OperationalMetricsCounter.initialize(clusterService.getClusterName().toString(), metricsRegistry);
         // create top n queries service
         final QueryInsightsService queryInsightsService = new QueryInsightsService(
-            clusterService.getClusterSettings(),
+            clusterService,
             threadPool,
             client,
             metricsRegistry,
@@ -145,6 +145,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,
             QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE,
             QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING,
+            QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER,
             QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
         );
     }

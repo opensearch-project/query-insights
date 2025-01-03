@@ -339,6 +339,7 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
     }
 }
