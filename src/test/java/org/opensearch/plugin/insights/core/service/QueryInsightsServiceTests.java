@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -59,7 +60,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
         );
         queryInsightsService = new QueryInsightsService(
-            clusterSettings,
+            new ClusterService(settings, clusterSettings, threadPool),
             threadPool,
             client,
             NoopMetricsRegistry.INSTANCE,

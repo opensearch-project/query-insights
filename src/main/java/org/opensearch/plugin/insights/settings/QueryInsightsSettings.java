@@ -239,6 +239,31 @@ public class QueryInsightsSettings {
      * Default exporter type of top queries
      */
     public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
+    /**
+     * Default Top N local indices retention period in days
+     */
+    public static final int DEFAULT_DELETE_AFTER_VALUE = 7;
+    /**
+     * Minimum Top N local indices retention period in days
+     */
+    public static final int MIN_DELETE_AFTER_VALUE = 1;
+    /**
+     * Maximum Top N local indices retention period in days
+     */
+    public static final int MAX_DELETE_AFTER_VALUE = 180;
+
+    /**
+     * Setting for Top N local indices retention period
+     * <p>
+     * Note: This setting is only applicable when sink type is "local_index"
+     * and it applies to exporters of all metric types
+     */
+    public static final Setting<Integer> TOP_N_EXPORTER_DELETE_AFTER = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".delete_after_days",
+        DEFAULT_DELETE_AFTER_VALUE,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
 
     /**
      * Settings for the exporter of top latency queries

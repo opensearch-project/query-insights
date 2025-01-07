@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
 
 import java.io.IOException;
@@ -19,13 +20,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
-import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -52,13 +55,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private static final Logger logger = LogManager.getLogger(QueryInsightsService.class);
 
+    private final ClusterService clusterService;
+
     /**
      * The internal OpenSearch thread pool that execute async processing and exporting tasks
      */
     private final ThreadPool threadPool;
 
     /**
-     * Services to capture top n queries for different metric types
+     * Map of {@link MetricType} to associated {@link TopQueriesService}
      */
     private final Map<MetricType, TopQueriesService> topQueriesServices;
 
@@ -73,10 +78,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private final LinkedBlockingQueue<SearchQueryRecord> queryRecordsQueue;
 
     /**
-     * Holds a reference to delayed operation {@link Scheduler.Cancellable} so it can be cancelled when
+     * List of references to delayed operations {@link Scheduler.Cancellable} so they can be cancelled when
      * the service closed concurrently.
      */
-    protected volatile Scheduler.Cancellable scheduledFuture;
+    protected volatile List<Scheduler.Cancellable> scheduledFutures;
 
     /**
      * Query Insights exporter factory
@@ -102,7 +107,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     /**
      * Constructor of the QueryInsightsService
      *
-     * @param clusterSettings OpenSearch cluster level settings
+     * @param clusterService OpenSearch cluster service
      * @param threadPool The OpenSearch thread pool to run async tasks
      * @param client OS client
      * @param metricsRegistry Opentelemetry Metrics registry
@@ -110,12 +115,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     @Inject
     public QueryInsightsService(
-        final ClusterSettings clusterSettings,
+        final ClusterService clusterService,
         final ThreadPool threadPool,
         final Client client,
         final MetricsRegistry metricsRegistry,
         final NamedXContentRegistry namedXContentRegistry
     ) {
+        this.clusterService = clusterService;
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
@@ -128,15 +134,22 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             enableCollect.put(metricType, false);
             topQueriesServices.put(
                 metricType,
-                new TopQueriesService(metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
+                new TopQueriesService(client, metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
             );
         }
         for (MetricType type : MetricType.allMetricTypes()) {
-            clusterSettings.addSettingsUpdateConsumer(
-                getExporterSettings(type),
-                (settings -> setExporterAndReader(type, settings)),
-                (settings -> validateExporterAndReaderConfig(type, settings))
-            );
+            clusterService.getClusterSettings()
+                .addSettingsUpdateConsumer(
+                    getExporterSettings(type),
+                    (settings -> setExporterAndReader(type, settings, clusterService.state().metadata().indices())),
+                    (settings -> validateExporterAndReaderConfig(type, settings))
+                );
+            clusterService.getClusterSettings()
+                .addSettingsUpdateConsumer(
+                    TOP_N_EXPORTER_DELETE_AFTER,
+                    (settings -> setExporterDeleteAfterAndDelete(type, settings)),
+                    (TopQueriesService::validateExporterDeleteAfter)
+                );
         }
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
@@ -389,11 +402,24 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param type {@link MetricType}
      * @param settings exporter and reader settings
      */
-    public void setExporterAndReader(final MetricType type, final Settings settings) {
+    private void setExporterAndReader(final MetricType type, final Settings settings, final Map<String, IndexMetadata> indexMetadataMap) {
         if (topQueriesServices.containsKey(type)) {
             TopQueriesService tqs = topQueriesServices.get(type);
-            tqs.setExporter(settings);
+            tqs.setExporter(settings, indexMetadataMap);
             tqs.setReader(settings, namedXContentRegistry);
+        }
+    }
+
+    /**
+     * Set the exporter delete after, then delete expired Top N indices
+     *
+     * @param type {@link MetricType}
+     * @param deleteAfter the number of days after which Top N local indices should be deleted
+     */
+    private void setExporterDeleteAfterAndDelete(final MetricType type, final int deleteAfter) {
+        if (topQueriesServices.containsKey(type)) {
+            topQueriesServices.get(type).setExporterDeleteAfter(deleteAfter);
+            deleteExpiredTopNIndices();
         }
     }
 
@@ -421,18 +447,32 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     @Override
     protected void doStart() {
         if (isAnyFeatureEnabled()) {
-            scheduledFuture = threadPool.scheduleWithFixedDelay(
-                this::drainRecords,
-                QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL,
-                QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
+            scheduledFutures = new ArrayList<>();
+            scheduledFutures.add(
+                threadPool.scheduleWithFixedDelay(
+                    this::drainRecords,
+                    QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL,
+                    QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
+                )
+            );
+            scheduledFutures.add(
+                threadPool.scheduleWithFixedDelay(
+                    this::deleteExpiredTopNIndices,
+                    new TimeValue(1, TimeUnit.DAYS), // Check for deletable indices once per day
+                    QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
+                )
             );
         }
     }
 
     @Override
     protected void doStop() {
-        if (scheduledFuture != null) {
-            scheduledFuture.cancel();
+        if (scheduledFutures != null) {
+            for (Scheduler.Cancellable cancellable : scheduledFutures) {
+                if (cancellable != null) {
+                    cancellable.cancel();
+                }
+            }
         }
     }
 
@@ -461,5 +501,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             this.queryRecordsQueue.size(),
             topQueriesHealthStatsMap
         );
+    }
+
+    /**
+     * Delete Top N local indices older than the configured data retention period
+     */
+    private void deleteExpiredTopNIndices() {
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            topQueriesServices.get(metricType).deleteExpiredTopNIndices(clusterService.state().metadata().indices());
+        }
     }
 }
