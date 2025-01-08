@@ -11,14 +11,19 @@ package org.opensearch.plugin.insights.core.service;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_QUERIES_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,9 +38,14 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
+import org.opensearch.client.Client;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
@@ -68,6 +78,7 @@ public class TopQueriesService {
      */
     private final Logger logger = LogManager.getLogger();
     private boolean enabled;
+    private final Client client;
     /**
      * The metric type to measure top n queries
      */
@@ -117,15 +128,17 @@ public class TopQueriesService {
     private QueryInsightsExporter exporter;
     private QueryInsightsReader reader;
 
-    private QueryGrouper queryGrouper;
+    private final QueryGrouper queryGrouper;
 
     TopQueriesService(
+        final Client client,
         final MetricType metricType,
         final ThreadPool threadPool,
         final QueryInsightsExporterFactory queryInsightsExporterFactory,
         QueryInsightsReaderFactory queryInsightsReaderFactory
     ) {
         this.enabled = false;
+        this.client = client;
         this.metricType = metricType;
         this.threadPool = threadPool;
         this.queryInsightsExporterFactory = queryInsightsExporterFactory;
@@ -261,7 +274,13 @@ public class TopQueriesService {
      *
      * @param settings exporter config {@link Settings}
      */
-    public void setExporter(final Settings settings) {
+    public void setExporter(final Settings settings, final Map<String, IndexMetadata> indexMetadataMap) {
+        // This method is invoked when sink type is changed
+        // Clear local indices if exporter is of type LocalIndexExporter
+        if (exporter != null && exporter.getClass() == LocalIndexExporter.class) {
+            deleteAllTopNIndices(indexMetadataMap);
+        }
+
         if (settings.get(EXPORTER_TYPE) != null) {
             SinkType expectedType = SinkType.parse(settings.get(EXPORTER_TYPE, DEFAULT_TOP_QUERIES_EXPORTER_TYPE));
             if (exporter != null && expectedType == SinkType.getSinkTypeFromExporter(exporter)) {
@@ -535,5 +554,112 @@ public class TopQueriesService {
      */
     public TopQueriesHealthStats getHealthStats() {
         return new TopQueriesHealthStats(this.topQueriesStore.size(), this.queryGrouper.getHealthStats());
+    }
+
+    /**
+     * Validate the exporter delete after value
+     *
+     * @param deleteAfter exporter and reader settings
+     */
+    static void validateExporterDeleteAfter(final int deleteAfter) {
+        if (deleteAfter < MIN_DELETE_AFTER_VALUE || deleteAfter > MAX_DELETE_AFTER_VALUE) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "Invalid exporter delete_after_days setting [%d], value should be an integer between %d and %d.",
+                    deleteAfter,
+                    MIN_DELETE_AFTER_VALUE,
+                    MAX_DELETE_AFTER_VALUE
+                )
+            );
+        }
+    }
+
+    /**
+     * Set exporter delete after if exporter is a {@link LocalIndexExporter}
+     *
+     * @param deleteAfter the number of days after which Top N local indices should be deleted
+     */
+    void setExporterDeleteAfter(final int deleteAfter) {
+        if (exporter != null && exporter.getClass() == LocalIndexExporter.class) {
+            ((LocalIndexExporter) exporter).setDeleteAfter(deleteAfter);
+        }
+    }
+
+    /**
+     * Delete Top N local indices older than the configured data retention period
+     */
+    void deleteExpiredTopNIndices(final Map<String, IndexMetadata> indexMetadataMap) {
+        if (exporter != null && exporter.getClass() == LocalIndexExporter.class) {
+            threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
+                .execute(() -> ((LocalIndexExporter) exporter).deleteExpiredTopNIndices(indexMetadataMap));
+        }
+    }
+
+    /**
+     * Deletes all Top N local indices
+     *
+     * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
+     */
+    void deleteAllTopNIndices(final Map<String, IndexMetadata> indexMetadataMap) {
+        indexMetadataMap.entrySet()
+            .stream()
+            .filter(entry -> isTopQueriesIndex(entry.getKey()))
+            .forEach(entry -> deleteSingleIndex(entry.getKey(), client));
+    }
+
+    /**
+     * Deletes the specified index and logs any failure that occurs during the operation.
+     *
+     * @param indexName The name of the index to delete.
+     * @param client The OpenSearch client used to perform the deletion.
+     */
+    public static void deleteSingleIndex(String indexName, Client client) {
+        Logger logger = LogManager.getLogger();
+        client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
+            @Override
+            // CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
+            public void onResponse(org.opensearch.action.support.master.AcknowledgedResponse acknowledgedResponse) {}
+
+            @Override
+            public void onFailure(Exception e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_DELETE_FAILURES);
+                logger.error("Failed to delete index '{}': ", indexName, e);
+            }
+        });
+    }
+
+    /**
+     * Validates if the input string is a Query Insights local index name
+     * in the format "top_queries-YYYY.MM.dd-XXXXX".
+     *
+     * @param indexName the string to validate.
+     * @return {@code true} if the string is valid, {@code false} otherwise.
+     */
+    public static boolean isTopQueriesIndex(String indexName) {
+        // Split the input string by '-'
+        String[] parts = indexName.split("-");
+
+        // Check if the string has exactly 3 parts
+        if (parts.length != 3) {
+            return false;
+        }
+
+        // Validate the first part is "top_queries"
+        if (!"top_queries".equals(parts[0])) {
+            return false;
+        }
+
+        // Validate the second part is a valid date in "YYYY.MM.dd" format
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+        try {
+            LocalDate.parse(parts[1], formatter);
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+
+        // Validate the third part is exactly 5 digits
+        return parts[2].matches("\\d{5}");
     }
 }
