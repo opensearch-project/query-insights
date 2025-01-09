@@ -82,6 +82,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE,
                 QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING,
+                QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER,
                 QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
             ),
             queryInsightsPlugin.getSettings()
