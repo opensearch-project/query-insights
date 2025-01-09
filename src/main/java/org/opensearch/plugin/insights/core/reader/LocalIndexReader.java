@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
+import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
+
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -99,8 +101,8 @@ public final class LocalIndexReader implements QueryInsightsReader {
         }
         ZonedDateTime curr = start;
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
-            String index = getDateTimeFromFormat(curr);
-            SearchRequest searchRequest = new SearchRequest(index);
+            String indexName = buildLocalIndexName(curr);
+            SearchRequest searchRequest = new SearchRequest(indexName);
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
@@ -135,7 +137,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
         logger.debug("Closing the LocalIndexReader..");
     }
 
-    private String getDateTimeFromFormat(ZonedDateTime current) {
-        return current.format(indexPattern);
+    private String buildLocalIndexName(ZonedDateTime current) {
+        return current.format(indexPattern) + "-" + generateLocalIndexDateHash();
     }
 }
