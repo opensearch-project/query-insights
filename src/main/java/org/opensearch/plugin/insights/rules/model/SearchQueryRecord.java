@@ -175,6 +175,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case GROUP_BY:
                         attributes.put(Attribute.GROUP_BY, parser.text());
+                        break;
                     case SOURCE:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                         attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(parser, false));
