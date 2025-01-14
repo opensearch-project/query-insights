@@ -60,7 +60,7 @@ public enum Attribute {
     /**
      * Unique hashcode used to group similar queries
      */
-    QUERY_HASHCODE,
+    QUERY_GROUP_HASHCODE,
     /**
      * Grouping type of the query record (none, similarity)
      */

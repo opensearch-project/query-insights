@@ -96,6 +96,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String GROUP_BY = "group_by";
 
+    /**
+     * Query Group hashcode
+     */
+    public static final String QUERY_GROUP_HASHCODE = "query_group_hashcode";
+
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
 
@@ -175,6 +180,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case GROUP_BY:
                         attributes.put(Attribute.GROUP_BY, parser.text());
+                        break;
+                    case QUERY_GROUP_HASHCODE:
+                        attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
