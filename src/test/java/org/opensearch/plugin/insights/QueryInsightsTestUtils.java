@@ -139,7 +139,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
-            attributes.put(Attribute.QUERY_HASHCODE, Objects.hashCode(i));
+            attributes.put(Attribute.ID, Objects.hashCode(i));
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
@@ -200,13 +200,13 @@ final public class QueryInsightsTestUtils {
 
     public static void populateSameQueryHashcodes(List<SearchQueryRecord> searchQueryRecords) {
         for (SearchQueryRecord record : searchQueryRecords) {
-            record.getAttributes().put(Attribute.QUERY_HASHCODE, 1);
+            record.getAttributes().put(Attribute.ID, 1);
         }
     }
 
     public static void populateHashcode(List<SearchQueryRecord> searchQueryRecords, int hash) {
         for (SearchQueryRecord record : searchQueryRecords) {
-            record.getAttributes().put(Attribute.QUERY_HASHCODE, hash);
+            record.getAttributes().put(Attribute.ID, hash);
         }
     }
 
