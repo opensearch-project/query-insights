@@ -271,7 +271,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     private String getGroupingId(final SearchQueryRecord searchQueryRecord) {
         switch (groupingType) {
             case SIMILARITY:
-                return searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE).toString();
+                return searchQueryRecord.getAttributes().get(Attribute.ID).toString();
             case NONE:
                 throw new IllegalArgumentException("Should not try to group queries if grouping type is NONE");
             default:
