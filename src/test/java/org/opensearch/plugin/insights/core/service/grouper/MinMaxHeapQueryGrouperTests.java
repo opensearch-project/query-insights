@@ -44,7 +44,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
             groupedRecord = minMaxHeapQueryGrouper.add(record);
-            int hashcode = (int) groupedRecord.getAttributes().get(Attribute.ID);
+            int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE);
             hashcodeSet.add(hashcode);
         }
         assertEquals(numOfRecords, hashcodeSet.size());
@@ -58,7 +58,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Set<Integer> hashcodeSet = new HashSet<>();
         for (SearchQueryRecord record : records) {
             groupedRecord = minMaxHeapQueryGrouper.add(record);
-            int hashcode = (int) groupedRecord.getAttributes().get(Attribute.ID);
+            int hashcode = (int) groupedRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE);
             hashcodeSet.add(hashcode);
         }
         assertEquals(1, hashcodeSet.size());
