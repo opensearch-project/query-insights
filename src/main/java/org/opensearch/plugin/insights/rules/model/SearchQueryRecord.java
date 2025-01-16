@@ -11,12 +11,8 @@ package org.opensearch.plugin.insights.rules.model;
 import static org.opensearch.plugin.insights.rules.model.Attribute.GROUP_BY;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
@@ -43,6 +39,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
+    /**
+     * UUID
+     */
+    private final String id;
+    public static final String ID = "id";
+
     /**
      * Timestamp
      */
@@ -134,13 +136,19 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param attributes A list of Attributes associated with this query
      */
     public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
+        this(timestamp, measurements, attributes, UUID.randomUUID().toString());
+    }
+
+    public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes, String id) {
         if (measurements == null) {
             throw new IllegalArgumentException("Measurements cannot be null");
         }
         this.measurements = measurements;
         this.attributes = attributes;
         this.timestamp = timestamp;
+        this.id = id;
     }
+
 
     /**
      * Construct a SearchQueryRecord from {@link XContentParser}
@@ -153,6 +161,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         long timestamp = 0L;
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
+        String id = null;
 
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -163,6 +172,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 switch (fieldName) {
                     case TIMESTAMP:
                         timestamp = parser.longValue();
+                        break;
+                    case ID:
+                        id = parser.text();
                         break;
                     case LATENCY:
                     case CPU:
@@ -258,7 +270,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes);
+        return new SearchQueryRecord(timestamp, measurements, attributes, id);
     }
 
     /**
@@ -352,6 +364,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
+        out.writeString(id);
         if (out.getVersion().onOrAfter(Version.V_2_17_0)) {
             out.writeMap(
                 measurements,
