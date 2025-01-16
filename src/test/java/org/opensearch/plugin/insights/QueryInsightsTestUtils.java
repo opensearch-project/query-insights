@@ -139,7 +139,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
-            attributes.put(Attribute.ID, Objects.hashCode(i));
+            attributes.put(Attribute.QUERY_GROUP_HASHCODE, Objects.hashCode(i));
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
@@ -200,13 +200,13 @@ final public class QueryInsightsTestUtils {
 
     public static void populateSameQueryHashcodes(List<SearchQueryRecord> searchQueryRecords) {
         for (SearchQueryRecord record : searchQueryRecords) {
-            record.getAttributes().put(Attribute.ID, 1);
+            record.getAttributes().put(Attribute.QUERY_GROUP_HASHCODE, 1);
         }
     }
 
     public static void populateHashcode(List<SearchQueryRecord> searchQueryRecords, int hash) {
         for (SearchQueryRecord record : searchQueryRecords) {
-            record.getAttributes().put(Attribute.ID, hash);
+            record.getAttributes().put(Attribute.QUERY_GROUP_HASHCODE, hash);
         }
     }
 
@@ -223,7 +223,7 @@ final public class QueryInsightsTestUtils {
         return new TopQueries(node, records);
     }
 
-    public static TopQueries createFixedTopQueries() {
+    public static TopQueries createFixedTopQueries(String id) {
         DiscoveryNode node = new DiscoveryNode(
             "node_for_top_queries_test",
             buildNewFakeTransportAddress(),
@@ -232,12 +232,12 @@ final public class QueryInsightsTestUtils {
             VersionUtils.randomVersion(random())
         );
         List<SearchQueryRecord> records = new ArrayList<>();
-        records.add(createFixedSearchQueryRecord());
+        records.add(createFixedSearchQueryRecord(id));
 
         return new TopQueries(node, records);
     }
 
-    public static SearchQueryRecord createFixedSearchQueryRecord() {
+    public static SearchQueryRecord createFixedSearchQueryRecord(String id) {
         long timestamp = 1706574180000L;
         Map<MetricType, Measurement> measurements = Map.of(MetricType.LATENCY, new Measurement(1L));
 
@@ -256,7 +256,7 @@ final public class QueryInsightsTestUtils {
             )
         );
 
-        return new SearchQueryRecord(timestamp, measurements, attributes);
+        return new SearchQueryRecord(timestamp, measurements, attributes, id);
     }
 
     public static void compareJson(ToXContent param1, ToXContent param2) throws IOException {

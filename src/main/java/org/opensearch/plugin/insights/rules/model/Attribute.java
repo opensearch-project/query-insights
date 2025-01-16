@@ -58,9 +58,9 @@ public enum Attribute {
      */
     LABELS,
     /**
-     * Query Group hashcode or query hashcode representing a unique identifier for the query/group
+     * Query Group hashcode
      */
-    ID,
+    QUERY_GROUP_HASHCODE,
     /**
      * Grouping type of the query record (none, similarity)
      */
