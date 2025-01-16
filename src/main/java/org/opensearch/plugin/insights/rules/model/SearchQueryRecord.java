@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
@@ -41,6 +42,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
+    private final String id;
+
     /**
      * Timestamp
      */
@@ -93,11 +96,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Grouping type of the query record (none, similarity)
      */
     public static final String GROUP_BY = "group_by";
-
     /**
-     * Query Group hashcode or query hashcode representing a unique identifier for the query/group
+     * UUID
      */
     public static final String ID = "id";
+
+    /**
+     * Query Group hashcode
+     */
+    public static final String QUERY_GROUP_HASHCODE = "query_group_hashcode";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -111,6 +118,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public SearchQueryRecord(final StreamInput in) throws IOException, ClassCastException {
         this.timestamp = in.readLong();
+        this.id = in.readString();
         if (in.getVersion().onOrAfter(Version.V_2_17_0)) {
             measurements = new LinkedHashMap<>();
             in.readOrderedMap(MetricType::readFromStream, Measurement::readFromStream)
@@ -137,12 +145,30 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param attributes A list of Attributes associated with this query
      */
     public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
+        this(timestamp, measurements, attributes, UUID.randomUUID().toString());
+    }
+
+    /**
+     * Constructor of SearchQueryRecord
+     *
+     * @param timestamp The timestamp of the query.
+     * @param measurements A list of Measurement associated with this query
+     * @param attributes A list of Attributes associated with this query
+     * @param id unique id for a search query record
+     */
+    public SearchQueryRecord(
+        final long timestamp,
+        Map<MetricType, Measurement> measurements,
+        final Map<Attribute, Object> attributes,
+        String id
+    ) {
         if (measurements == null) {
             throw new IllegalArgumentException("Measurements cannot be null");
         }
         this.measurements = measurements;
         this.attributes = attributes;
         this.timestamp = timestamp;
+        this.id = id;
     }
 
     /**
@@ -156,6 +182,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         long timestamp = 0L;
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
+        String id = null;
 
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -166,6 +193,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 switch (fieldName) {
                     case TIMESTAMP:
                         timestamp = parser.longValue();
+                        break;
+                    case ID:
+                        id = parser.text();
                         break;
                     case LATENCY:
                     case CPU:
@@ -179,8 +209,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case GROUP_BY:
                         attributes.put(Attribute.GROUP_BY, parser.text());
                         break;
-                    case ID:
-                        attributes.put(Attribute.ID, parser.text());
+                    case QUERY_GROUP_HASHCODE:
+                        attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -264,7 +294,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes);
+        return new SearchQueryRecord(timestamp, measurements, attributes, id);
     }
 
     /**
@@ -337,6 +367,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
         builder.startObject();
         builder.field("timestamp", timestamp);
+        builder.field("id", id);
+
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             builder.field(entry.getKey().toString(), entry.getValue());
         }
@@ -358,6 +390,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
+        out.writeString(id);
         if (out.getVersion().onOrAfter(Version.V_2_17_0)) {
             out.writeMap(
                 measurements,
