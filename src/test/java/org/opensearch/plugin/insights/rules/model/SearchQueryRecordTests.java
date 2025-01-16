@@ -45,19 +45,19 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
     }
 
     public void testCompare() {
-        SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
-        SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
+        SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
+        SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
         assertEquals(0, SearchQueryRecord.compare(record1, record2, MetricType.LATENCY));
     }
 
     public void testEqual() {
-        SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
-        SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord();
+        SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
+        SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
         assertEquals(record1, record2);
     }
 
     public void testFromXContent() {
-        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord();
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
         try (XContentParser recordParser = createParser(JsonXContent.jsonXContent, record.toString())) {
             SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(recordParser);
             QueryInsightsTestUtils.checkRecordsEquals(List.of(record), List.of(parsedRecord));

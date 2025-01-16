@@ -288,7 +288,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 // Add hashcode attribute when grouping is enabled
                 if (queryInsightsService.isGroupingEnabled()) {
                     String hashcode = queryShapeGenerator.getShapeHashCodeAsString(queryShape);
-                    attributes.put(Attribute.ID, hashcode);
+                    attributes.put(Attribute.QUERY_GROUP_HASHCODE, hashcode);
                 }
             }
 
