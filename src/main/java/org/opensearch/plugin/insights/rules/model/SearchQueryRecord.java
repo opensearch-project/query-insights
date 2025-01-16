@@ -8,8 +8,6 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
-import static org.opensearch.plugin.insights.rules.model.Attribute.GROUP_BY;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -96,6 +94,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String GROUP_BY = "group_by";
 
+    /**
+     * Query Group hashcode or query hashcode representing a unique identifier for the query/group
+     */
+    public static final String ID = "id";
+
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
 
@@ -175,6 +178,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case GROUP_BY:
                         attributes.put(Attribute.GROUP_BY, parser.text());
+                        break;
+                    case ID:
+                        attributes.put(Attribute.ID, parser.text());
                         break;
                     case SOURCE:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
