@@ -94,7 +94,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.drainRecords();
         assertEquals(
             QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
-            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size()
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null).size()
         );
     }
 
@@ -149,7 +149,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
         assertEquals(
             QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
-            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size()
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null).size()
         );
     }
 
@@ -172,7 +172,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertTrue(queryInsightsService.addRecord(records.get(numberOfRecordsRequired - 1)));
 
         queryInsightsService.drainRecords();
-        assertEquals(1, queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size());
+        assertEquals(1, queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null).size());
     }
 
     public void testAddRecordGroupBySimilarityWithTwoGroups() {
@@ -191,7 +191,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         }
 
         queryInsightsService.drainRecords();
-        assertEquals(2, queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null).size());
+        assertEquals(2, queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null).size());
     }
 
     public void testGetHealthStats() {

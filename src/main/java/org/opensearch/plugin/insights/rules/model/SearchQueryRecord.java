@@ -307,6 +307,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     }
 
     /**
+     * Returns the id.
+     *
+     * @return the id
+     */
+    public String getId() {
+        return id;
+    }
+
+    /**
      * Returns the measurement associated with the specified name.
      *
      * @param name the name of the measurement

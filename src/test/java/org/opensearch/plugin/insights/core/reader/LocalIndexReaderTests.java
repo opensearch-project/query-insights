@@ -84,9 +84,10 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         when(responseActionFuture.actionGet()).thenReturn(searchResponse);
         when(client.search(any(SearchRequest.class))).thenReturn(responseActionFuture);
         String time = ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_DATE_TIME);
+        String id = "example-hashcode";
         List<SearchQueryRecord> records = List.of();
         try {
-            records = localIndexReader.read(time, time);
+            records = localIndexReader.read(time, time, id);
         } catch (Exception e) {
             fail("No exception should be thrown when reading query insights data");
         }
