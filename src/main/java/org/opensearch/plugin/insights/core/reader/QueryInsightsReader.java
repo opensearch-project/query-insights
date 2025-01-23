@@ -20,8 +20,9 @@ public interface QueryInsightsReader extends Closeable {
      * Reader a list of SearchQueryRecord
      *
      * @param from string
-     * @param to string
+     * @param to   string
+     * @param id query/group id
      * @return List of SearchQueryRecord
      */
-    List<SearchQueryRecord> read(final String from, final String to);
+    List<SearchQueryRecord> read(final String from, final String to, final String id);
 }

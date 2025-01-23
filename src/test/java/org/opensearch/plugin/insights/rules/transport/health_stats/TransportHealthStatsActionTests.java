@@ -69,7 +69,7 @@ public class TransportHealthStatsActionTests extends OpenSearchTestCase {
         }
 
         public TopQueriesResponse createNewResponse() {
-            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null);
+            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null);
             return newResponse(request, List.of(), List.of());
         }
     }

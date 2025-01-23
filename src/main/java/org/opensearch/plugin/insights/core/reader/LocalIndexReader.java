@@ -25,8 +25,8 @@ import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexNotFoundException;
+import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.MatchQueryBuilder;
-import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -84,11 +84,12 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * Export a list of SearchQueryRecord from local index
      *
      * @param from start timestamp
-     * @param to end timestamp
+     * @param to   end timestamp
+     * @param id query/group id
      * @return list of SearchQueryRecords whose timestamps fall between from and to
      */
     @Override
-    public List<SearchQueryRecord> read(final String from, final String to) {
+    public List<SearchQueryRecord> read(final String from, final String to, String id) {
         List<SearchQueryRecord> records = new ArrayList<>();
         if (from == null || to == null) {
             return records;
@@ -108,7 +109,11 @@ public final class LocalIndexReader implements QueryInsightsReader {
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
                 .from(start.toInstant().toEpochMilli())
                 .to(end.toInstant().toEpochMilli());
-            QueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
+            BoolQueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
+
+            if (id != null) {
+                query.must(QueryBuilders.matchQuery("id", id));
+            }
             searchSourceBuilder.query(query);
             searchRequest.source(searchSourceBuilder);
             try {
@@ -124,7 +129,6 @@ public final class LocalIndexReader implements QueryInsightsReader {
                 logger.error("Unable to parse search hit: ", e);
             }
             curr = curr.plusDays(1);
-
         }
         return records;
     }
