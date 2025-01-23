@@ -357,11 +357,16 @@ public class TopQueriesService {
      * @param includeLastWindow if the top N queries from the last window should be included
      * @param from start timestamp
      * @param to end timestamp
+     * @param id unique identifier for query/query group
      * @return List of the records that are in the query insight store
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecords(final boolean includeLastWindow, final String from, final String to)
-        throws IllegalArgumentException {
+    public List<SearchQueryRecord> getTopQueriesRecords(
+        final boolean includeLastWindow,
+        final String from,
+        final String to,
+        final String id
+    ) throws IllegalArgumentException {
         OperationalMetricsCounter.getInstance()
             .incrementCounter(
                 OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
@@ -380,6 +385,8 @@ public class TopQueriesService {
             queries.addAll(topQueriesHistorySnapshot.get());
         }
         List<SearchQueryRecord> filterQueries = queries;
+
+        // Time-based filtering
         if (from != null && to != null) {
             final ZonedDateTime start = ZonedDateTime.parse(from);
             final ZonedDateTime end = ZonedDateTime.parse(to);
@@ -387,6 +394,12 @@ public class TopQueriesService {
                 && element.getTimestamp() <= end.toInstant().toEpochMilli();
             filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
         }
+
+        // Filter based on the id, if provided
+        if (id != null) {
+            filterQueries = filterQueries.stream().filter(record -> record.getId().equals(id)).collect(Collectors.toList());
+        }
+
         return Stream.of(filterQueries)
             .flatMap(Collection::stream)
             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
@@ -399,11 +412,13 @@ public class TopQueriesService {
      * By default, return the records in sorted order.
      *
      * @param from start timestamp
-     * @param to end timestamp
+     * @param to   end timestamp
+     * @param id search query record id
      * @return List of the records that are in local index (if enabled) with timestamps between from and to
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to) throws IllegalArgumentException {
+    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id)
+        throws IllegalArgumentException {
         if (!enabled) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
@@ -415,7 +430,7 @@ public class TopQueriesService {
             try {
                 final ZonedDateTime start = ZonedDateTime.parse(from);
                 final ZonedDateTime end = ZonedDateTime.parse(to);
-                List<SearchQueryRecord> records = reader.read(from, to);
+                List<SearchQueryRecord> records = reader.read(from, to, id);
                 Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                     && element.getTimestamp() <= end.toInstant().toEpochMilli();
                 List<SearchQueryRecord> filteredRecords = records.stream()

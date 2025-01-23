@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
@@ -54,7 +55,18 @@ import org.opensearch.test.VersionUtils;
 
 final public class QueryInsightsTestUtils {
 
+    static String randomId = UUID.randomUUID().toString();
+
     public QueryInsightsTestUtils() {}
+
+    /**
+     * Returns list of randomly generated search query records with a specific id
+     * @param count number of records
+     * @return List of records
+     */
+    public static List<SearchQueryRecord> generateQueryInsightRecords(int count, String id) {
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFAULT_AGGREGATION_TYPE, id);
+    }
 
     /**
      * Returns list of randomly generated search query records.
@@ -62,7 +74,7 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFAULT_AGGREGATION_TYPE);
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, AggregationType.DEFAULT_AGGREGATION_TYPE, randomId);
     }
 
     /**
@@ -77,7 +89,8 @@ final public class QueryInsightsTestUtils {
             count,
             System.currentTimeMillis(),
             0,
-            AggregationType.DEFAULT_AGGREGATION_TYPE
+            AggregationType.DEFAULT_AGGREGATION_TYPE,
+            randomId
         );
         for (SearchQueryRecord record : records) {
             record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
@@ -92,14 +105,14 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count, AggregationType aggregationType) {
-        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, aggregationType);
+        return generateQueryInsightRecords(count, count, System.currentTimeMillis(), 0, aggregationType, randomId);
     }
 
     /**
      * Creates a List of random Query Insight Records for testing purpose
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int lower, int upper, long startTimeStamp, long interval) {
-        return generateQueryInsightRecords(lower, upper, startTimeStamp, interval, AggregationType.NONE);
+        return generateQueryInsightRecords(lower, upper, startTimeStamp, interval, AggregationType.NONE, randomId);
     }
 
     /**
@@ -110,7 +123,8 @@ final public class QueryInsightsTestUtils {
         int upper,
         long startTimeStamp,
         long interval,
-        AggregationType aggregationType
+        AggregationType aggregationType,
+        String id
     ) {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
@@ -161,7 +175,7 @@ final public class QueryInsightsTestUtils {
                 )
             );
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes));
+            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id));
             timestamp += interval;
         }
         return records;

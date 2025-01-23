@@ -79,40 +79,46 @@ public class RestTopQueriesAction extends BaseRestHandler {
         final String metricType = request.param("type", MetricType.LATENCY.toString());
         final String from = request.param("from", null);
         final String to = request.param("to", null);
+        final String id = request.param("id", null);
         if (!ALLOWED_METRICS.contains(metricType)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
             );
         }
-        if (from != null || to != null) {
-            if (from != null ^ to != null) {
-                throw new IllegalArgumentException(
-                    String.format(Locale.ROOT, "request [%s] is missing one of the time parameters. Both must be provided", request.path())
-                );
-            }
-            if (isNotISODate(from)) {
-                throw new IllegalArgumentException(
-                    String.format(
-                        Locale.ROOT,
-                        "request [%s] contains invalid 'from' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
-                        request.path(),
-                        from
-                    )
-                );
-            }
-            if (isNotISODate(to)) {
-                throw new IllegalArgumentException(
-                    String.format(
-                        Locale.ROOT,
-                        "request [%s] contains invalid 'to' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
-                        request.path(),
-                        to
-                    )
-                );
-            }
+        boolean isTimeRangeProvided = from != null || to != null;
+        if (isTimeRangeProvided) {
+            validateTimeRange(request, from, to);
         }
 
-        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, nodesIds);
+        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, id, nodesIds);
+    }
+
+    private static void validateTimeRange(RestRequest request, String from, String to) {
+        if (from != null ^ to != null) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "request [%s] is missing one of the time parameters. Both must be provided", request.path())
+            );
+        }
+        if (isNotISODate(from)) {
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "request [%s] contains invalid 'from' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
+                    request.path(),
+                    from
+                )
+            );
+        }
+        if (isNotISODate(to)) {
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "request [%s] contains invalid 'to' date format. Expected ISO8601 format string (YYYY-MM-DD'T'HH:mm:ss.SSSZ): [%s]",
+                    request.path(),
+                    to
+                )
+            );
+        }
     }
 
     @Override

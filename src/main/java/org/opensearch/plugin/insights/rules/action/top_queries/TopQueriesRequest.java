@@ -22,6 +22,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     final MetricType metricType;
     final String from;
     final String to;
+    final String id;
 
     /**
      * Constructor for TopQueriesRequest
@@ -34,6 +35,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
         this.metricType = MetricType.readFromStream(in);
         this.from = null;
         this.to = null;
+        this.id = null;
     }
 
     /**
@@ -45,11 +47,12 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
      * @param to end timestamp
      * @param nodesIds the nodeIds specified in the request
      */
-    public TopQueriesRequest(final MetricType metricType, final String from, final String to, final String... nodesIds) {
+    public TopQueriesRequest(final MetricType metricType, final String from, final String to, final String id, final String... nodesIds) {
         super(nodesIds);
         this.metricType = metricType;
         this.from = from;
         this.to = to;
+        this.id = id;
     }
 
     /**
@@ -74,6 +77,14 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
      */
     public String getTo() {
         return to;
+    }
+
+    /**
+     * Get id which is the query_id and query_group_id
+     * @return String of to timestamp
+     */
+    public String getId() {
+        return id;
     }
 
     @Override
