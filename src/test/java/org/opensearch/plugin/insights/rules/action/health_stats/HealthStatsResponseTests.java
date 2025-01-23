@@ -58,6 +58,7 @@ public class HealthStatsResponseTests extends OpenSearchTestCase {
         this.healthStats = new QueryInsightsHealthStats(
             threadPool.info(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR),
             10,
+            new HashMap<>(),
             new HashMap<>()
         );
     }
@@ -113,7 +114,7 @@ public class HealthStatsResponseTests extends OpenSearchTestCase {
         XContentBuilder builder = XContentFactory.jsonBuilder();
         response.toXContent(builder, ToXContent.EMPTY_PARAMS);
         String expectedJson =
-            "{\"node_for_health_stats_test\":{\"ThreadPoolInfo\":{\"query_insights_executor\":{\"type\":\"scaling\",\"core\":1,\"max\":5,\"keep_alive\":\"5m\",\"queue_size\":-1}},\"QueryRecordsQueueSize\":10,\"TopQueriesHealthStats\":{}}}";
+            "{\"node_for_health_stats_test\":{\"ThreadPoolInfo\":{\"query_insights_executor\":{\"type\":\"scaling\",\"core\":1,\"max\":5,\"keep_alive\":\"5m\",\"queue_size\":-1}},\"QueryRecordsQueueSize\":10,\"TopQueriesHealthStats\":{},\"FieldTypeCacheStats\":{\"size_in_bytes\":0,\"entry_count\":0,\"evictions\":0,\"hit_count\":0,\"miss_count\":0}}}";
         assertEquals(expectedJson, builder.toString());
     }
 }

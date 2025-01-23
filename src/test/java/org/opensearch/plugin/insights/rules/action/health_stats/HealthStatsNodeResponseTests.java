@@ -53,6 +53,7 @@ public class HealthStatsNodeResponseTests extends OpenSearchTestCase {
         this.healthStats = new QueryInsightsHealthStats(
             threadPool.info(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR),
             10,
+            new HashMap<>(),
             new HashMap<>()
         );
     }
