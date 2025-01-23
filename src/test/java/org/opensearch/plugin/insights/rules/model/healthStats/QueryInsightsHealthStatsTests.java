@@ -8,6 +8,12 @@
 
 package org.opensearch.plugin.insights.rules.model.healthStats;
 
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +40,7 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
     private ThreadPool.Info threadPoolInfo;
     private int queryRecordsQueueSize;
     private Map<MetricType, TopQueriesHealthStats> topQueriesHealthStats;
+    private Map<String, Long> fieldTypeCacheStats;
 
     @Before
     public void setUpQueryInsightsHealthStats() {
@@ -45,6 +52,7 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
         queryRecordsQueueSize = 100;
         topQueriesHealthStats = new HashMap<>();
         topQueriesHealthStats.put(MetricType.LATENCY, new TopQueriesHealthStats(10, new QueryGrouperHealthStats(20, 15)));
+        fieldTypeCacheStats = Map.of(HIT_COUNT, 5L, MISS_COUNT, 3L, EVICTIONS, 1L, ENTRY_COUNT, 4L, SIZE_IN_BYTES, 300L);
     }
 
     @Override
@@ -54,7 +62,12 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
     }
 
     public void testConstructorAndGetters() {
-        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(threadPoolInfo, queryRecordsQueueSize, topQueriesHealthStats);
+        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(
+            threadPoolInfo,
+            queryRecordsQueueSize,
+            topQueriesHealthStats,
+            fieldTypeCacheStats
+        );
         assertNotNull(healthStats);
         assertEquals(threadPoolInfo, healthStats.getThreadPoolInfo());
         assertEquals(queryRecordsQueueSize, healthStats.getQueryRecordsQueueSize());
@@ -62,7 +75,12 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
     }
 
     public void testSerialization() throws IOException {
-        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(threadPoolInfo, queryRecordsQueueSize, topQueriesHealthStats);
+        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(
+            threadPoolInfo,
+            queryRecordsQueueSize,
+            topQueriesHealthStats,
+            fieldTypeCacheStats
+        );
         // Write to StreamOutput
         BytesStreamOutput out = new BytesStreamOutput();
         healthStats.writeTo(out);
@@ -75,7 +93,12 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
     }
 
     public void testToXContent() throws IOException {
-        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(threadPoolInfo, queryRecordsQueueSize, topQueriesHealthStats);
+        QueryInsightsHealthStats healthStats = new QueryInsightsHealthStats(
+            threadPoolInfo,
+            queryRecordsQueueSize,
+            topQueriesHealthStats,
+            fieldTypeCacheStats
+        );
         XContentBuilder builder = XContentFactory.jsonBuilder();
         builder.startObject();
 
@@ -100,6 +123,13 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
             + "            \"QueryGroupCount_Total\": 20,\n"
             + "            \"QueryGroupCount_MaxHeap\": 15\n"
             + "        }\n"
+            + "    },\n"
+            + "    \"FieldTypeCacheStats\": {\n"
+            + "        \"size_in_bytes\": 300,\n"
+            + "        \"entry_count\": 4,\n"
+            + "        \"evictions\": 1,\n"
+            + "        \"hit_count\": 5,\n"
+            + "        \"miss_count\": 3\n"
             + "    }\n"
             + "}";
         assertEquals(expectedJson.replaceAll("\\s", ""), jsonOutput.replaceAll("\\s", ""));

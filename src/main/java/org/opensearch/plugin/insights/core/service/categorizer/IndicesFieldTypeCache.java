@@ -28,6 +28,18 @@ public class IndicesFieldTypeCache {
 
     private static final Logger logger = LogManager.getLogger(IndicesFieldTypeCache.class);
     private final Cache<Index, IndexFieldMap> cache;
+    /**
+     * Count of cache evictions
+     */
+    private final CounterMetric evictionCount;
+    /**
+     * Count of items in cache
+     */
+    private final CounterMetric entryCount;
+    /**
+     * Weight of cache in bytes
+     */
+    private final CounterMetric weight;
 
     public IndicesFieldTypeCache(Settings settings) {
         final long sizeInBytes = QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY.get(settings).getBytes();
@@ -36,9 +48,12 @@ public class IndicesFieldTypeCache {
             cacheBuilder.setMaximumWeight(sizeInBytes).weigher((k, v) -> RamUsageEstimator.sizeOfObject(k) + v.weight());
         }
         cache = cacheBuilder.build();
+        evictionCount = new CounterMetric();
+        entryCount = new CounterMetric();
+        weight = new CounterMetric();
     }
 
-    public IndexFieldMap getOrInitialize(Index index) {
+    IndexFieldMap getOrInitialize(Index index) {
         try {
             return cache.computeIfAbsent(index, k -> new IndexFieldMap());
         } catch (ExecutionException ex) {
@@ -52,6 +67,10 @@ public class IndicesFieldTypeCache {
     }
 
     public void invalidate(Index index) {
+        IndexFieldMap indexFieldMap = cache.get(index);
+        evictionCount.inc(indexFieldMap.fieldTypeMap.size());
+        entryCount.dec(indexFieldMap.fieldTypeMap.size());
+        weight.dec(indexFieldMap.weight());
         cache.invalidate(index);
     }
 
@@ -59,9 +78,39 @@ public class IndicesFieldTypeCache {
         return cache.keys();
     }
 
+    public void incrementCountAndWeight(String key, String value) {
+        entryCount.inc();
+        weight.inc(RamUsageEstimator.sizeOf(key) + RamUsageEstimator.sizeOf(value));
+    }
+
+    /**
+     * Get eviction count
+     */
+    public Long getEvictionCount() {
+        return evictionCount.count();
+    }
+
+    /**
+     * Get entry count
+     */
+    public Long getEntryCount() {
+        return entryCount.count();
+    }
+
+    /**
+     * Get cache weight in bytes
+     */
+    public Long getWeight() {
+        return weight.count();
+    }
+
     static class IndexFieldMap {
-        private ConcurrentHashMap<String, String> fieldTypeMap;
-        private CounterMetric weight;
+        private final ConcurrentHashMap<String, String> fieldTypeMap;
+
+        /**
+         * Estimated memory consumption of fieldTypeMap in bytes
+         */
+        private final CounterMetric weight;
 
         IndexFieldMap() {
             fieldTypeMap = new ConcurrentHashMap<>();
@@ -72,11 +121,18 @@ public class IndicesFieldTypeCache {
             return fieldTypeMap.get(fieldName);
         }
 
-        public void putIfAbsent(String key, String value) {
+        /**
+         * Stores key, value if absent
+         *
+         * @return {@code true} if key was absent, else {@code false}
+         */
+        public boolean putIfAbsent(String key, String value) {
             // Increment the weight only if the key value pair added to the Map
             if (fieldTypeMap.putIfAbsent(key, value) == null) {
                 weight.inc(RamUsageEstimator.sizeOf(key) + RamUsageEstimator.sizeOf(value));
+                return true;
             }
+            return false;
         }
 
         public long weight() {

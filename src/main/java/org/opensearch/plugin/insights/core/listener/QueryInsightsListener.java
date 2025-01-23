@@ -87,6 +87,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
         this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
+        queryInsightsService.setQueryShapeGenerator(queryShapeGenerator);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
         // Expected metricTypes are Latency, CPU, and Memory.
