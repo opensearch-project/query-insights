@@ -12,6 +12,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +30,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -59,8 +65,9 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             "QueryInsightsHealthStatsTests",
             new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
         );
+        ClusterService clusterService = new ClusterService(settings, clusterSettings, threadPool);
         queryInsightsService = new QueryInsightsService(
-            new ClusterService(settings, clusterSettings, threadPool),
+            clusterService,
             threadPool,
             client,
             NoopMetricsRegistry.INSTANCE,
@@ -69,6 +76,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
+        queryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(clusterService));
         queryInsightsServiceSpy = spy(queryInsightsService);
 
         MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
@@ -207,5 +215,13 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.LATENCY));
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.CPU));
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.MEMORY));
+        Map<String, Long> fieldTypeCacheStats = healthStats.getFieldTypeCacheStats();
+        assertNotNull(fieldTypeCacheStats);
+        assertEquals(5, fieldTypeCacheStats.size());
+        assertTrue(fieldTypeCacheStats.containsKey(SIZE_IN_BYTES));
+        assertTrue(fieldTypeCacheStats.containsKey(ENTRY_COUNT));
+        assertTrue(fieldTypeCacheStats.containsKey(EVICTIONS));
+        assertTrue(fieldTypeCacheStats.containsKey(HIT_COUNT));
+        assertTrue(fieldTypeCacheStats.containsKey(MISS_COUNT));
     }
 }

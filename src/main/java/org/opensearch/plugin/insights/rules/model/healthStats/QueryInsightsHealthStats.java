@@ -8,8 +8,17 @@
 
 package org.opensearch.plugin.insights.rules.model.healthStats;
 
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
+import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
+
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -26,10 +35,12 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
     private final ThreadPool.Info threadPoolInfo;
     private final int queryRecordsQueueSize;
     private final Map<MetricType, TopQueriesHealthStats> topQueriesHealthStats;
+    private Map<String, Long> fieldTypeCacheStats;
 
     private static final String THREAD_POOL_INFO = "ThreadPoolInfo";
     private static final String QUERY_RECORDS_QUEUE_SIZE = "QueryRecordsQueueSize";
     private static final String TOP_QUERIES_HEALTH_STATS = "TopQueriesHealthStats";
+    private static final String FIELD_TYPE_CACHE_STATS = "FieldTypeCacheStats";
 
     /**
      * Constructor to read QueryInsightsHealthStats from a StreamInput.
@@ -41,6 +52,9 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
         this.threadPoolInfo = new ThreadPool.Info(in);
         this.queryRecordsQueueSize = in.readInt();
         this.topQueriesHealthStats = in.readMap(MetricType::readFromStream, TopQueriesHealthStats::new);
+        if (in.getVersion().onOrAfter(Version.V_2_19_0)) {
+            this.fieldTypeCacheStats = in.readMap(StreamInput::readString, StreamInput::readLong);
+        }
     }
 
     /**
@@ -53,7 +67,8 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
     public QueryInsightsHealthStats(
         final ThreadPool.Info threadPoolInfo,
         final int queryRecordsQueueSize,
-        final Map<MetricType, TopQueriesHealthStats> topQueriesHealthStats
+        final Map<MetricType, TopQueriesHealthStats> topQueriesHealthStats,
+        final Map<String, Long> fieldTypeCacheStats
     ) {
         if (threadPoolInfo == null || topQueriesHealthStats == null) {
             throw new IllegalArgumentException("Parameters cannot be null");
@@ -61,6 +76,7 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
         this.threadPoolInfo = threadPoolInfo;
         this.queryRecordsQueueSize = queryRecordsQueueSize;
         this.topQueriesHealthStats = topQueriesHealthStats;
+        this.fieldTypeCacheStats = Objects.requireNonNull(fieldTypeCacheStats, "fieldTypeCacheStats cannot be null");
     }
 
     /**
@@ -87,6 +103,12 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
             builder.endObject();
         }
         builder.endObject();
+        // Write field type cache stats
+        builder.startObject(FIELD_TYPE_CACHE_STATS);
+        for (String key : List.of(SIZE_IN_BYTES, ENTRY_COUNT, EVICTIONS, HIT_COUNT, MISS_COUNT)) {
+            builder.field(key, fieldTypeCacheStats.getOrDefault(key, 0L));
+        }
+        builder.endObject();
         return builder;
     }
 
@@ -105,6 +127,9 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
             MetricType::writeTo,
             (streamOutput, topQueriesHealthStats) -> topQueriesHealthStats.writeTo(out)
         );
+        if (out.getVersion().onOrAfter(Version.V_2_19_0)) {
+            out.writeMap(fieldTypeCacheStats, StreamOutput::writeString, StreamOutput::writeLong);
+        }
     }
 
     /**
@@ -132,5 +157,14 @@ public class QueryInsightsHealthStats implements ToXContentFragment, Writeable {
      */
     public Map<MetricType, TopQueriesHealthStats> getTopQueriesHealthStats() {
         return topQueriesHealthStats;
+    }
+
+    /**
+     * Get the field type cache stats.
+     *
+     * @return the field type cache stats
+     */
+    public Map<String, Long> getFieldTypeCacheStats() {
+        return fieldTypeCacheStats;
     }
 }

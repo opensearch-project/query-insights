@@ -15,10 +15,12 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getE
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -36,6 +38,7 @@ import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
+import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -100,9 +103,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private volatile boolean searchQueryMetricsEnabled;
 
-    private SearchQueryCategorizer searchQueryCategorizer;
+    private final SearchQueryCategorizer searchQueryCategorizer;
 
-    private NamedXContentRegistry namedXContentRegistry;
+    private final NamedXContentRegistry namedXContentRegistry;
+
+    /**
+     * Query shape generator instance
+     */
+    private QueryShapeGenerator queryShapeGenerator;
 
     /**
      * Constructor of the QueryInsightsService
@@ -496,10 +504,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = topQueriesServices.entrySet()
             .stream()
             .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getHealthStats()));
+        Map<String, Long> fieldTypeCacheStats = Optional.ofNullable(queryShapeGenerator)
+            .map(QueryShapeGenerator::getFieldTypeCacheStats)
+            .orElse(Collections.emptyMap());
         return new QueryInsightsHealthStats(
             threadPool.info(QUERY_INSIGHTS_EXECUTOR),
             this.queryRecordsQueue.size(),
-            topQueriesHealthStatsMap
+            topQueriesHealthStatsMap,
+            fieldTypeCacheStats
         );
     }
 
@@ -510,5 +522,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         for (MetricType metricType : MetricType.allMetricTypes()) {
             topQueriesServices.get(metricType).deleteExpiredTopNIndices(clusterService.state().metadata().indices());
         }
+    }
+
+    /**
+     * Set query shape generator
+     */
+    public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
+        this.queryShapeGenerator = queryShapeGenerator;
     }
 }

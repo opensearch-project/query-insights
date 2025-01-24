@@ -38,13 +38,23 @@ public class QueryShapeGenerator implements ClusterStateListener {
     static final String EMPTY_STRING = "";
     static final String ONE_SPACE_INDENT = " ";
     private final ClusterService clusterService;
-    private final String NO_FIELD_TYPE_VALUE = "";
     private final IndicesFieldTypeCache indicesFieldTypeCache;
+    private long cacheHitCount;
+    private long cacheMissCount;
+
+    private final String NO_FIELD_TYPE_VALUE = "";
+    public static final String HIT_COUNT = "hit_count";
+    public static final String MISS_COUNT = "miss_count";
+    public static final String EVICTIONS = "evictions";
+    public static final String ENTRY_COUNT = "entry_count";
+    public static final String SIZE_IN_BYTES = "size_in_bytes";
 
     public QueryShapeGenerator(ClusterService clusterService) {
         this.clusterService = clusterService;
         clusterService.addListener(this);
         this.indicesFieldTypeCache = new IndicesFieldTypeCache(clusterService.getSettings());
+        this.cacheHitCount = 0;
+        this.cacheMissCount = 0;
     }
 
     public void clusterChanged(ClusterChangedEvent event) {
@@ -369,14 +379,20 @@ public class QueryShapeGenerator implements ClusterStateListener {
         String fieldType = getFieldTypeFromCache(fieldName, index);
 
         if (fieldType != null) {
+            cacheHitCount += 1;
             return fieldType;
+        } else {
+            cacheMissCount += 1;
         }
 
         // Retrieve field type from mapping and cache it if found
         fieldType = getFieldTypeFromProperties(fieldName, propertiesAsMap);
 
         // Cache field type or NO_FIELD_TYPE_VALUE if not found
-        indicesFieldTypeCache.getOrInitialize(index).putIfAbsent(fieldName, fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE);
+        fieldType = fieldType != null ? fieldType : NO_FIELD_TYPE_VALUE;
+        if (indicesFieldTypeCache.getOrInitialize(index).putIfAbsent(fieldName, fieldType)) {
+            indicesFieldTypeCache.incrementCountAndWeight(fieldName, fieldType);
+        }
 
         return fieldType;
     }
@@ -419,5 +435,25 @@ public class QueryShapeGenerator implements ClusterStateListener {
 
     String getFieldTypeFromCache(String fieldName, Index index) {
         return indicesFieldTypeCache.getOrInitialize(index).get(fieldName);
+    }
+
+    /**
+     * Get field type cache stats
+     *
+     * @return Map containing cache hit count, miss count, and byte stats
+     */
+    public Map<String, Long> getFieldTypeCacheStats() {
+        return Map.of(
+            SIZE_IN_BYTES,
+            indicesFieldTypeCache.getWeight(),
+            ENTRY_COUNT,
+            indicesFieldTypeCache.getEntryCount(),
+            EVICTIONS,
+            indicesFieldTypeCache.getEvictionCount(),
+            HIT_COUNT,
+            cacheHitCount,
+            MISS_COUNT,
+            cacheMissCount
+        );
     }
 }
