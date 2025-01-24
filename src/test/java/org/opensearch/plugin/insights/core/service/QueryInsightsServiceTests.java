@@ -15,17 +15,21 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
-import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
+import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
@@ -34,12 +38,15 @@ import org.opensearch.client.AdminClient;
 import org.opensearch.client.Client;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -60,6 +67,7 @@ import org.opensearch.threadpool.ThreadPool;
  * Unit Tests for {@link QueryInsightsService}.
  */
 public class QueryInsightsServiceTests extends OpenSearchTestCase {
+    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("YYYY.MM.dd", Locale.ROOT);
     private ThreadPool threadPool;
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
@@ -67,9 +75,12 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private QueryInsightsService queryInsightsServiceSpy;
     private final AdminClient adminClient = mock(AdminClient.class);
     private final IndicesAdminClient indicesAdminClient = mock(IndicesAdminClient.class);
+    private ClusterService clusterService;
+    private LocalIndexExporter localIndexExporter;
 
     @Before
     public void setup() {
+        localIndexExporter = mock(LocalIndexExporter.class);
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
@@ -78,7 +89,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             "QueryInsightsHealthStatsTests",
             new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
         );
-        ClusterService clusterService = new ClusterService(settings, clusterSettings, threadPool);
+        clusterService = new ClusterService(settings, clusterSettings, threadPool);
         queryInsightsService = new QueryInsightsService(
             clusterService,
             threadPool,
@@ -105,6 +116,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     @Override
     public void tearDown() throws Exception {
         super.tearDown();
+        IOUtils.close(clusterService);
         ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
     }
 
@@ -256,6 +268,9 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
                         .put("index.number_of_replicas", 1)
                         .put(SETTING_CREATION_DATE, creationTime)
                 )
+                .putMapping(
+                    new MappingMetadata("_doc", Map.of("_meta", Map.of(QUERY_INSIGHTS_INDEX_TAG_NAME, TOP_QUERIES_INDEX_TAG_VALUE)))
+                )
                 .build();
             indexMetadataMap.put(indexName, indexMetadata);
         }
@@ -272,14 +287,80 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
                         .put("index.number_of_replicas", 1)
                         .put(SETTING_CREATION_DATE, creationTime)
                 )
+                .putMapping(
+                    new MappingMetadata("_doc", Map.of("_meta", Map.of(QUERY_INSIGHTS_INDEX_TAG_NAME, TOP_QUERIES_INDEX_TAG_VALUE)))
+                )
                 .build();
             indexMetadataMap.put(indexName, indexMetadata);
         }
 
-        queryInsightsService.deleteAllTopNIndices(client, indexMetadataMap);
+        queryInsightsService.deleteAllTopNIndices(client, indexMetadataMap, localIndexExporter);
         // All 10 indices should be deleted
-        verify(client, times(9)).admin();
-        verify(adminClient, times(9)).indices();
-        verify(indicesAdminClient, times(9)).delete(any(), any());
+        verify(localIndexExporter, times(9)).deleteSingleIndex(any(), any());
     }
+
+    // TODO: comment out for now. Need to reenable this before mering
+    // public void testDeleteExpiredTopNIndices() {
+    // // create a new cluster state with expired index mapping
+    // Settings.Builder settingsBuilder = Settings.builder();
+    // Settings settings = settingsBuilder.build();
+    // ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+    // QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
+    // ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary("", true, 1 + randomInt(3), randomInt(2));
+    // ClusterService newClusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(),
+    // clusterSettings);
+    //
+    // RoutingTable.Builder routingTable = RoutingTable.builder(state.routingTable());
+    //
+    // // Create 9 top_queries-* indices
+    // Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
+    // for (int i = 1; i < 10; i++) {
+    // String indexName = "top_queries-2024.01.0" + i + "-" + generateLocalIndexDateHash();
+    // long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
+    //
+    // IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
+    // .settings(
+    // Settings.builder()
+    // .put("index.version.created", Version.CURRENT.id)
+    // .put("index.number_of_shards", 1)
+    // .put("index.number_of_replicas", 1)
+    // .put(SETTING_CREATION_DATE, creationTime)
+    // )
+    // .build();
+    // indexMetadataMap.put(indexName, indexMetadata);
+    // routingTable.addAsRecovery(IndexMetadata.builder(indexName)
+    // .settings(
+    // Settings.builder()
+    // .put("index.version.created", Version.CURRENT.id)
+    // .put("index.number_of_shards", 1)
+    // .put("index.number_of_replicas", 1)
+    // )
+    // .putMapping(new MappingMetadata("_doc", Map.of(
+    // "_meta", Map.of(QUERY_INSIGHTS_INDEX_TAG_NAME, TOP_QUERIES_INDEX_TAG_VALUE)
+    // )))
+    // .build());
+    // }
+    // ClusterState updatedState = ClusterState.builder(state).routingTable(routingTable.build()).build();
+    // ClusterServiceUtils.setState(newClusterService, updatedState);
+    // QueryInsightsService newQueryInsightsService = new QueryInsightsService(
+    // newClusterService,
+    // threadPool,
+    // client,
+    // NoopMetricsRegistry.INSTANCE,
+    // namedXContentRegistry
+    // );
+    // newQueryInsightsService.enableCollection(MetricType.LATENCY, true);
+    // newQueryInsightsService.enableCollection(MetricType.CPU, true);
+    // newQueryInsightsService.enableCollection(MetricType.MEMORY, true);
+    // newQueryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(clusterService));
+    // newQueryInsightsService.queryInsightsExporterFactory.createExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID, SinkType.LOCAL_INDEX,
+    // "YYYY.MM.dd", "");
+    //
+    // newQueryInsightsService.deleteExpiredTopNIndices();
+    // // Default retention is 7 days
+    // // Oldest 3 of 10 indices should be deleted
+    // verify(client, times(3)).admin();
+    // verify(adminClient, times(3)).indices();
+    // verify(indicesAdminClient, times(3)).delete(any(), any());
+    // }
 }

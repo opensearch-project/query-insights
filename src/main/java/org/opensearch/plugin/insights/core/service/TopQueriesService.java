@@ -37,11 +37,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -518,27 +516,6 @@ public class TopQueriesService {
                 )
             );
         }
-    }
-
-    /**
-     * Deletes the specified index and logs any failure that occurs during the operation.
-     *
-     * @param indexName The name of the index to delete.
-     * @param client The OpenSearch client used to perform the deletion.
-     */
-    public static void deleteSingleIndex(String indexName, Client client) {
-        Logger logger = LogManager.getLogger();
-        client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
-            @Override
-            // CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
-            public void onResponse(org.opensearch.action.support.master.AcknowledgedResponse acknowledgedResponse) {}
-
-            @Override
-            public void onFailure(Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_DELETE_FAILURES);
-                logger.error("Failed to delete index '{}': ", indexName, e);
-            }
-        });
     }
 
     /**

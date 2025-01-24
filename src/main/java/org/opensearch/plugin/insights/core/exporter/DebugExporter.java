@@ -16,7 +16,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 /**
  * Debug exporter for development purpose
  */
-public final class DebugExporter implements QueryInsightsExporter {
+public class DebugExporter implements QueryInsightsExporter {
     /**
      * Logger of the debug exporter
      */

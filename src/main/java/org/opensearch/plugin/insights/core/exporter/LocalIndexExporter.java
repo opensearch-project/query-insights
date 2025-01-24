@@ -8,46 +8,43 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
+import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.ExceptionsHelper;
 import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
-import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Local index exporter for exporting query insights data to local OpenSearch indices.
  */
-public final class LocalIndexExporter implements QueryInsightsExporter {
+public class LocalIndexExporter implements QueryInsightsExporter {
     /**
      * Logger of the local index exporter
      */
@@ -110,7 +107,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
      *
      * @param indexPattern index pattern
      */
-    void setIndexPattern(DateTimeFormatter indexPattern) {
+    public void setIndexPattern(DateTimeFormatter indexPattern) {
         this.indexPattern = indexPattern;
     }
 
@@ -153,7 +150,8 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
 
                     @Override
                     public void onFailure(Exception e) {
-                        if (e instanceof ResourceAlreadyExistsException) {
+                        Throwable cause = ExceptionsHelper.unwrapCause(e);
+                        if (cause instanceof ResourceAlreadyExistsException) {
                             try {
                                 bulk(indexName, records);
                             } catch (IOException ex) {
@@ -222,34 +220,37 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Delete Top N local indices older than the configured data retention period
+     * Get local index exporter data retention period
      *
-     * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
+     * @return the number of days after which Top N local indices should be deleted
      */
-    public void deleteExpiredTopNIndices(final Map<String, IndexMetadata> indexMetadataMap) {
-        long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(deleteAfter);
-        for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
-            String indexName = entry.getKey();
-            if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
-                // delete this index
-                TopQueriesService.deleteSingleIndex(indexName, client);
-            }
-        }
+    public int getDeleteAfter() {
+        return deleteAfter;
     }
 
     /**
-     * Generates a consistent 5-digit numeric hash based on the current UTC date.
-     * The generated hash is deterministic, meaning it will return the same result for the same date.
+     * Deletes the specified index and logs any failure that occurs during the operation.
      *
-     * @return A 5-digit numeric string representation of the current date's hash.
+     * @param indexName The name of the index to delete.
+     * @param client The OpenSearch client used to perform the deletion.
      */
-    public static String generateLocalIndexDateHash() {
-        // Get the current date in UTC (yyyy-MM-dd format)
-        String currentDate = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
-            .format(Instant.now().atOffset(ZoneOffset.UTC).toLocalDate());
+    public void deleteSingleIndex(String indexName, Client client) {
+        Logger logger = LogManager.getLogger();
+        client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
+            @Override
+            // CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
+            public void onResponse(org.opensearch.action.support.master.AcknowledgedResponse acknowledgedResponse) {}
 
-        // Generate a 5-digit numeric hash from the date's hashCode
-        return String.format(Locale.ROOT, "%05d", (currentDate.hashCode() % 100000 + 100000) % 100000);
+            @Override
+            public void onFailure(Exception e) {
+                Throwable cause = ExceptionsHelper.unwrapCause(e);
+                if (cause instanceof IndexNotFoundException) {
+                    return;
+                }
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_DELETE_FAILURES);
+                logger.error("Failed to delete index '{}': ", indexName, e);
+            }
+        });
     }
 
     /**

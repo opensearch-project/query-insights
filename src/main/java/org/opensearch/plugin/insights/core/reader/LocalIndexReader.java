@@ -8,7 +8,7 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;

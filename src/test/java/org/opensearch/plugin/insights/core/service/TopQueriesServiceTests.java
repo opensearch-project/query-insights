@@ -11,17 +11,26 @@ package org.opensearch.plugin.insights.core.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
+import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.validateExporterDeleteAfter;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
+import org.opensearch.Version;
 import org.opensearch.client.AdminClient;
 import org.opensearch.client.Client;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.coordination.DeterministicTaskQueue;
+import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.cluster.metadata.MappingMetadata;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
@@ -211,17 +220,147 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         );
     }
 
-    public void testIsTopQueriesIndex() {
-        assertTrue(isTopQueriesIndex("top_queries-2024.01.01-01234"));
-        assertTrue(isTopQueriesIndex("top_queries-2025.12.12-99999"));
+    private IndexMetadata createValidIndexMetadata(String indexName) {
+        // valid index metadata
+        long creationTime = Instant.now().toEpochMilli();
+        return IndexMetadata.builder(indexName)
+            .settings(
+                Settings.builder()
+                    .put("index.version.created", Version.CURRENT.id)
+                    .put("index.number_of_shards", 1)
+                    .put("index.number_of_replicas", 1)
+                    .put(SETTING_CREATION_DATE, creationTime)
+            )
+            .putMapping(new MappingMetadata("_doc", Map.of("_meta", Map.of(QUERY_INSIGHTS_INDEX_TAG_NAME, TOP_QUERIES_INDEX_TAG_VALUE))))
+            .build();
+    }
 
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345"));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w"));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01"));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234"));
-        assertFalse(isTopQueriesIndex("top_queries-01234"));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234"));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234"));
+    public void testIsTopQueriesIndexWithValidMetaData() {
+        assertTrue(isTopQueriesIndex("top_queries-2024.01.01-01234", createValidIndexMetadata("top_queries-2024.01.01-01234")));
+        assertTrue(isTopQueriesIndex("top_queries-2025.12.12-99999", createValidIndexMetadata("top_queries-2025.12.12-99999")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", createValidIndexMetadata("top_queries-2024.01.01-012345")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createValidIndexMetadata("top_queries-2024.01.01-0123w")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createValidIndexMetadata("top_queries-2024.01.01")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createValidIndexMetadata("top_queries-2024.01.32-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-01234", createValidIndexMetadata("top_queries-01234")));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createValidIndexMetadata("top_querie-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("2024.01.01-01234", createValidIndexMetadata("2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("any_index", createValidIndexMetadata("any_index")));
+        assertFalse(isTopQueriesIndex("", createValidIndexMetadata("")));
+        assertFalse(isTopQueriesIndex("_customer_index", createValidIndexMetadata("_customer_index")));
+    }
+
+    private IndexMetadata createIndexMetadataWithEmptyMapping(String indexName) {
+        long creationTime = Instant.now().toEpochMilli();
+        return IndexMetadata.builder(indexName)
+            .settings(
+                Settings.builder()
+                    .put("index.version.created", Version.CURRENT.id)
+                    .put("index.number_of_shards", 1)
+                    .put("index.number_of_replicas", 1)
+                    .put(SETTING_CREATION_DATE, creationTime)
+            )
+            .build();
+    }
+
+    public void testIsTopQueriesIndexWithEmptyMetaData() {
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithEmptyMapping("top_queries-2025.12.12-99999")));
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-012345"))
+        );
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-0123w")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithEmptyMapping("top_queries-2024.01.32-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithEmptyMapping("top_queries-01234")));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithEmptyMapping("top_querie-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithEmptyMapping("2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithEmptyMapping("any_index")));
+        assertFalse(isTopQueriesIndex("", createIndexMetadataWithEmptyMapping("")));
+        assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithEmptyMapping("_customer_index")));
+    }
+
+    private IndexMetadata createIndexMetadataWithDifferentValue(String indexName) {
+        long creationTime = Instant.now().toEpochMilli();
+        return IndexMetadata.builder(indexName)
+            .settings(
+                Settings.builder()
+                    .put("index.version.created", Version.CURRENT.id)
+                    .put("index.number_of_shards", 1)
+                    .put("index.number_of_replicas", 1)
+                    .put(SETTING_CREATION_DATE, creationTime)
+            )
+            .putMapping(new MappingMetadata("_doc", Map.of("_meta", Map.of(QUERY_INSIGHTS_INDEX_TAG_NAME, "someOtherTag"))))
+            .build();
+    }
+
+    public void testIsTopQueriesIndexWithDifferentMetaData() {
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithDifferentValue("top_queries-2024.01.01-01234"))
+        );
+        assertFalse(
+            isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithDifferentValue("top_queries-2025.12.12-99999"))
+        );
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithDifferentValue("top_queries-2024.01.01-012345"))
+        );
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-0123w", createIndexMetadataWithDifferentValue("top_queries-2024.01.01-0123w"))
+        );
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithDifferentValue("top_queries-2024.01.01")));
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithDifferentValue("top_queries-2024.01.32-01234"))
+        );
+        assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithDifferentValue("top_queries-01234")));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithDifferentValue("top_querie-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithDifferentValue("2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithDifferentValue("any_index")));
+        assertFalse(isTopQueriesIndex("", createIndexMetadataWithDifferentValue("")));
+        assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithDifferentValue("_customer_index")));
+    }
+
+    private IndexMetadata createIndexMetadataWithExtraValue(String indexName) {
+        long creationTime = Instant.now().toEpochMilli();
+        return IndexMetadata.builder(indexName)
+            .settings(
+                Settings.builder()
+                    .put("index.version.created", Version.CURRENT.id)
+                    .put("index.number_of_shards", 1)
+                    .put("index.number_of_replicas", 1)
+                    .put(SETTING_CREATION_DATE, creationTime)
+            )
+            .putMapping(new MappingMetadata("_doc", Map.of("_meta", Map.of("test", "someOtherTag"))))
+            .build();
+    }
+
+    public void testIsTopQueriesIndexWithExtraMetaData() {
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithExtraValue("top_queries-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithExtraValue("top_queries-2025.12.12-99999")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithExtraValue("top_queries-2024.01.01-012345")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createIndexMetadataWithExtraValue("top_queries-2024.01.01-0123w")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithExtraValue("top_queries-2024.01.01")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithExtraValue("top_queries-2024.01.32-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithExtraValue("top_queries-01234")));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithExtraValue("top_querie-2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithExtraValue("2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithExtraValue("any_index")));
+        assertFalse(isTopQueriesIndex("", createIndexMetadataWithExtraValue("")));
+        assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithExtraValue("_customer_index")));
+    }
+
+    public void testIsTopQueriesIndexWithNullMetaData() {
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", null));
+        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", null));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", null));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", null));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01", null));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", null));
+        assertFalse(isTopQueriesIndex("top_queries-01234", null));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", null));
+        assertFalse(isTopQueriesIndex("2024.01.01-01234", null));
+        assertFalse(isTopQueriesIndex("any_index", null));
+        assertFalse(isTopQueriesIndex("", null));
+        assertFalse(isTopQueriesIndex("_customer_index", null));
     }
 
     public void testTopQueriesForId() {

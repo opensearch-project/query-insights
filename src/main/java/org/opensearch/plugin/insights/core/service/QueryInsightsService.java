@@ -10,7 +10,6 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_READER_ID;
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.deleteSingleIndex;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
@@ -426,7 +425,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         // This method is invoked when sink type is changed
         // Clear local indices if exporter is of type LocalIndexExporter
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            deleteAllTopNIndices(client, indexMetadataMap);
+            deleteAllTopNIndices(client, indexMetadataMap, (LocalIndexExporter) topQueriesExporter);
         }
 
         if (sinkType != null) {
@@ -564,13 +563,23 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     /**
      * Delete Top N local indices older than the configured data retention period
      */
-    private void deleteExpiredTopNIndices() {
+    void deleteExpiredTopNIndices() {
         final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
-                .execute(
-                    () -> ((LocalIndexExporter) topQueriesExporter).deleteExpiredTopNIndices(clusterService.state().metadata().indices())
+            final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
+            threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
+                final Map<String, IndexMetadata> indexMetadataMap = clusterService.state().metadata().indices();
+                long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                    ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
                 );
+                for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+                    String indexName = entry.getKey();
+                    if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                        // delete this index
+                        localIndexExporter.deleteSingleIndex(indexName, client);
+                    }
+                }
+            });
         }
     }
 
@@ -579,11 +588,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      *
      * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
      */
-    void deleteAllTopNIndices(final Client client, final Map<String, IndexMetadata> indexMetadataMap) {
+    void deleteAllTopNIndices(
+        final Client client,
+        final Map<String, IndexMetadata> indexMetadataMap,
+        final LocalIndexExporter localIndexExporter
+    ) {
         indexMetadataMap.entrySet()
             .stream()
             .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
-            .forEach(entry -> deleteSingleIndex(entry.getKey(), client));
+            .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
     }
 
     /**
