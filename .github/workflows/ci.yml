@@ -57,14 +57,14 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload failed logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: logs-ubuntu
           path: build/testclusters/integTest-*/logs/*
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
@@ -115,21 +115,21 @@ jobs:
           cp ./build/distributions/*.zip query-insights-artifacts
 
       - name: Upload failed logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{ failure() && matrix.os == 'macos-latest' }}
         with:
           name: logs-mac
           path: build/testclusters/integTest-*/logs/*
 
       - name: Upload failed logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{ failure() && matrix.os == 'windows-latest' }}
         with:
           name: logs-windows
           path: build\testclusters\integTest-*\logs\*
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
