@@ -140,9 +140,15 @@ public final class SearchQueryCounters {
     }
 
     private void incrementAllHistograms(Tags tags, Map<MetricType, Measurement> measurements) {
-        queryTypeLatencyHistogram.record(measurements.get(MetricType.LATENCY).getMeasurement().doubleValue(), tags);
-        queryTypeCpuHistogram.record(measurements.get(MetricType.CPU).getMeasurement().doubleValue(), tags);
-        queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).getMeasurement().doubleValue(), tags);
+        if (measurements.containsKey(MetricType.LATENCY)) {
+            queryTypeLatencyHistogram.record(measurements.get(MetricType.LATENCY).getMeasurement().doubleValue(), tags);
+        }
+        if (measurements.containsKey(MetricType.CPU)) {
+            queryTypeCpuHistogram.record(measurements.get(MetricType.CPU).getMeasurement().doubleValue(), tags);
+        }
+        if (measurements.containsKey(MetricType.MEMORY)) {
+            queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).getMeasurement().doubleValue(), tags);
+        }
     }
 
     /**
