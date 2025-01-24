@@ -76,7 +76,13 @@ public class QueryInsightsExporterFactory {
      */
     public QueryInsightsExporter createExporter(String id, SinkType type, String indexPattern, String indexMapping) {
         if (SinkType.LOCAL_INDEX.equals(type)) {
-            QueryInsightsExporter exporter = new LocalIndexExporter(client, clusterService, DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT), indexMapping, id);
+            QueryInsightsExporter exporter = new LocalIndexExporter(
+                client,
+                clusterService,
+                DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
+                indexMapping,
+                id
+            );
             this.exporters.put(id, exporter);
             return exporter;
         }

@@ -8,6 +8,7 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
@@ -28,6 +29,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
@@ -37,6 +39,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
@@ -64,6 +67,7 @@ import org.opensearch.threadpool.ThreadPool;
 public class TopQueriesService {
     public static final String TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID = "top_queries_local_index_exporter";
     public static final String TOP_QUERIES_LOCAL_INDEX_READER_ID = "top_queries_local_index_reader";
+    public static final String TOP_QUERIES_INDEX_TAG_VALUE = "top_n_queries";
     private static final String METRIC_TYPE_TAG = "metric_type";
     private static final String GROUPBY_TAG = "groupby";
 
@@ -538,35 +542,55 @@ public class TopQueriesService {
     }
 
     /**
-     * Validates if the input string is a Query Insights local index name
-     * in the format "top_queries-YYYY.MM.dd-XXXXX".
+     * Validates if the input string is a Query Insights local index
+     * in the format "top_queries-YYYY.MM.dd-XXXXX", and has the expected index metadata.
      *
-     * @param indexName the string to validate.
+     * @param indexName the index name to validate.
+     * @param indexMetadata the metadata associated with the index
      * @return {@code true} if the string is valid, {@code false} otherwise.
      */
-    public static boolean isTopQueriesIndex(String indexName) {
-        // Split the input string by '-'
-        String[] parts = indexName.split("-");
-
-        // Check if the string has exactly 3 parts
-        if (parts.length != 3) {
-            return false;
-        }
-
-        // Validate the first part is "top_queries"
-        if (!"top_queries".equals(parts[0])) {
-            return false;
-        }
-
-        // Validate the second part is a valid date in "YYYY.MM.dd" format
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+    public static boolean isTopQueriesIndex(String indexName, IndexMetadata indexMetadata) {
         try {
-            LocalDate.parse(parts[1], formatter);
-        } catch (DateTimeParseException e) {
+            if (indexMetadata == null || indexMetadata.mapping() == null) {
+                return false;
+            }
+            Map<String, Object> sourceMap = Objects.requireNonNull(indexMetadata.mapping()).getSourceAsMap();
+            if (sourceMap == null || !sourceMap.containsKey("_meta")) {
+                return false;
+            }
+            Map<String, Object> metaMap = (Map<String, Object>) sourceMap.get("_meta");
+            if (metaMap == null || !metaMap.containsKey(QUERY_INSIGHTS_INDEX_TAG_NAME)) {
+                return false;
+            }
+            if (!metaMap.get(QUERY_INSIGHTS_INDEX_TAG_NAME).equals(TOP_QUERIES_INDEX_TAG_VALUE)) {
+                return false;
+            }
+
+            // Split the input string by '-'
+            String[] parts = indexName.split("-");
+
+            // Check if the string has exactly 3 parts
+            if (parts.length != 3) {
+                return false;
+            }
+
+            // Validate the first part is "top_queries"
+            if (!"top_queries".equals(parts[0])) {
+                return false;
+            }
+
+            // Validate the second part is a valid date in "YYYY.MM.dd" format
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+            try {
+                LocalDate.parse(parts[1], formatter);
+            } catch (DateTimeParseException e) {
+                return false;
+            }
+
+            // Validate the third part is exactly 5 digits
+            return parts[2].matches("\\d{5}");
+        } catch (Exception e) {
             return false;
         }
-
-        // Validate the third part is exactly 5 digits
-        return parts[2].matches("\\d{5}");
     }
 }

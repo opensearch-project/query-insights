@@ -116,7 +116,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String indexName = buildLocalIndexName(curr);
             SearchRequest searchRequest = new SearchRequest(indexName);
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(1000);
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
                 .from(start.toInstant().toEpochMilli())

@@ -63,6 +63,7 @@ import org.opensearch.threadpool.ThreadPool;
  * information related to search queries
  */
 public class QueryInsightsService extends AbstractLifecycleComponent {
+    public static final String QUERY_INSIGHTS_INDEX_TAG_NAME = "query_insights_feature_space";
 
     private static final Logger logger = LogManager.getLogger(QueryInsightsService.class);
 
@@ -143,7 +144,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
-        this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client);
+        this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService);
         this.queryInsightsReaderFactory = new QueryInsightsReaderFactory(client);
         this.namedXContentRegistry = namedXContentRegistry;
         this.client = client;
@@ -581,7 +582,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     void deleteAllTopNIndices(final Client client, final Map<String, IndexMetadata> indexMetadataMap) {
         indexMetadataMap.entrySet()
             .stream()
-            .filter(entry -> isTopQueriesIndex(entry.getKey()))
+            .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
             .forEach(entry -> deleteSingleIndex(entry.getKey(), client));
     }
 

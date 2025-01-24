@@ -65,11 +65,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
         "measurements.cpu.number",
         "measurements.memory.number"
     );
-    private static final List<String> DEFAULT_SORTED_ORDERS  = List.of(
-        "desc",
-        "desc",
-        "desc"
-    );
+    private static final List<String> DEFAULT_SORTED_ORDERS = List.of("desc", "desc", "desc");
 
     /**
      * Constructor of LocalIndexExporter
@@ -80,7 +76,13 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
      * @param indexMapping the index mapping file
      * @param id id of the exporter
      */
-    public LocalIndexExporter(final Client client, final ClusterService clusterService, final DateTimeFormatter indexPattern, final String indexMapping, final String id) {
+    public LocalIndexExporter(
+        final Client client,
+        final ClusterService clusterService,
+        final DateTimeFormatter indexPattern,
+        final String indexMapping,
+        final String id
+    ) {
         this.indexPattern = indexPattern;
         this.client = client;
         this.clusterService = clusterService;
@@ -127,11 +129,12 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
             if (!checkIndexExists(indexName)) {
                 CreateIndexRequest createIndexRequest = new CreateIndexRequest(indexName);
 
-                createIndexRequest.settings(Settings.builder()
-                    .putList("index.sort.field", DEFAULT_SORTED_FIELDS)
-                    .putList("index.sort.order", DEFAULT_SORTED_ORDERS)
-                    .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
-                    .put("index.number_of_replicas", DEFAULT_NUMBER_OF_REPLICA)
+                createIndexRequest.settings(
+                    Settings.builder()
+                        .putList("index.sort.field", DEFAULT_SORTED_FIELDS)
+                        .putList("index.sort.order", DEFAULT_SORTED_ORDERS)
+                        .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
+                        .put("index.number_of_replicas", DEFAULT_NUMBER_OF_REPLICA)
                 );
                 createIndexRequest.mapping(readIndexMappings());
 
@@ -147,6 +150,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
                             }
                         }
                     }
+
                     @Override
                     public void onFailure(Exception e) {
                         if (e instanceof ResourceAlreadyExistsException) {
@@ -175,7 +179,8 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
-                new IndexRequest(indexName).id(record.getId()).source(record.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                new IndexRequest(indexName).id(record.getId())
+                    .source(record.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
@@ -225,7 +230,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
         long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(deleteAfter);
         for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
             String indexName = entry.getKey();
-            if (isTopQueriesIndex(indexName) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+            if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
                 // delete this index
                 TopQueriesService.deleteSingleIndex(indexName, client);
             }
@@ -263,8 +268,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
      */
     private String readIndexMappings() throws IOException {
         return new String(
-            Objects.requireNonNull(LocalIndexExporter.class.getClassLoader().getResourceAsStream(indexMapping))
-                .readAllBytes(),
+            Objects.requireNonNull(LocalIndexExporter.class.getClassLoader().getResourceAsStream(indexMapping)).readAllBytes(),
             Charset.defaultCharset()
         );
     }
