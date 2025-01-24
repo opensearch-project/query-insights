@@ -444,7 +444,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 queryInsightsExporterFactory.createExporter(
                     TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID,
                     sinkType,
-                    DEFAULT_TOP_N_QUERIES_INDEX_PATTERN
+                    DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                    "mappings/top-queries-record.json"
                 );
             }
         } else {

@@ -16,6 +16,7 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 
@@ -28,15 +29,18 @@ public class QueryInsightsExporterFactory {
      */
     private final Logger logger = LogManager.getLogger();
     final private Client client;
+    final private ClusterService clusterService;
     final private Map<String, QueryInsightsExporter> exporters;
 
     /**
      * Constructor of QueryInsightsExporterFactory
      *
      * @param client OS client
+     * @param clusterService cluster service
      */
-    public QueryInsightsExporterFactory(final Client client) {
+    public QueryInsightsExporterFactory(final Client client, final ClusterService clusterService) {
         this.client = client;
+        this.clusterService = clusterService;
         this.exporters = new HashMap<>();
     }
 
@@ -64,13 +68,15 @@ public class QueryInsightsExporterFactory {
     /**
      * Create an exporter based on provided parameters
      *
+     * @param id id of the exporter
      * @param type The type of exporter to create
-     * @param indexPattern the index pattern if creating a index exporter
+     * @param indexPattern the index pattern if creating an index exporter
+     * @param indexMapping index mapping file
      * @return QueryInsightsExporter the created exporter sink
      */
-    public QueryInsightsExporter createExporter(String id, SinkType type, String indexPattern) {
+    public QueryInsightsExporter createExporter(String id, SinkType type, String indexPattern, String indexMapping) {
         if (SinkType.LOCAL_INDEX.equals(type)) {
-            QueryInsightsExporter exporter = new LocalIndexExporter(client, DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT), id);
+            QueryInsightsExporter exporter = new LocalIndexExporter(client, clusterService, DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT), indexMapping, id);
             this.exporters.put(id, exporter);
             return exporter;
         }
