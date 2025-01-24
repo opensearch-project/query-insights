@@ -271,6 +271,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
             attributes.put(Attribute.TASK_RESOURCE_USAGES, tasksResourceUsages);
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
+            attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
 
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
