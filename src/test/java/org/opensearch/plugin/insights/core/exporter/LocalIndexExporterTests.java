@@ -54,7 +54,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
-        localIndexExporter = new LocalIndexExporter(client, format);
+        localIndexExporter = new LocalIndexExporter(client, format, "id");
 
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);

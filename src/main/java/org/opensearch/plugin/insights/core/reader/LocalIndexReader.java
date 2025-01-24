@@ -46,6 +46,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
     private final Client client;
     private DateTimeFormatter indexPattern;
     private final NamedXContentRegistry namedXContentRegistry;
+    private final String id;
 
     /**
      * Constructor of LocalIndexReader
@@ -54,10 +55,21 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * @param indexPattern the pattern of index to read from
      * @param namedXContentRegistry for parsing purposes
      */
-    public LocalIndexReader(final Client client, final DateTimeFormatter indexPattern, final NamedXContentRegistry namedXContentRegistry) {
+    public LocalIndexReader(
+        final Client client,
+        final DateTimeFormatter indexPattern,
+        final NamedXContentRegistry namedXContentRegistry,
+        final String id
+    ) {
         this.indexPattern = indexPattern;
         this.client = client;
+        this.id = id;
         this.namedXContentRegistry = namedXContentRegistry;
+    }
+
+    @Override
+    public String getId() {
+        return id;
     }
 
     /**

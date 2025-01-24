@@ -45,23 +45,18 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     private String defaultExporterSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
-            + "        \"search.insights.top_queries.latency.exporter.config.index\" : \"YYYY.MM.dd\",\n"
-            + "        \"search.insights.top_queries.latency.exporter.type\" : \"local_index\"\n"
+            + "        \"search.insights.top_queries.exporter.type\" : \"local_index\"\n"
             + "    }\n"
             + "}";
     }
 
     private String[] invalidExporterSettings() {
         return new String[] {
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.exporter.type\" : invalid_type\n" + "    }\n" + "}",
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.latency.exporter.type\" : invalid_type\n"
-                + "    }\n"
-                + "}",
-            "{\n"
-                + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.latency.exporter.type\" : local_index,\n"
-                + "        \"search.insights.top_queries.latency.exporter.config.index\" : \"1a2b\"\n"
+                + "        \"search.insights.top_queries.exporter.type\" : local_index,\n"
+                + "        \"search.insights.top_queries.exporter.config.index\" : \"1a2b\"\n"
                 + "    }\n"
                 + "}" };
     }

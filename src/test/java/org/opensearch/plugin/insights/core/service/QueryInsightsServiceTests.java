@@ -11,18 +11,29 @@ package org.opensearch.plugin.insights.core.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
+import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
+import org.opensearch.Version;
+import org.opensearch.client.AdminClient;
 import org.opensearch.client.Client;
+import org.opensearch.client.IndicesAdminClient;
+import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
@@ -54,6 +65,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsService queryInsightsService;
     private QueryInsightsService queryInsightsServiceSpy;
+    private final AdminClient adminClient = mock(AdminClient.class);
+    private final IndicesAdminClient indicesAdminClient = mock(IndicesAdminClient.class);
 
     @Before
     public void setup() {
@@ -84,6 +97,9 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             invocation -> mock(Counter.class)
         );
         OperationalMetricsCounter.initialize("cluster", metricsRegistry);
+
+        when(client.admin()).thenReturn(adminClient);
+        when(adminClient.indices()).thenReturn(indicesAdminClient);
     }
 
     @Override
@@ -223,5 +239,47 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertTrue(fieldTypeCacheStats.containsKey(EVICTIONS));
         assertTrue(fieldTypeCacheStats.containsKey(HIT_COUNT));
         assertTrue(fieldTypeCacheStats.containsKey(MISS_COUNT));
+    }
+
+    public void testDeleteAllTopNIndices() {
+        // Create 9 top_queries-* indices
+        Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
+        for (int i = 1; i < 10; i++) {
+            String indexName = "top_queries-2024.01.0" + i + "-" + generateLocalIndexDateHash();
+            long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
+
+            IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
+                .settings(
+                    Settings.builder()
+                        .put("index.version.created", Version.CURRENT.id)
+                        .put("index.number_of_shards", 1)
+                        .put("index.number_of_replicas", 1)
+                        .put(SETTING_CREATION_DATE, creationTime)
+                )
+                .build();
+            indexMetadataMap.put(indexName, indexMetadata);
+        }
+        // Create 5 user indices
+        for (int i = 0; i < 5; i++) {
+            String indexName = "my_index-" + i;
+            long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
+
+            IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
+                .settings(
+                    Settings.builder()
+                        .put("index.version.created", Version.CURRENT.id)
+                        .put("index.number_of_shards", 1)
+                        .put("index.number_of_replicas", 1)
+                        .put(SETTING_CREATION_DATE, creationTime)
+                )
+                .build();
+            indexMetadataMap.put(indexName, indexMetadata);
+        }
+
+        queryInsightsService.deleteAllTopNIndices(client, indexMetadataMap);
+        // All 10 indices should be deleted
+        verify(client, times(9)).admin();
+        verify(adminClient, times(9)).indices();
+        verify(indicesAdminClient, times(9)).delete(any(), any());
     }
 }

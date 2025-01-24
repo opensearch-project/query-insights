@@ -46,6 +46,7 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
     private final Client client;
     private DateTimeFormatter indexPattern;
     private int deleteAfter;
+    private final String id;
 
     /**
      * Constructor of LocalIndexExporter
@@ -53,10 +54,16 @@ public final class LocalIndexExporter implements QueryInsightsExporter {
      * @param client OS client
      * @param indexPattern the pattern of index to export to
      */
-    public LocalIndexExporter(final Client client, final DateTimeFormatter indexPattern) {
+    public LocalIndexExporter(final Client client, final DateTimeFormatter indexPattern, final String id) {
         this.indexPattern = indexPattern;
         this.client = client;
         this.deleteAfter = DEFAULT_DELETE_AFTER_VALUE;
+        this.id = id;
+    }
+
+    @Override
+    public String getId() {
+        return id;
     }
 
     /**

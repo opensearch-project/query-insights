@@ -22,4 +22,6 @@ public interface QueryInsightsExporter extends Closeable {
      * @param records list of {@link SearchQueryRecord}
      */
     void export(final List<SearchQueryRecord> records);
+
+    String getId();
 }

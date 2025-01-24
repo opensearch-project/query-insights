@@ -10,29 +10,18 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
-import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.validateExporterDeleteAfter;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
-import org.opensearch.Version;
 import org.opensearch.client.AdminClient;
 import org.opensearch.client.Client;
 import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.coordination.DeterministicTaskQueue;
-import org.opensearch.cluster.metadata.IndexMetadata;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
@@ -220,48 +209,6 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             "Invalid exporter delete_after_days setting [181], value should be an integer between 1 and 180.",
             exception.getMessage()
         );
-    }
-
-    public void testDeleteAllTopNIndices() {
-        // Create 9 top_queries-* indices
-        Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
-        for (int i = 1; i < 10; i++) {
-            String indexName = "top_queries-2024.01.0" + i + "-" + generateLocalIndexDateHash();
-            long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
-
-            IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
-                .settings(
-                    Settings.builder()
-                        .put("index.version.created", Version.CURRENT.id)
-                        .put("index.number_of_shards", 1)
-                        .put("index.number_of_replicas", 1)
-                        .put(SETTING_CREATION_DATE, creationTime)
-                )
-                .build();
-            indexMetadataMap.put(indexName, indexMetadata);
-        }
-        // Create 5 user indices
-        for (int i = 0; i < 5; i++) {
-            String indexName = "my_index-" + i;
-            long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
-
-            IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
-                .settings(
-                    Settings.builder()
-                        .put("index.version.created", Version.CURRENT.id)
-                        .put("index.number_of_shards", 1)
-                        .put("index.number_of_replicas", 1)
-                        .put(SETTING_CREATION_DATE, creationTime)
-                )
-                .build();
-            indexMetadataMap.put(indexName, indexMetadata);
-        }
-
-        topQueriesService.deleteAllTopNIndices(indexMetadataMap);
-        // All 10 indices should be delete
-        verify(client, times(9)).admin();
-        verify(adminClient, times(9)).indices();
-        verify(indicesAdminClient, times(9)).delete(any(), any());
     }
 
     public void testIsTopQueriesIndex() {
