@@ -20,7 +20,6 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
@@ -81,7 +80,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
         final List<TopQueries> results = getNodes();
-        postProcess(results);
         builder.startObject();
         toClusterLevelResult(builder, params, results);
         return builder.endObject();
@@ -97,20 +95,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
             return builder.toString();
         } catch (IOException e) {
             return "{ \"error\" : \"" + e.getMessage() + "\"}";
-        }
-    }
-
-    /**
-     * Post process the top queries results to add customized attributes
-     *
-     * @param results the top queries results
-     */
-    private void postProcess(final List<TopQueries> results) {
-        for (TopQueries topQueries : results) {
-            final String nodeId = topQueries.getNode().getId();
-            for (SearchQueryRecord record : topQueries.getTopQueriesRecord()) {
-                record.addAttribute(Attribute.NODE_ID, nodeId);
-            }
         }
     }
 

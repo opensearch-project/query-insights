@@ -155,6 +155,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
             attributes.put(Attribute.QUERY_GROUP_HASHCODE, Objects.hashCode(i));
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
+            attributes.put(Attribute.NODE_ID, "node_for_top_queries_test");
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -262,6 +263,7 @@ final public class QueryInsightsTestUtils {
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
         attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
+        attributes.put(Attribute.NODE_ID, "node_for_top_queries_test");
         attributes.put(
             Attribute.TASK_RESOURCE_USAGES,
             List.of(
