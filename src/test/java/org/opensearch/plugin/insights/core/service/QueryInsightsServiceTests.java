@@ -25,6 +25,8 @@ import static org.opensearch.plugin.insights.core.service.categorizer.QueryShape
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
@@ -257,7 +259,10 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Create 9 top_queries-* indices
         Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
         for (int i = 1; i < 10; i++) {
-            String indexName = "top_queries-2024.01.0" + i + "-" + generateLocalIndexDateHash();
+            String indexName = "top_queries-2024.01.0"
+                + i
+                + "-"
+                + generateLocalIndexDateHash(ZonedDateTime.of(2024, 1, i, 0, 0, 0, 0, ZoneId.of("UTC")).toLocalDate());
             long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
 
             IndexMetadata indexMetadata = IndexMetadata.builder(indexName)

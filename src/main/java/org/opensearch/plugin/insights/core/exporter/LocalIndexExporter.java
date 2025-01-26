@@ -207,7 +207,8 @@ public class LocalIndexExporter implements QueryInsightsExporter {
      * @return A string representing the index name in the format "top_queries-YYYY.MM.dd-01234".
      */
     String buildLocalIndexName() {
-        return indexPattern.format(ZonedDateTime.now(ZoneOffset.UTC)) + "-" + generateLocalIndexDateHash();
+        ZonedDateTime currentTime = ZonedDateTime.now(ZoneOffset.UTC);
+        return indexPattern.format(currentTime) + "-" + generateLocalIndexDateHash(currentTime.toLocalDate());
     }
 
     /**

@@ -67,7 +67,9 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
-        indexName = format.format(ZonedDateTime.now(ZoneOffset.UTC)) + "-" + generateLocalIndexDateHash();
+        indexName = format.format(ZonedDateTime.now(ZoneOffset.UTC))
+            + "-"
+            + generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);

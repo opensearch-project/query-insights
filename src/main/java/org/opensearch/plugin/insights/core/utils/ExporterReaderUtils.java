@@ -8,8 +8,7 @@
 
 package org.opensearch.plugin.insights.core.utils;
 
-import java.time.Instant;
-import java.time.ZoneOffset;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
@@ -22,17 +21,16 @@ public class ExporterReaderUtils {
     private ExporterReaderUtils() {}
 
     /**
-     * Generates a consistent 5-digit numeric hash based on the current UTC date.
+     * Generates a consistent 5-digit numeric hash based on the given UTC date.
      * The generated hash is deterministic, meaning it will return the same result for the same date.
      *
      * @return A 5-digit numeric string representation of the current date's hash.
      */
-    public static String generateLocalIndexDateHash() {
-        // Get the current date in UTC (yyyy-MM-dd format)
-        String currentDate = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
-            .format(Instant.now().atOffset(ZoneOffset.UTC).toLocalDate());
+    public static String generateLocalIndexDateHash(LocalDate date) {
+        // Get the date string in UTC (yyyy-MM-dd format)
+        String dateString = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).format(date);
 
         // Generate a 5-digit numeric hash from the date's hashCode
-        return String.format(Locale.ROOT, "%05d", (currentDate.hashCode() % 100000 + 100000) % 100000);
+        return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
     }
 }
