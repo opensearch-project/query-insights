@@ -39,6 +39,7 @@ import org.opensearch.search.builder.SearchSourceBuilder;
  * Local index reader for reading query insights data from local OpenSearch indices.
  */
 public final class LocalIndexReader implements QueryInsightsReader {
+    private final static int MAX_TOP_N_INDEX_READ_SIZE = 1000;
     /**
      * Logger of the local index reader
      */
@@ -116,7 +117,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String indexName = buildLocalIndexName(curr);
             SearchRequest searchRequest = new SearchRequest(indexName);
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(1000);
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
                 .from(start.toInstant().toEpochMilli())

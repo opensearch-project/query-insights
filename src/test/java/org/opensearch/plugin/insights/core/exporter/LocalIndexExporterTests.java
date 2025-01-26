@@ -187,33 +187,4 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         localIndexExporter.setIndexPattern(newFormatter);
         assert (localIndexExporter.getIndexPattern() == newFormatter);
     }
-
-    // public void testDeleteExpiredTopNIndices() {
-    // // Reset exporter index pattern to default
-    // localIndexExporter.setIndexPattern(DateTimeFormatter.ofPattern(DEFAULT_TOP_N_QUERIES_INDEX_PATTERN, Locale.ROOT));
-    //
-    // // Create 9 top_queries-* indices
-    // Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
-    // for (int i = 1; i < 10; i++) {
-    // String indexName = "top_queries-2024.01.0" + i + "-" + generateLocalIndexDateHash();
-    // long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
-    //
-    // IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
-    // .settings(
-    // Settings.builder()
-    // .put("index.version.created", Version.CURRENT.id)
-    // .put("index.number_of_shards", 1)
-    // .put("index.number_of_replicas", 1)
-    // .put(SETTING_CREATION_DATE, creationTime)
-    // )
-    // .build();
-    // indexMetadataMap.put(indexName, indexMetadata);
-    // }
-    // localIndexExporter.deleteExpiredTopNIndices(indexMetadataMap);
-    // // Default retention is 7 days
-    // // Oldest 3 of 10 indices should be deleted
-    // verify(client, times(3)).admin();
-    // verify(adminClient, times(3)).indices();
-    // verify(indicesAdminClient, times(3)).delete(any(), any());
-    // }
 }
