@@ -68,9 +68,11 @@ public class IndicesFieldTypeCache {
 
     public void invalidate(Index index) {
         IndexFieldMap indexFieldMap = cache.get(index);
-        evictionCount.inc(indexFieldMap.fieldTypeMap.size());
-        entryCount.dec(indexFieldMap.fieldTypeMap.size());
-        weight.dec(indexFieldMap.weight());
+        if (indexFieldMap != null) {
+            evictionCount.inc(indexFieldMap.fieldTypeMap.size());
+            entryCount.dec(indexFieldMap.fieldTypeMap.size());
+            weight.dec(indexFieldMap.weight());
+        }
         cache.invalidate(index);
     }
 
