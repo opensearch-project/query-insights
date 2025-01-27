@@ -17,6 +17,8 @@ import java.util.stream.Collectors;
  * Type of supported sinks
  */
 public enum SinkType {
+    /** no exporter */
+    NONE("none"),
     /** debug exporter */
     DEBUG("debug"),
     /** local index exporter */
@@ -60,7 +62,9 @@ public enum SinkType {
     public static SinkType getSinkTypeFromExporter(QueryInsightsExporter exporter) {
         if (exporter.getClass().equals(LocalIndexExporter.class)) {
             return SinkType.LOCAL_INDEX;
+        } else if (exporter.getClass().equals(DebugExporter.class)) {
+            return SinkType.DEBUG;
         }
-        return SinkType.DEBUG;
+        return SinkType.NONE;
     }
 }

@@ -13,7 +13,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.opensearch.common.settings.Setting;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -222,15 +221,7 @@ public class QueryInsightsSettings {
     /**
      * Settings and defaults for top queries exporters
      */
-    private static final String TOP_N_LATENCY_QUERIES_EXPORTER_PREFIX = TOP_N_LATENCY_QUERIES_PREFIX + ".exporter.";
-    /**
-     * Prefix for top n queries by cpu exporters
-     */
-    private static final String TOP_N_CPU_QUERIES_EXPORTER_PREFIX = TOP_N_CPU_QUERIES_PREFIX + ".exporter.";
-    /**
-     * Prefix for top n queries by memory exporters
-     */
-    private static final String TOP_N_MEMORY_QUERIES_EXPORTER_PREFIX = TOP_N_MEMORY_QUERIES_PREFIX + ".exporter.";
+    private static final String TOP_N_QUERIES_EXPORTER_PREFIX = TOP_N_QUERIES_SETTING_PREFIX + ".exporter";
     /**
      * Default index pattern of top n queries
      */
@@ -238,7 +229,7 @@ public class QueryInsightsSettings {
     /**
      * Default exporter type of top queries
      */
-    public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
+    public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.NONE.toString();
     /**
      * Default Top N local indices retention period in days
      */
@@ -259,37 +250,20 @@ public class QueryInsightsSettings {
      * and it applies to exporters of all metric types
      */
     public static final Setting<Integer> TOP_N_EXPORTER_DELETE_AFTER = Setting.intSetting(
-        TOP_N_QUERIES_SETTING_PREFIX + ".delete_after_days",
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".delete_after_days",
         DEFAULT_DELETE_AFTER_VALUE,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
 
     /**
-     * Settings for the exporter of top latency queries
+     * Settings for the top n queries exporter
      */
-    public static final Setting<Settings> TOP_N_LATENCY_EXPORTER_SETTINGS = Setting.groupSetting(
-        TOP_N_LATENCY_QUERIES_EXPORTER_PREFIX,
-        Setting.Property.Dynamic,
-        Setting.Property.NodeScope
-    );
-
-    /**
-     * Settings for the exporter of top cpu queries
-     */
-    public static final Setting<Settings> TOP_N_CPU_EXPORTER_SETTINGS = Setting.groupSetting(
-        TOP_N_CPU_QUERIES_EXPORTER_PREFIX,
-        Setting.Property.Dynamic,
-        Setting.Property.NodeScope
-    );
-
-    /**
-     * Settings for the exporter of top cpu queries
-     */
-    public static final Setting<Settings> TOP_N_MEMORY_EXPORTER_SETTINGS = Setting.groupSetting(
-        TOP_N_MEMORY_QUERIES_EXPORTER_PREFIX,
-        Setting.Property.Dynamic,
-        Setting.Property.NodeScope
+    public static final Setting<String> TOP_N_EXPORTER_TYPE = Setting.simpleString(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".type",
+        DEFAULT_TOP_QUERIES_EXPORTER_TYPE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
     );
 
     /**
@@ -337,22 +311,6 @@ public class QueryInsightsSettings {
                 return TOP_N_MEMORY_QUERIES_WINDOW_SIZE;
             default:
                 return TOP_N_LATENCY_QUERIES_WINDOW_SIZE;
-        }
-    }
-
-    /**
-     * Get the exporter settings based on type
-     * @param type MetricType
-     * @return exporter setting
-     */
-    public static Setting<Settings> getExporterSettings(MetricType type) {
-        switch (type) {
-            case CPU:
-                return TOP_N_CPU_EXPORTER_SETTINGS;
-            case MEMORY:
-                return TOP_N_MEMORY_EXPORTER_SETTINGS;
-            default:
-                return TOP_N_LATENCY_EXPORTER_SETTINGS;
         }
     }
 

@@ -8,10 +8,14 @@
 
 package org.opensearch.plugin.insights.core.service;
 
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_READER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getExporterSettings;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -31,12 +35,15 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
+import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
@@ -55,6 +62,7 @@ import org.opensearch.threadpool.ThreadPool;
  * information related to search queries
  */
 public class QueryInsightsService extends AbstractLifecycleComponent {
+    public static final String QUERY_INSIGHTS_INDEX_TAG_NAME = "query_insights_feature_space";
 
     private static final Logger logger = LogManager.getLogger(QueryInsightsService.class);
 
@@ -87,12 +95,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     protected volatile List<Scheduler.Cancellable> scheduledFutures;
 
     /**
-     * Query Insights exporter factory
+     * Factory for validating and creating exporters
      */
     final QueryInsightsExporterFactory queryInsightsExporterFactory;
 
     /**
-     * Query Insights reader factory
+     * Factory for validating and creating readers
      */
     final QueryInsightsReaderFactory queryInsightsReaderFactory;
 
@@ -111,6 +119,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * Query shape generator instance
      */
     private QueryShapeGenerator queryShapeGenerator;
+
+    private final Client client;
 
     /**
      * Constructor of the QueryInsightsService
@@ -133,9 +143,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
-        this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client);
+        this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService);
         this.queryInsightsReaderFactory = new QueryInsightsReaderFactory(client);
         this.namedXContentRegistry = namedXContentRegistry;
+        this.client = client;
         // initialize top n queries services and configurations consumers
         topQueriesServices = new HashMap<>();
         for (MetricType metricType : MetricType.allMetricTypes()) {
@@ -145,20 +156,18 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 new TopQueriesService(client, metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
             );
         }
-        for (MetricType type : MetricType.allMetricTypes()) {
-            clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    getExporterSettings(type),
-                    (settings -> setExporterAndReader(type, settings, clusterService.state().metadata().indices())),
-                    (settings -> validateExporterAndReaderConfig(type, settings))
-                );
-            clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    TOP_N_EXPORTER_DELETE_AFTER,
-                    (settings -> setExporterDeleteAfterAndDelete(type, settings)),
-                    (TopQueriesService::validateExporterDeleteAfter)
-                );
-        }
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                TOP_N_EXPORTER_TYPE,
+                (v -> setExporterAndReader(SinkType.parse(v), clusterService.state().metadata().indices())),
+                (this::validateExporterType)
+            );
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                TOP_N_EXPORTER_DELETE_AFTER,
+                (this::setExporterDeleteAfterAndDelete),
+                (TopQueriesService::validateExporterDeleteAfter)
+            );
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
@@ -407,28 +416,68 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     /**
      * Set the exporter and reader config for a metricType
      *
-     * @param type {@link MetricType}
-     * @param settings exporter and reader settings
+     * @param sinkType {@link SinkType}
+     * @param indexMetadataMap index metadata map in the current cluster
      */
-    private void setExporterAndReader(final MetricType type, final Settings settings, final Map<String, IndexMetadata> indexMetadataMap) {
-        if (topQueriesServices.containsKey(type)) {
-            TopQueriesService tqs = topQueriesServices.get(type);
-            tqs.setExporter(settings, indexMetadataMap);
-            tqs.setReader(settings, namedXContentRegistry);
+    private void setExporterAndReader(final SinkType sinkType, final Map<String, IndexMetadata> indexMetadataMap) {
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+
+        // This method is invoked when sink type is changed
+        // Clear local indices if exporter is of type LocalIndexExporter
+        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
+            deleteAllTopNIndices(client, indexMetadataMap, (LocalIndexExporter) topQueriesExporter);
         }
+
+        if (sinkType != null) {
+            if (topQueriesExporter != null && sinkType == SinkType.getSinkTypeFromExporter(topQueriesExporter)) {
+                // this won't happen since we disallowed users to change index patterns.
+                // But leaving the hook here since we will add support for more sinks and configurations in the future.
+                queryInsightsExporterFactory.updateExporter(topQueriesExporter, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
+            } else {
+                try {
+                    queryInsightsExporterFactory.closeExporter(topQueriesExporter);
+                } catch (IOException e) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
+                    logger.error("Fail to close the current exporter when updating exporter, error: ", e);
+                }
+                // this is a new exporter, create it for all underlying services.
+                queryInsightsExporterFactory.createExporter(
+                    TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID,
+                    sinkType,
+                    DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                    "mappings/top-queries-record.json"
+                );
+            }
+        } else {
+            // Disable exporter if exporter type is set to null
+            try {
+                queryInsightsExporterFactory.closeExporter(topQueriesExporter);
+            } catch (IOException e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
+                logger.error("Fail to close the current exporter when disabling exporter, error: ", e);
+            }
+        }
+
+        // set up reader for top n queries service
+        final QueryInsightsReader reader = queryInsightsReaderFactory.createReader(
+            TOP_QUERIES_LOCAL_INDEX_READER_ID,
+            DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+            namedXContentRegistry
+        );
+        queryInsightsReaderFactory.updateReader(reader, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
     }
 
     /**
      * Set the exporter delete after, then delete expired Top N indices
      *
-     * @param type {@link MetricType}
      * @param deleteAfter the number of days after which Top N local indices should be deleted
      */
-    private void setExporterDeleteAfterAndDelete(final MetricType type, final int deleteAfter) {
-        if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).setExporterDeleteAfter(deleteAfter);
-            deleteExpiredTopNIndices();
+    private void setExporterDeleteAfterAndDelete(final int deleteAfter) {
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
+            ((LocalIndexExporter) topQueriesExporter).setDeleteAfter(deleteAfter);
         }
+        deleteExpiredTopNIndices();
     }
 
     /**
@@ -440,16 +489,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the exporter and reader config for a metricType
+     * Validate the exporter type config
      *
-     * @param type {@link MetricType}
-     * @param settings exporter and reader settings
+     * @param exporterType exporter type
      */
-    public void validateExporterAndReaderConfig(final MetricType type, final Settings settings) {
-        if (topQueriesServices.containsKey(type)) {
-            TopQueriesService tqs = topQueriesServices.get(type);
-            tqs.validateExporterAndReaderConfig(settings);
-        }
+    public void validateExporterType(final String exporterType) {
+        queryInsightsExporterFactory.validateExporterType(exporterType);
     }
 
     @Override
@@ -518,10 +563,40 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     /**
      * Delete Top N local indices older than the configured data retention period
      */
-    private void deleteExpiredTopNIndices() {
-        for (MetricType metricType : MetricType.allMetricTypes()) {
-            topQueriesServices.get(metricType).deleteExpiredTopNIndices(clusterService.state().metadata().indices());
+    void deleteExpiredTopNIndices() {
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
+            final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
+            threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
+                final Map<String, IndexMetadata> indexMetadataMap = clusterService.state().metadata().indices();
+                long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                    ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
+                );
+                for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+                    String indexName = entry.getKey();
+                    if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                        // delete this index
+                        localIndexExporter.deleteSingleIndex(indexName, client);
+                    }
+                }
+            });
         }
+    }
+
+    /**
+     * Deletes all Top N local indices
+     *
+     * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
+     */
+    void deleteAllTopNIndices(
+        final Client client,
+        final Map<String, IndexMetadata> indexMetadataMap,
+        final LocalIndexExporter localIndexExporter
+    ) {
+        indexMetadataMap.entrySet()
+            .stream()
+            .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
+            .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
     }
 
     /**

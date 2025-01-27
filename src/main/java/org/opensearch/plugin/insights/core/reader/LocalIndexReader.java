@@ -8,7 +8,7 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import static org.opensearch.plugin.insights.core.exporter.LocalIndexExporter.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -39,6 +39,7 @@ import org.opensearch.search.builder.SearchSourceBuilder;
  * Local index reader for reading query insights data from local OpenSearch indices.
  */
 public final class LocalIndexReader implements QueryInsightsReader {
+    private final static int MAX_TOP_N_INDEX_READ_SIZE = 1000;
     /**
      * Logger of the local index reader
      */
@@ -46,6 +47,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
     private final Client client;
     private DateTimeFormatter indexPattern;
     private final NamedXContentRegistry namedXContentRegistry;
+    private final String id;
 
     /**
      * Constructor of LocalIndexReader
@@ -54,10 +56,21 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * @param indexPattern the pattern of index to read from
      * @param namedXContentRegistry for parsing purposes
      */
-    public LocalIndexReader(final Client client, final DateTimeFormatter indexPattern, final NamedXContentRegistry namedXContentRegistry) {
+    public LocalIndexReader(
+        final Client client,
+        final DateTimeFormatter indexPattern,
+        final NamedXContentRegistry namedXContentRegistry,
+        final String id
+    ) {
         this.indexPattern = indexPattern;
         this.client = client;
+        this.id = id;
         this.namedXContentRegistry = namedXContentRegistry;
+    }
+
+    @Override
+    public String getId() {
+        return id;
     }
 
     /**
@@ -104,7 +117,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String indexName = buildLocalIndexName(curr);
             SearchRequest searchRequest = new SearchRequest(indexName);
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
             MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
                 .from(start.toInstant().toEpochMilli())
@@ -142,6 +155,6 @@ public final class LocalIndexReader implements QueryInsightsReader {
     }
 
     private String buildLocalIndexName(ZonedDateTime current) {
-        return current.format(indexPattern) + "-" + generateLocalIndexDateHash();
+        return current.format(indexPattern) + "-" + generateLocalIndexDateHash(current.toLocalDate());
     }
 }
