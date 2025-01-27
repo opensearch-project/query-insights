@@ -48,7 +48,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
-        localIndexReader = new LocalIndexReader(client, format, namedXContentRegistry);
+        localIndexReader = new LocalIndexReader(client, format, namedXContentRegistry, "id");
     }
 
     @SuppressWarnings("unchecked")

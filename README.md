@@ -52,8 +52,7 @@ A local index exporter allows you to export the top N queries to local OpenSearc
 PUT _cluster/settings
 {
   "persistent" : {
-    "search.insights.top_queries.latency.exporter.type" : "local_index",
-    "search.insights.top_queries.latency.exporter.config.index" : "YYYY.MM.dd"
+    "search.insights.top_queries.exporter.type" : "local_index"
   }
 }
 ```
