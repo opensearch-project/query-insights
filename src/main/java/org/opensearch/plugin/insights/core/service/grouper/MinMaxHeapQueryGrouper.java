@@ -109,7 +109,11 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             throw new IllegalArgumentException("Do not use addQueryToGroup when GroupingType is None");
         }
         SearchQueryRecord aggregateSearchQueryRecord;
+
         String groupId = getGroupingId(searchQueryRecord);
+        if (groupId == null) {
+            return null;
+        }
 
         // 1) New group added to the grouping service
         // Add to min PQ and overflow records to max PQ (if the number of records in the min PQ exceeds the configured size N)
@@ -269,13 +273,18 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      * @return Grouping Id
      */
     private String getGroupingId(final SearchQueryRecord searchQueryRecord) {
-        switch (groupingType) {
-            case SIMILARITY:
-                return searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE).toString();
-            case NONE:
-                throw new IllegalArgumentException("Should not try to group queries if grouping type is NONE");
-            default:
-                throw new IllegalArgumentException("The following grouping type is not supported : " + groupingType);
+        try {
+            switch (groupingType) {
+                case SIMILARITY:
+                    return searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE).toString();
+                case NONE:
+                    throw new IllegalArgumentException("Should not try to group queries if grouping type is NONE");
+                default:
+                    throw new IllegalArgumentException("The following grouping type is not supported : " + groupingType);
+            }
+        } catch (Exception e) {
+            log.error("Error when setting group id", e);
+            return null;
         }
     }
 

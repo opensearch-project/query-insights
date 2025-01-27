@@ -25,4 +25,6 @@ public interface QueryInsightsReader extends Closeable {
      * @return List of SearchQueryRecord
      */
     List<SearchQueryRecord> read(final String from, final String to, final String id);
+
+    String getId();
 }

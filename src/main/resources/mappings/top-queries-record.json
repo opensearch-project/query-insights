@@ -1,0 +1,127 @@
+{
+  "dynamic": true,
+  "_meta": {
+    "schema_version": 1,
+    "query_insights_feature_space": "top_n_queries"
+  },
+  "properties": {
+    "id" : {
+      "type" : "text",
+      "fields" : {
+        "keyword" : {
+          "type" : "keyword",
+          "ignore_above" : 256
+        }
+      }
+    },
+    "node_id" : {
+      "type" : "text",
+      "fields" : {
+        "keyword" : {
+          "type" : "keyword",
+          "ignore_above" : 256
+        }
+      }
+    },
+    "timestamp" : {
+      "type" : "long"
+    },
+    "total_shards" : {
+      "type" : "long"
+    },
+    "group_by" : {
+      "type" : "text",
+      "fields" : {
+        "keyword" : {
+          "type" : "keyword",
+          "ignore_above" : 256
+        }
+      }
+    },
+    "phase_latency_map" : {
+      "properties" : {
+        "expand" : {
+          "type" : "long"
+        },
+        "fetch" : {
+          "type" : "long"
+        },
+        "query" : {
+          "type" : "long"
+        }
+      }
+    },
+    "search_type" : {
+      "type" : "text",
+      "fields" : {
+        "keyword" : {
+          "type" : "keyword",
+          "ignore_above" : 256
+        }
+      }
+    },
+    "task_resource_usages" : {
+      "properties" : {
+        "action" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "nodeId" : {
+          "type" : "text",
+          "fields" : {
+            "keyword" : {
+              "type" : "keyword",
+              "ignore_above" : 256
+            }
+          }
+        },
+        "parentTaskId" : {
+          "type" : "long"
+        },
+        "taskId" : {
+          "type" : "long"
+        },
+        "taskResourceUsage" : {
+          "properties" : {
+            "cpu_time_in_nanos" : {
+              "type" : "long"
+            },
+            "memory_in_bytes" : {
+              "type" : "long"
+            }
+          }
+        }
+      }
+    },
+    "measurements": {
+      "properties": {
+        "latency": {
+          "properties": {
+            "number": {
+              "type": "double"
+            }
+          }
+        },
+        "cpu": {
+          "properties": {
+            "number": {
+              "type": "double"
+            }
+          }
+        },
+        "memory": {
+          "properties": {
+            "number": {
+              "type": "double"
+            }
+          }
+        }
+      }
+    }
+  }
+}

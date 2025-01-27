@@ -45,7 +45,7 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     }
 
     public void testCreateAndCloseReader() {
-        QueryInsightsReader reader1 = queryInsightsReaderFactory.createReader(format, namedXContentRegistry);
+        QueryInsightsReader reader1 = queryInsightsReaderFactory.createReader("id", format, namedXContentRegistry);
         assertTrue(reader1 instanceof LocalIndexReader);
         try {
             queryInsightsReaderFactory.closeReader(reader1);
@@ -56,7 +56,12 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     }
 
     public void testUpdateReader() {
-        LocalIndexReader reader = new LocalIndexReader(client, DateTimeFormatter.ofPattern(format, Locale.ROOT), namedXContentRegistry);
+        LocalIndexReader reader = new LocalIndexReader(
+            client,
+            DateTimeFormatter.ofPattern(format, Locale.ROOT),
+            namedXContentRegistry,
+            "id"
+        );
         queryInsightsReaderFactory.updateReader(reader, "yyyy-MM-dd-HH");
         assertEquals(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT).toString(), reader.getIndexPattern().toString());
     }
