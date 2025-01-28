@@ -95,7 +95,7 @@ public class QueryInsightsSettings {
      */
     public static final Setting<Boolean> TOP_N_LATENCY_QUERIES_ENABLED = Setting.boolSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".enabled",
-        false,
+        true,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -159,7 +159,7 @@ public class QueryInsightsSettings {
      */
     public static final Setting<Boolean> TOP_N_CPU_QUERIES_ENABLED = Setting.boolSetting(
         TOP_N_CPU_QUERIES_PREFIX + ".enabled",
-        false,
+        true,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -189,7 +189,7 @@ public class QueryInsightsSettings {
      */
     public static final Setting<Boolean> TOP_N_MEMORY_QUERIES_ENABLED = Setting.boolSetting(
         TOP_N_MEMORY_QUERIES_PREFIX + ".enabled",
-        false,
+        true,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -229,7 +229,7 @@ public class QueryInsightsSettings {
     /**
      * Default exporter type of top queries
      */
-    public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.NONE.toString();
+    public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
     /**
      * Default Top N local indices retention period in days
      */
