@@ -24,13 +24,13 @@ For information about installing plugins, see [Installing plugins](https://opens
 
 ### Enabling top N query monitoring
 
-When you install the `query-insights` plugin, top N query monitoring is disabled by default. To enable top N query monitoring, update the dynamic settings for the desired monitoring types. These settings enable the corresponding collectors and aggregators in the running cluster. For example, to enable monitoring top N queries by latency, update the `search.insights.top_queries.latency.enabled` setting:
+When you install the `query-insights` plugin, top N query monitoring is enabled by default. To disable top N query monitoring, update the dynamic cluster settings for the desired metric types. For example, to disable monitoring top N queries by latency, update the `search.insights.top_queries.latency.enabled` setting:
 
 ```
 PUT _cluster/settings
 {
   "persistent" : {
-    "search.insights.top_queries.latency.enabled" : true
+    "search.insights.top_queries.latency.enabled" : false
   }
 }
 ```
