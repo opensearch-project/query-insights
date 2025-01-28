@@ -33,6 +33,6 @@ public enum OperationalMetric {
 
     @Override
     public String toString() {
-        return String.format(Locale.ROOT, "%s (%s)", name(), description);
+        return String.format(Locale.ROOT, "%s", name());
     }
 }
