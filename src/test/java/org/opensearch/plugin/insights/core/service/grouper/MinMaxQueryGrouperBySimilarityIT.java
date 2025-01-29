@@ -25,9 +25,9 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      */
     public void testGroupingBySimilarity() throws IOException, InterruptedException {
 
-        waitForEmptyTopQueriesResponse();
-
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+
+        waitForEmptyTopQueriesResponse();
 
         // Search
         doSearch("range", 2);
