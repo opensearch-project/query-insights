@@ -22,9 +22,9 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
      */
     public void testGroupingByNone() throws IOException, InterruptedException {
 
-        waitForEmptyTopQueriesResponse();
-
         updateClusterSettings(this::groupByNoneSettings);
+
+        waitForEmptyTopQueriesResponse();
 
         // Search
         doSearch("range", 2);
