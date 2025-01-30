@@ -64,12 +64,14 @@ jobs:
         with:
           name: logs-ubuntu
           path: build/testclusters/integTest-*/logs/*
+          overwrite: true
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
+          overwrite: true
 
   build-windows-macos:
     env:
@@ -122,6 +124,7 @@ jobs:
         with:
           name: logs-mac
           path: build/testclusters/integTest-*/logs/*
+          overwrite: true
 
       - name: Upload failed logs
         uses: actions/upload-artifact@v4
@@ -129,9 +132,11 @@ jobs:
         with:
           name: logs-windows
           path: build\testclusters\integTest-*\logs\*
+          overwrite: true
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
+          overwrite: true
