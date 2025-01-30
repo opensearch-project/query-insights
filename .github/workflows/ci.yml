@@ -70,6 +70,7 @@ jobs:
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
+          overwrite: true
 
   build-windows-macos:
     env:
@@ -135,3 +136,4 @@ jobs:
         with:
           name: query-insights-plugin-${{ matrix.os }}
           path: query-insights-artifacts
+          overwrite: true
