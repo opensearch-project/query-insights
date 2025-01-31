@@ -45,7 +45,7 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     }
 
     public void testCreateAndCloseReader() {
-        QueryInsightsReader reader1 = queryInsightsReaderFactory.createReader("id", format, namedXContentRegistry);
+        QueryInsightsReader reader1 = queryInsightsReaderFactory.createLocalIndexReader("id", format, namedXContentRegistry);
         assertTrue(reader1 instanceof LocalIndexReader);
         try {
             queryInsightsReaderFactory.closeReader(reader1);

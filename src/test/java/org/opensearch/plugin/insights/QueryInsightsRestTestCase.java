@@ -174,6 +174,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
             + "    }\n"
             + "}";
