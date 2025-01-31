@@ -88,6 +88,16 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         this.id = id;
     }
 
+    /**
+     * Retrieves the identifier for the local index exporter.
+     *
+     * Each service can either have its own dedicated local index exporter or share
+     * an existing one. This identifier is used by the QueryInsightsExporterFactory
+     * to locate and manage the appropriate exporter instance.
+     *
+     * @return The identifier of the local index exporter
+     * @see QueryInsightsExporterFactory
+     */
     @Override
     public String getId() {
         return id;

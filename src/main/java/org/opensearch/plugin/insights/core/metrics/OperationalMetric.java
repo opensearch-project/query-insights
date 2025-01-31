@@ -19,6 +19,7 @@ public enum OperationalMetric {
     DATA_INGEST_EXCEPTIONS("Number of exceptions during data ingest in Query Insights"),
     QUERY_CATEGORIZE_EXCEPTIONS("Number of exceptions when categorizing the queries"),
     EXPORTER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the exporter"),
+    READER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the reader"),
     TOP_N_QUERIES_USAGE_COUNT("Number of times the top n queries API is used");
 
     private final String description;
