@@ -40,13 +40,13 @@ public class QueryInsightsReaderFactory {
     }
 
     /**
-     * Create a Reader based on provided parameters
+     * Create a Local Index Reader based on provided parameters
      *
      * @param indexPattern the index pattern if creating an index Reader
      * @param namedXContentRegistry for parsing purposes
      * @return QueryInsightsReader the created Reader
      */
-    public QueryInsightsReader createReader(String id, String indexPattern, NamedXContentRegistry namedXContentRegistry) {
+    public QueryInsightsReader createLocalIndexReader(String id, String indexPattern, NamedXContentRegistry namedXContentRegistry) {
         QueryInsightsReader reader = new LocalIndexReader(
             client,
             DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
