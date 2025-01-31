@@ -21,7 +21,7 @@ public class DebugExporter implements QueryInsightsExporter {
      * Logger of the debug exporter
      */
     private final Logger logger = LogManager.getLogger();
-    private static final String EXPORTER_ID = "debug_exporter";
+    private static final String DEBUG_EXPORTER_ID = "debug_exporter";
 
     /**
      * Constructor of DebugExporter
@@ -30,9 +30,14 @@ public class DebugExporter implements QueryInsightsExporter {
 
     @Override
     public String getId() {
-        return EXPORTER_ID;
+        return DEBUG_EXPORTER_ID;
     }
 
+    /**
+     * Singleton holder class for the DebugExporter instance.
+     * A single DebugExporter instance is shared across all services, using the default
+     * debug exporter identifier EXPORTER_ID.
+     */
     private static class InstanceHolder {
         private static final DebugExporter INSTANCE = new DebugExporter();
     }

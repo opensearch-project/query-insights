@@ -15,7 +15,6 @@ import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DAT
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.validateExporterDeleteAfter;
 
 import java.time.Instant;
 import java.util.List;
@@ -205,19 +204,6 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertNotNull(healthStats.getQueryGrouperHealthStats());
         // Assuming no grouping by default, expect QueryGroupCount to be 0
         assertEquals(0, healthStats.getQueryGrouperHealthStats().getQueryGroupCount());
-    }
-
-    public void testValidateExporterDeleteAfter() {
-        validateExporterDeleteAfter(7);
-        validateExporterDeleteAfter(180);
-        validateExporterDeleteAfter(1);
-        assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(-1); });
-        assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(0); });
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> { validateExporterDeleteAfter(181); });
-        assertEquals(
-            "Invalid exporter delete_after_days setting [181], value should be an integer between 1 and 180.",
-            exception.getMessage()
-        );
     }
 
     private IndexMetadata createValidIndexMetadata(String indexName) {

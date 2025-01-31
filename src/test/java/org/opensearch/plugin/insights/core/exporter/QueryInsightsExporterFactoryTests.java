@@ -66,11 +66,11 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
     }
 
     public void testCreateAndCloseExporter() {
-        QueryInsightsExporter exporter1 = queryInsightsExporterFactory.createExporter("id", SinkType.LOCAL_INDEX, format, "");
+        QueryInsightsExporter exporter1 = queryInsightsExporterFactory.createLocalIndexExporter("id-index", format, "");
         assertTrue(exporter1 instanceof LocalIndexExporter);
-        QueryInsightsExporter exporter2 = queryInsightsExporterFactory.createExporter("id", SinkType.DEBUG, format, "");
+        QueryInsightsExporter exporter2 = queryInsightsExporterFactory.createDebugExporter("id-debug");
         assertTrue(exporter2 instanceof DebugExporter);
-        QueryInsightsExporter exporter3 = queryInsightsExporterFactory.createExporter("id", SinkType.DEBUG, format, "");
+        QueryInsightsExporter exporter3 = queryInsightsExporterFactory.createDebugExporter("id-debug2");
         assertTrue(exporter3 instanceof DebugExporter);
         try {
             queryInsightsExporterFactory.closeExporter(exporter1);

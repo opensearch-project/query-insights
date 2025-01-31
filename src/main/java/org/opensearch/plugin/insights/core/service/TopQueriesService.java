@@ -9,8 +9,6 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 
 import java.io.IOException;
@@ -63,8 +61,17 @@ import org.opensearch.threadpool.ThreadPool;
  * with high latency or resource usage
  */
 public class TopQueriesService {
-    public static final String TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID = "top_queries_local_index_exporter";
-    public static final String TOP_QUERIES_LOCAL_INDEX_READER_ID = "top_queries_local_index_reader";
+    /**
+     * Top queries services utilize a shared exporter and reader instance.
+     * These shared components are uniquely identified by TOP_QUERIES_EXPORTER_ID and TOP_QUERIES_READER_ID
+     */
+    public static final String TOP_QUERIES_EXPORTER_ID = "top_queries_exporter";
+    public static final String TOP_QUERIES_READER_ID = "top_queries_reader";
+    /**
+     * Tag value used to identify local index mappings that are specifically created
+     * by TopQueriesService. This tag serves as a unique identifier for tracking and
+     * managing indices associated with top queries operations.
+     */
     public static final String TOP_QUERIES_INDEX_TAG_VALUE = "top_n_queries";
     private static final String METRIC_TYPE_TAG = "metric_type";
     private static final String GROUPBY_TAG = "groupby";
@@ -354,7 +361,7 @@ public class TopQueriesService {
         }
 
         final List<SearchQueryRecord> queries = new ArrayList<>();
-        final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_LOCAL_INDEX_READER_ID);
+        final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader != null) {
             try {
                 final ZonedDateTime start = ZonedDateTime.parse(from);
@@ -444,7 +451,7 @@ public class TopQueriesService {
             topQueriesCurrentSnapshot.set(new ArrayList<>());
             windowStart = newWindowStart;
             // export to the configured sink
-            QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+            QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
             if (exporter != null) {
                 threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> exporter.export(history));
             }
@@ -496,26 +503,6 @@ public class TopQueriesService {
      */
     public TopQueriesHealthStats getHealthStats() {
         return new TopQueriesHealthStats(this.topQueriesStore.size(), this.queryGrouper.getHealthStats());
-    }
-
-    /**
-     * Validate the exporter delete after value
-     *
-     * @param deleteAfter exporter and reader settings
-     */
-    static void validateExporterDeleteAfter(final int deleteAfter) {
-        if (deleteAfter < MIN_DELETE_AFTER_VALUE || deleteAfter > MAX_DELETE_AFTER_VALUE) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
-            throw new IllegalArgumentException(
-                String.format(
-                    Locale.ROOT,
-                    "Invalid exporter delete_after_days setting [%d], value should be an integer between %d and %d.",
-                    deleteAfter,
-                    MIN_DELETE_AFTER_VALUE,
-                    MAX_DELETE_AFTER_VALUE
-                )
-            );
-        }
     }
 
     /**

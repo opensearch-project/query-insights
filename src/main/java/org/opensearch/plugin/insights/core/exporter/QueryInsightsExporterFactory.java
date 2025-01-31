@@ -30,6 +30,9 @@ public class QueryInsightsExporterFactory {
     private final Logger logger = LogManager.getLogger();
     final private Client client;
     final private ClusterService clusterService;
+    /**
+     * Maps exporter identifiers to their corresponding exporter sink instances.
+     */
     final private Map<String, QueryInsightsExporter> exporters;
 
     /**
@@ -66,27 +69,35 @@ public class QueryInsightsExporterFactory {
     }
 
     /**
-     * Create an exporter based on provided parameters
+     * Create a local index exporter based on provided parameters
      *
-     * @param id id of the exporter
-     * @param type The type of exporter to create
+     * @param id id of the exporter so that exporters can be retrieved and reused across services
      * @param indexPattern the index pattern if creating an index exporter
      * @param indexMapping index mapping file
-     * @return QueryInsightsExporter the created exporter sink
+     * @return LocalIndexExporter the created exporter sink
      */
-    public QueryInsightsExporter createExporter(String id, SinkType type, String indexPattern, String indexMapping) {
-        if (SinkType.LOCAL_INDEX.equals(type)) {
-            QueryInsightsExporter exporter = new LocalIndexExporter(
-                client,
-                clusterService,
-                DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
-                indexMapping,
-                id
-            );
-            this.exporters.put(id, exporter);
-            return exporter;
-        }
-        return DebugExporter.getInstance();
+    public LocalIndexExporter createLocalIndexExporter(String id, String indexPattern, String indexMapping) {
+        LocalIndexExporter exporter = new LocalIndexExporter(
+            client,
+            clusterService,
+            DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
+            indexMapping,
+            id
+        );
+        this.exporters.put(id, exporter);
+        return exporter;
+    }
+
+    /**
+     * Create a debug exporter based on provided parameters
+     *
+     * @param id id of the exporter so that exporters can be retrieved and reused across services
+     * @return DebugExporter the created exporter sink
+     */
+    public DebugExporter createDebugExporter(String id) {
+        DebugExporter debugExporter = DebugExporter.getInstance();
+        this.exporters.put(id, debugExporter);
+        return debugExporter;
     }
 
     /**
