@@ -28,8 +28,10 @@ import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
+import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -86,7 +88,9 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             threadPool,
             client,
             metricsRegistry,
-            xContentRegistry
+            xContentRegistry,
+            new QueryInsightsExporterFactory(client, clusterService),
+            new QueryInsightsReaderFactory(client)
         );
         return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, false));
     }
