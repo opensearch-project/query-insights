@@ -8,11 +8,13 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID;
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_LOCAL_INDEX_READER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_READER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
@@ -23,6 +25,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -121,6 +124,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private QueryShapeGenerator queryShapeGenerator;
 
     private final Client client;
+    SinkType sinkType;
 
     /**
      * Constructor of the QueryInsightsService
@@ -137,14 +141,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         final ThreadPool threadPool,
         final Client client,
         final MetricsRegistry metricsRegistry,
-        final NamedXContentRegistry namedXContentRegistry
+        final NamedXContentRegistry namedXContentRegistry,
+        final QueryInsightsExporterFactory queryInsightsExporterFactory,
+        final QueryInsightsReaderFactory queryInsightsReaderFactory
     ) {
         this.clusterService = clusterService;
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
-        this.queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService);
-        this.queryInsightsReaderFactory = new QueryInsightsReaderFactory(client);
+        this.queryInsightsExporterFactory = queryInsightsExporterFactory;
+        this.queryInsightsReaderFactory = queryInsightsReaderFactory;
         this.namedXContentRegistry = namedXContentRegistry;
         this.client = client;
         // initialize top n queries services and configurations consumers
@@ -153,21 +159,24 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             enableCollect.put(metricType, false);
             topQueriesServices.put(
                 metricType,
-                new TopQueriesService(client, metricType, threadPool, queryInsightsExporterFactory, queryInsightsReaderFactory)
+                new TopQueriesService(client, metricType, threadPool, this.queryInsightsExporterFactory, this.queryInsightsReaderFactory)
             );
         }
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
                 TOP_N_EXPORTER_TYPE,
-                (v -> setExporterAndReader(SinkType.parse(v), clusterService.state().metadata().indices())),
+                (v -> setExporterAndReaderType(SinkType.parse(v))),
                 (this::validateExporterType)
             );
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
                 TOP_N_EXPORTER_DELETE_AFTER,
                 (this::setExporterDeleteAfterAndDelete),
-                (TopQueriesService::validateExporterDeleteAfter)
+                (this::validateExporterDeleteAfter)
             );
+
+        this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
+        this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
@@ -414,57 +423,58 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Set the exporter and reader config for a metricType
+     * Set the exporter and reader type config for a metricType
      *
      * @param sinkType {@link SinkType}
-     * @param indexMetadataMap index metadata map in the current cluster
      */
-    private void setExporterAndReader(final SinkType sinkType, final Map<String, IndexMetadata> indexMetadataMap) {
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
-
-        // This method is invoked when sink type is changed
-        // Clear local indices if exporter is of type LocalIndexExporter
-        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            deleteAllTopNIndices(client, indexMetadataMap, (LocalIndexExporter) topQueriesExporter);
+    public void setExporterAndReaderType(final SinkType sinkType) {
+        // Configure the exporter for TopQueriesService in QueryInsightsService
+        final QueryInsightsExporter currentExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
+        final QueryInsightsReader currentReader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
+        // Handles the cleanup when sink type is changed from LocalIndexExporter.
+        // Clears all local indices from storage when the exporter configuration
+        // is switched away from LocalIndexExporter type.
+        if (this.sinkType == SinkType.LOCAL_INDEX && currentExporter != null) {
+            deleteAllTopNIndices(client, (LocalIndexExporter) currentExporter);
         }
 
-        if (sinkType != null) {
-            if (topQueriesExporter != null && sinkType == SinkType.getSinkTypeFromExporter(topQueriesExporter)) {
-                // this won't happen since we disallowed users to change index patterns.
-                // But leaving the hook here since we will add support for more sinks and configurations in the future.
-                queryInsightsExporterFactory.updateExporter(topQueriesExporter, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
-            } else {
-                try {
-                    queryInsightsExporterFactory.closeExporter(topQueriesExporter);
-                } catch (IOException e) {
-                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
-                    logger.error("Fail to close the current exporter when updating exporter, error: ", e);
-                }
-                // this is a new exporter, create it for all underlying services.
-                queryInsightsExporterFactory.createExporter(
-                    TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID,
-                    sinkType,
-                    DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
-                    "mappings/top-queries-record.json"
-                );
-            }
-        } else {
-            // Disable exporter if exporter type is set to null
+        // Close the current exporter and reader
+        if (currentExporter != null) {
             try {
-                queryInsightsExporterFactory.closeExporter(topQueriesExporter);
+                queryInsightsExporterFactory.closeExporter(currentExporter);
             } catch (IOException e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION);
-                logger.error("Fail to close the current exporter when disabling exporter, error: ", e);
+                logger.error("Fail to close the current exporter when updating exporter and reader, error: ", e);
             }
         }
+        if (currentReader != null) {
+            try {
+                queryInsightsReaderFactory.closeReader(currentReader);
+            } catch (IOException e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.READER_FAIL_TO_CLOSE_EXCEPTION);
+                logger.error("Fail to close the current reader when updating exporter and reader, error: ", e);
+            }
+        }
+        // Set sink type to local index for TopQueriesServices
+        if (sinkType == SinkType.LOCAL_INDEX) {
+            queryInsightsExporterFactory.createLocalIndexExporter(
+                TOP_QUERIES_EXPORTER_ID,
+                DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                "mappings/top-queries-record.json"
+            );
+            // Set up reader for TopQueriesService
+            queryInsightsReaderFactory.createLocalIndexReader(
+                TOP_QUERIES_READER_ID,
+                DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                namedXContentRegistry
+            );
+        }
+        // Set sink type to debug exporter
+        else if (sinkType == SinkType.DEBUG) {
+            queryInsightsExporterFactory.createDebugExporter(TOP_QUERIES_EXPORTER_ID);
+        }
 
-        // set up reader for top n queries service
-        final QueryInsightsReader reader = queryInsightsReaderFactory.createReader(
-            TOP_QUERIES_LOCAL_INDEX_READER_ID,
-            DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
-            namedXContentRegistry
-        );
-        queryInsightsReaderFactory.updateReader(reader, DEFAULT_TOP_N_QUERIES_INDEX_PATTERN);
+        this.sinkType = sinkType;
     }
 
     /**
@@ -472,12 +482,32 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      *
      * @param deleteAfter the number of days after which Top N local indices should be deleted
      */
-    private void setExporterDeleteAfterAndDelete(final int deleteAfter) {
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+    public void setExporterDeleteAfterAndDelete(final int deleteAfter) {
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
             ((LocalIndexExporter) topQueriesExporter).setDeleteAfter(deleteAfter);
+            deleteExpiredTopNIndices();
         }
-        deleteExpiredTopNIndices();
+    }
+
+    /**
+     * Validate the exporter delete after value
+     *
+     * @param deleteAfter exporter and reader settings
+     */
+    void validateExporterDeleteAfter(final int deleteAfter) {
+        if (deleteAfter < MIN_DELETE_AFTER_VALUE || deleteAfter > MAX_DELETE_AFTER_VALUE) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "Invalid exporter delete_after_days setting [%d], value should be an integer between %d and %d.",
+                    deleteAfter,
+                    MIN_DELETE_AFTER_VALUE,
+                    MAX_DELETE_AFTER_VALUE
+                )
+            );
+        }
     }
 
     /**
@@ -564,7 +594,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * Delete Top N local indices older than the configured data retention period
      */
     void deleteExpiredTopNIndices() {
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_LOCAL_INDEX_EXPORTER_ID);
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
             final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
             threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
@@ -586,14 +616,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     /**
      * Deletes all Top N local indices
      *
-     * @param indexMetadataMap Map of index name {@link String} to {@link IndexMetadata}
+     * @param client OpenSearch Client
+     * @param localIndexExporter the exporter to handle the local index operations
      */
-    void deleteAllTopNIndices(
-        final Client client,
-        final Map<String, IndexMetadata> indexMetadataMap,
-        final LocalIndexExporter localIndexExporter
-    ) {
-        indexMetadataMap.entrySet()
+    void deleteAllTopNIndices(final Client client, final LocalIndexExporter localIndexExporter) {
+        clusterService.state()
+            .metadata()
+            .indices()
+            .entrySet()
             .stream()
             .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
             .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
