@@ -13,7 +13,6 @@ import static org.opensearch.rest.RestRequest.Method.GET;
 
 import java.util.List;
 import java.util.Set;
-import org.opensearch.client.node.NodeClient;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.rest.RestStatus;
@@ -27,6 +26,7 @@ import org.opensearch.rest.RestChannel;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestResponseListener;
+import org.opensearch.transport.client.node.NodeClient;
 
 /**
  * Rest action to get operational health stats of the query insights plugin

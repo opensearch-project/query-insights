@@ -15,8 +15,8 @@ import java.util.Locale;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.client.Client;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.transport.client.Client;
 
 /**
  * Factory class for validating and creating Readers based on provided settings

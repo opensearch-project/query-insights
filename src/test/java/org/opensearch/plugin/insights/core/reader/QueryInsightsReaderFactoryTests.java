@@ -16,12 +16,12 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFA
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import org.junit.Before;
-import org.opensearch.client.Client;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.transport.client.Client;
 
 /**
  * Granular tests for the {@link QueryInsightsReaderFactoryTests} class.

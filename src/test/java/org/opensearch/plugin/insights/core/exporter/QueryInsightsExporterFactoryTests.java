@@ -15,7 +15,6 @@ import static org.mockito.Mockito.when;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import org.junit.Before;
-import org.opensearch.client.Client;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
@@ -25,6 +24,7 @@ import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.Client;
 
 /**
  * Granular tests for the {@link QueryInsightsExporterFactoryTests} class.

@@ -35,7 +35,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
@@ -55,6 +54,7 @@ import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthSt
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.Client;
 
 /**
  * Service responsible for gathering and storing top N queries

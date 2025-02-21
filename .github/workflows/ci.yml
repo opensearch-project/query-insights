@@ -16,8 +16,12 @@ jobs:
     needs: Get-CI-Image-Tag
     strategy:
       matrix:
-        java: [21]
-        os: [ ubuntu-latest ]
+        java:
+          - 21
+          - 23
+        os:
+          - ubuntu-24.04-arm  # arm64-preview
+          - ubuntu-24.04  # x64
     name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     container:
@@ -35,9 +39,10 @@ jobs:
 
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Setup Java ${{ matrix.java }}
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ matrix.java }}
+          distribution: 'temurin'
 
       - name: Build and Test
         run: |
@@ -92,7 +97,7 @@ jobs:
 
     steps:
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       # This is a hack, but this step creates a link to the X: mounted drive, which makes the path
       # short enough to work on Windows
@@ -101,9 +106,10 @@ jobs:
         run: subst 'X:' .
 
       - name: Setup Java ${{ matrix.java }}
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ matrix.java }}
+          distribution: 'temurin'
 
       - name: Build and Test
         working-directory: ${{ env.WORKING_DIR }}

@@ -23,9 +23,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
 import org.opensearch.Version;
-import org.opensearch.client.AdminClient;
-import org.opensearch.client.Client;
-import org.opensearch.client.IndicesAdminClient;
 import org.opensearch.cluster.coordination.DeterministicTaskQueue;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MappingMetadata;
@@ -44,6 +41,9 @@ import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.AdminClient;
+import org.opensearch.transport.client.Client;
+import org.opensearch.transport.client.IndicesAdminClient;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.

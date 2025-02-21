@@ -33,7 +33,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
@@ -59,6 +58,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.Client;
 
 /**
  * Service responsible for gathering, analyzing, storing and exporting
