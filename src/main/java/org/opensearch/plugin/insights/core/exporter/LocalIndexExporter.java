@@ -28,7 +28,6 @@ import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
-import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
@@ -40,6 +39,7 @@ import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.transport.client.Client;
 
 /**
  * Local index exporter for exporting query insights data to local OpenSearch indices.
@@ -249,8 +249,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         Logger logger = LogManager.getLogger();
         client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
             @Override
-            // CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
-            public void onResponse(org.opensearch.action.support.master.AcknowledgedResponse acknowledgedResponse) {}
+            public void onResponse(org.opensearch.action.support.clustermanager.AcknowledgedResponse acknowledgedResponse) {}
 
             @Override
             public void onFailure(Exception e) {

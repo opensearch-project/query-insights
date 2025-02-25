@@ -25,7 +25,6 @@ import org.apache.lucene.search.TotalHits;
 import org.junit.Before;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
-import org.opensearch.client.Client;
 import org.opensearch.common.action.ActionFuture;
 import org.opensearch.common.document.DocumentField;
 import org.opensearch.common.xcontent.XContentFactory;
@@ -36,6 +35,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.SearchHits;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.transport.client.Client;
 
 /**
  * Granular tests for the {@link LocalIndexReaderTests} class.
