@@ -55,7 +55,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     private DateTimeFormatter indexPattern;
     private int deleteAfter;
     private final String id;
-    private static final int DEFAULT_NUMBER_OF_REPLICA = 1;
+    private static final int DEFAULT_NUMBER_OF_REPLICA = 0;
     private static final int DEFAULT_NUMBER_OF_SHARDS = 1;
     private static final List<String> DEFAULT_SORTED_FIELDS = List.of(
         "measurements.latency.number",
