@@ -231,6 +231,10 @@ public class QueryInsightsSettings {
      */
     public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
     /**
+     * Default template priority for top queries indices
+     */
+    public static final long DEFAULT_TEMPLATE_PRIORITY = 1847L;
+    /**
      * Default Top N local indices retention period in days
      */
     public static final int DEFAULT_DELETE_AFTER_VALUE = 7;
@@ -264,6 +268,22 @@ public class QueryInsightsSettings {
         DEFAULT_TOP_QUERIES_EXPORTER_TYPE,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
+    );
+
+    /**
+     * Index pattern glob for matching top query indices
+     */
+    public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = "top_queries-*";
+
+    /**
+     * Setting for Top N local indices template priority
+     */
+    public static final Setting<Long> TOP_N_EXPORTER_TEMPLATE_PRIORITY = Setting.longSetting(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".template_priority",
+        DEFAULT_TEMPLATE_PRIORITY,
+        0L, // min value is 0
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
     );
 
     /**
