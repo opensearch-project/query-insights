@@ -19,6 +19,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
@@ -89,8 +90,36 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
             "",
             "id"
         );
-        queryInsightsExporterFactory.updateExporter(exporter, "yyyy-MM-dd-HH");
+        queryInsightsExporterFactory.updateExporter(exporter, "yyyy-MM-dd-HH", 0L);
         assertEquals(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT).toString(), exporter.getIndexPattern().toString());
+    }
+
+    public void testCreateLocalIndexExporterWithPriority() {
+        QueryInsightsExporterFactory factory = new QueryInsightsExporterFactory(client, clusterService);
+        LocalIndexExporter exporter = factory.createLocalIndexExporter("test-id", "YYYY.MM.dd", "mapping.json", 3000L);
+
+        assertEquals(3000L, exporter.getTemplatePriority());
+        assertEquals("test-id", exporter.getId());
+        assertNotNull(exporter.getIndexPattern());
+    }
+
+    public void testUpdateExporterWithPriority() {
+        // Create a new factory
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        QueryInsightsExporterFactory factory = new QueryInsightsExporterFactory(mockClient, mockClusterService);
+
+        // Create a new exporter with default priority
+        LocalIndexExporter exporter = factory.createLocalIndexExporter("test-id", "YYYY.MM.dd", "mapping.json");
+
+        // Verify default priority
+        assertEquals(QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY, exporter.getTemplatePriority());
+
+        // Update with new priority
+        factory.updateExporter(exporter, "YYYY.MM.dd", 5000L);
+
+        // Verify updated priority
+        assertEquals(5000L, exporter.getTemplatePriority());
     }
 
 }
