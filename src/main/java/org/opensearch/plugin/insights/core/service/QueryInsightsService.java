@@ -17,6 +17,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
@@ -178,9 +179,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (this::setExporterDeleteAfterAndDelete),
                 (this::validateExporterDeleteAfter)
             );
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_TEMPLATE_PRIORITY, this::setTemplatePriority, this::validateTemplatePriority);
 
         this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
+        this.setTemplatePriority(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TEMPLATE_PRIORITY));
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
@@ -529,6 +533,38 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void validateExporterType(final String exporterType) {
         queryInsightsExporterFactory.validateExporterType(exporterType);
+    }
+
+    /**
+     * Set the template priority for all top queries exporters
+     *
+     * @param templatePriority the priority value to use for templates
+     */
+    public void setTemplatePriority(final long templatePriority) {
+        logger.info("Setting query insights index template priority to [{}]", templatePriority);
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
+        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
+            logger.debug("Updating query insights index template priority for top queries exporter to [{}]", templatePriority);
+            queryInsightsExporterFactory.updateExporter(
+                topQueriesExporter,
+                QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                templatePriority
+            );
+        }
+    }
+
+    /**
+     * Validate the template priority
+     *
+     * @param templatePriority the priority value to validate
+     */
+    public void validateTemplatePriority(final long templatePriority) {
+        if (templatePriority < 0) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "Invalid template priority setting [%d], value should be a non-negative long.", templatePriority)
+            );
+        }
     }
 
     @Override
