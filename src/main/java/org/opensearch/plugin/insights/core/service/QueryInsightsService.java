@@ -18,6 +18,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -33,11 +34,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
+import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
@@ -598,17 +602,25 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
             final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
             threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
-                final Map<String, IndexMetadata> indexMetadataMap = clusterService.state().metadata().indices();
-                long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
-                    ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
-                );
-                for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
-                    String indexName = entry.getKey();
-                    if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
-                        // delete this index
-                        localIndexExporter.deleteSingleIndex(indexName, client);
+                final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
+                    .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
+                    .metadata(true)
+                    .local(true)
+                    .indicesOptions(IndicesOptions.strictExpand());
+
+                client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
+                    final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
+                    final long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                        ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
+                    );
+                    for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+                        String indexName = entry.getKey();
+                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                            // delete this index
+                            localIndexExporter.deleteSingleIndex(indexName, client);
+                        }
                     }
-                }
+                }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
             });
         }
     }
