@@ -34,8 +34,6 @@ import org.opensearch.action.admin.indices.template.put.PutComposableIndexTempla
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
-// CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
-import org.opensearch.action.support.master.AcknowledgedResponse;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.ComposableIndexTemplate;
@@ -65,8 +63,8 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     private DateTimeFormatter indexPattern;
     private int deleteAfter;
     private final String id;
-    private static final int DEFAULT_NUMBER_OF_REPLICA = 0;
     private static final int DEFAULT_NUMBER_OF_SHARDS = 1;
+    private static final String DEFAULT_AUTO_EXPAND_REPLICAS = "0-2";
     private static final String TEMPLATE_NAME = "query_insights_top_queries_template";
     private long templatePriority;
 
@@ -180,7 +178,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         createIndexRequest.settings(
             Settings.builder()
                 .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
-                .put("index.number_of_replicas", DEFAULT_NUMBER_OF_REPLICA)
+                .put("index.auto_expand_replicas", DEFAULT_AUTO_EXPAND_REPLICAS)
         );
         createIndexRequest.mapping(readIndexMappings());
 
@@ -380,7 +378,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
             org.opensearch.cluster.metadata.Template template = new org.opensearch.cluster.metadata.Template(
                 Settings.builder()
                     .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
-                    .put("index.number_of_replicas", DEFAULT_NUMBER_OF_REPLICA)
+                    .put("index.auto_expand_replicas", DEFAULT_AUTO_EXPAND_REPLICAS)
                     .build(),
                 compressedMapping,
                 null
@@ -403,7 +401,8 @@ public class LocalIndexExporter implements QueryInsightsExporter {
 
             client.execute(PutComposableIndexTemplateAction.INSTANCE, request, new ActionListener<>() {
                 @Override
-                public void onResponse(AcknowledgedResponse response) {
+                // CS-SUPPRESS-SINGLE: RegexpSingleline It is not possible to use phrase "cluster manager" instead of master here
+                public void onResponse(org.opensearch.action.support.master.AcknowledgedResponse response) {
                     if (response.isAcknowledged()) {
                         logger.info("Successfully created or updated template [{}] with priority {}", TEMPLATE_NAME, templatePriority);
                         future.complete(true);
