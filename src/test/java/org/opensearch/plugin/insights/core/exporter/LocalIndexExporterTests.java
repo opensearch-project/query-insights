@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -28,6 +29,7 @@ import java.io.IOException;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,6 +37,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
+import org.mockito.ArgumentCaptor;
+import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.opensearch.action.admin.indices.template.get.GetComposableIndexTemplateAction;
 import org.opensearch.action.admin.indices.template.put.PutComposableIndexTemplateAction;
@@ -373,5 +377,35 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
     public void testReadIndexMappingsWithEmptyMapping() throws IOException {
         LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "", "id");
         assertEquals("{}", exporter.readIndexMappings());
+    }
+
+    /**
+     * Test that createIndex correctly sets auto_expand_replicas
+     */
+    public void testCreateIndexWithAutoExpandReplicas() throws IOException {
+        LocalIndexExporter exporterSpy = spy(new LocalIndexExporter(client, clusterService, format, "{}", "id"));
+
+        ArgumentCaptor<CreateIndexRequest> requestCaptor = ArgumentCaptor.forClass(CreateIndexRequest.class);
+
+        // Mock the client.admin().indices().create() call
+        AdminClient adminClient = mock(AdminClient.class);
+        IndicesAdminClient indicesClient = mock(IndicesAdminClient.class);
+        when(client.admin()).thenReturn(adminClient);
+        when(adminClient.indices()).thenReturn(indicesClient);
+
+        doNothing().when(indicesClient).create(requestCaptor.capture(), any(ActionListener.class));
+        exporterSpy.createIndexAndBulk("test-index", Collections.emptyList());
+
+        // Verify the captured request
+        CreateIndexRequest capturedRequest = requestCaptor.getValue();
+        Settings settings = capturedRequest.settings();
+
+        // Verify the settings use auto_expand_replicas
+        assertEquals("test-index", capturedRequest.index());
+        assertEquals("0-2", settings.get("index.auto_expand_replicas"));
+        assertEquals("1", settings.get("index.number_of_shards"));
+
+        // Verify there is no number_of_replicas setting.
+        assertNull(settings.get("index.number_of_replicas"));
     }
 }
