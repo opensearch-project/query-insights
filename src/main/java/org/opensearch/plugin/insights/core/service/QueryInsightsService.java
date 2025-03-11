@@ -632,13 +632,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param localIndexExporter the exporter to handle the local index operations
      */
     void deleteAllTopNIndices(final Client client, final LocalIndexExporter localIndexExporter) {
-        clusterService.state()
-            .metadata()
-            .indices()
-            .entrySet()
-            .stream()
-            .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
-            .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
+        final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
+            .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
+            .metadata(true)
+            .local(true)
+            .indicesOptions(IndicesOptions.strictExpand());
+
+        client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
+            clusterStateResponse.getState()
+                .metadata()
+                .indices()
+                .entrySet()
+                .stream()
+                .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
+                .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
+        }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
     }
 
     /**

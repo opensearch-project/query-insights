@@ -33,8 +33,8 @@ import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.gene
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -358,10 +358,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Create 9 top_queries-* indices with creation dates older than the retention period
         Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
         for (int i = 1; i < 10; i++) {
-            String indexName = "top_queries-2023.01.0"
-                + i
-                + "-"
-                + generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
+            LocalDate date = LocalDate.of(2023, 1, i);
+            String indexName = "top_queries-" + date.format(format) + "-" + generateLocalIndexDateHash(date);
             long creationTime = Instant.now().minus(i + 100, ChronoUnit.DAYS).toEpochMilli(); // Ensure indices are expired
             IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
                 .settings(
