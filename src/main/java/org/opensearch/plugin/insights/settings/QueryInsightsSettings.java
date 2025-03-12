@@ -267,6 +267,11 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Index pattern glob for matching top query indices
+     */
+    public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = "top_queries-*";
+
+    /**
      * Get the enabled setting based on type
      * @param type MetricType
      * @return enabled setting
