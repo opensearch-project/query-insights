@@ -94,7 +94,7 @@ import org.opensearch.threadpool.ThreadPool;
  * Unit Tests for {@link QueryInsightsService}.
  */
 public class QueryInsightsServiceTests extends OpenSearchTestCase {
-    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("YYYY.MM.dd", Locale.ROOT);
+    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
     private ThreadPool threadPool;
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);

@@ -46,6 +46,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
+import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -545,14 +546,16 @@ public class TopQueriesService {
 
             // Validate the second part is a valid date in "YYYY.MM.dd" format
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+            LocalDate date;
             try {
-                LocalDate.parse(parts[1], formatter);
+                date = LocalDate.parse(parts[1], formatter);
             } catch (DateTimeParseException e) {
                 return false;
             }
 
-            // Validate the third part is exactly 5 digits
-            return parts[2].matches("\\d{5}");
+            // Generate the expected hash for the date and compare with the third part
+            String expectedHash = ExporterReaderUtils.generateLocalIndexDateHash(date);
+            return parts[2].equals(expectedHash);
         } catch (Exception e) {
             return false;
         }
