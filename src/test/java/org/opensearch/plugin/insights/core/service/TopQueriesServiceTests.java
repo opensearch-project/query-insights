@@ -17,7 +17,10 @@ import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
+import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -222,18 +226,33 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testIsTopQueriesIndexWithValidMetaData() {
-        assertTrue(isTopQueriesIndex("top_queries-2024.01.01-01234", createValidIndexMetadata("top_queries-2024.01.01-01234")));
-        assertTrue(isTopQueriesIndex("top_queries-2025.12.12-99999", createValidIndexMetadata("top_queries-2025.12.12-99999")));
+        // Generate correct hash values for test dates
+        LocalDate date1 = LocalDate.parse("2024.01.01", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        LocalDate date2 = LocalDate.parse("2025.12.12", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        String hash1 = ExporterReaderUtils.generateLocalIndexDateHash(date1);
+        String hash2 = ExporterReaderUtils.generateLocalIndexDateHash(date2);
+
+        // Test with valid index names and correct hash values
+        assertTrue(isTopQueriesIndex("top_queries-2024.01.01-" + hash1, createValidIndexMetadata("top_queries-2024.01.01-" + hash1)));
+        assertTrue(isTopQueriesIndex("top_queries-2025.12.12-" + hash2, createValidIndexMetadata("top_queries-2025.12.12-" + hash2)));
+
+        // Test with invalid index names (wrong hash, format issues, etc.)
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", createValidIndexMetadata("top_queries-2024.01.01-012345")));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createValidIndexMetadata("top_queries-2024.01.01-0123w")));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createValidIndexMetadata("top_queries-2024.01.01")));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createValidIndexMetadata("top_queries-2024.01.32-01234")));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-" + hash1, createValidIndexMetadata("top_queries-2024.01.32-" + hash1)));
         assertFalse(isTopQueriesIndex("top_queries-01234", createValidIndexMetadata("top_queries-01234")));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createValidIndexMetadata("top_querie-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234", createValidIndexMetadata("2024.01.01-01234")));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-" + hash1, createValidIndexMetadata("top_querie-2024.01.01-" + hash1)));
+        assertFalse(isTopQueriesIndex("2024.01.01-" + hash1, createValidIndexMetadata("2024.01.01-" + hash1)));
         assertFalse(isTopQueriesIndex("any_index", createValidIndexMetadata("any_index")));
         assertFalse(isTopQueriesIndex("", createValidIndexMetadata("")));
         assertFalse(isTopQueriesIndex("_customer_index", createValidIndexMetadata("_customer_index")));
+
+        // Test with a valid date but incorrect hash
+        String wrongHash = hash1.equals("00000") ? "11111" : "00000";
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-" + wrongHash, createValidIndexMetadata("top_queries-2024.01.01-" + wrongHash))
+        );
     }
 
     private IndexMetadata createIndexMetadataWithEmptyMapping(String indexName) {
@@ -250,17 +269,31 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testIsTopQueriesIndexWithEmptyMetaData() {
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithEmptyMapping("top_queries-2025.12.12-99999")));
+        // Generate correct hash values for test dates
+        LocalDate date1 = LocalDate.parse("2024.01.01", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        LocalDate date2 = LocalDate.parse("2025.12.12", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        String hash1 = ExporterReaderUtils.generateLocalIndexDateHash(date1);
+        String hash2 = ExporterReaderUtils.generateLocalIndexDateHash(date2);
+
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-" + hash1, createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-" + hash1))
+        );
+        assertFalse(
+            isTopQueriesIndex("top_queries-2025.12.12-" + hash2, createIndexMetadataWithEmptyMapping("top_queries-2025.12.12-" + hash2))
+        );
         assertFalse(
             isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-012345"))
         );
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01-0123w")));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithEmptyMapping("top_queries-2024.01.01")));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithEmptyMapping("top_queries-2024.01.32-01234")));
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.32-" + hash1, createIndexMetadataWithEmptyMapping("top_queries-2024.01.32-" + hash1))
+        );
         assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithEmptyMapping("top_queries-01234")));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithEmptyMapping("top_querie-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithEmptyMapping("2024.01.01-01234")));
+        assertFalse(
+            isTopQueriesIndex("top_querie-2024.01.01-" + hash1, createIndexMetadataWithEmptyMapping("top_querie-2024.01.01-" + hash1))
+        );
+        assertFalse(isTopQueriesIndex("2024.01.01-" + hash1, createIndexMetadataWithEmptyMapping("2024.01.01-" + hash1)));
         assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithEmptyMapping("any_index")));
         assertFalse(isTopQueriesIndex("", createIndexMetadataWithEmptyMapping("")));
         assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithEmptyMapping("_customer_index")));
@@ -281,11 +314,17 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testIsTopQueriesIndexWithDifferentMetaData() {
+        // Generate correct hash values for test dates
+        LocalDate date1 = LocalDate.parse("2024.01.01", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        LocalDate date2 = LocalDate.parse("2025.12.12", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        String hash1 = ExporterReaderUtils.generateLocalIndexDateHash(date1);
+        String hash2 = ExporterReaderUtils.generateLocalIndexDateHash(date2);
+
         assertFalse(
-            isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithDifferentValue("top_queries-2024.01.01-01234"))
+            isTopQueriesIndex("top_queries-2024.01.01-" + hash1, createIndexMetadataWithDifferentValue("top_queries-2024.01.01-" + hash1))
         );
         assertFalse(
-            isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithDifferentValue("top_queries-2025.12.12-99999"))
+            isTopQueriesIndex("top_queries-2025.12.12-" + hash2, createIndexMetadataWithDifferentValue("top_queries-2025.12.12-" + hash2))
         );
         assertFalse(
             isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithDifferentValue("top_queries-2024.01.01-012345"))
@@ -295,11 +334,13 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         );
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithDifferentValue("top_queries-2024.01.01")));
         assertFalse(
-            isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithDifferentValue("top_queries-2024.01.32-01234"))
+            isTopQueriesIndex("top_queries-2024.01.32-" + hash1, createIndexMetadataWithDifferentValue("top_queries-2024.01.32-" + hash1))
         );
         assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithDifferentValue("top_queries-01234")));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithDifferentValue("top_querie-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithDifferentValue("2024.01.01-01234")));
+        assertFalse(
+            isTopQueriesIndex("top_querie-2024.01.01-" + hash1, createIndexMetadataWithDifferentValue("top_querie-2024.01.01-" + hash1))
+        );
+        assertFalse(isTopQueriesIndex("2024.01.01-" + hash1, createIndexMetadataWithDifferentValue("2024.01.01-" + hash1)));
         assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithDifferentValue("any_index")));
         assertFalse(isTopQueriesIndex("", createIndexMetadataWithDifferentValue("")));
         assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithDifferentValue("_customer_index")));
@@ -320,30 +361,50 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testIsTopQueriesIndexWithExtraMetaData() {
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", createIndexMetadataWithExtraValue("top_queries-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", createIndexMetadataWithExtraValue("top_queries-2025.12.12-99999")));
+        // Generate correct hash values for test dates
+        LocalDate date1 = LocalDate.parse("2024.01.01", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        LocalDate date2 = LocalDate.parse("2025.12.12", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        String hash1 = ExporterReaderUtils.generateLocalIndexDateHash(date1);
+        String hash2 = ExporterReaderUtils.generateLocalIndexDateHash(date2);
+
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.01-" + hash1, createIndexMetadataWithExtraValue("top_queries-2024.01.01-" + hash1))
+        );
+        assertFalse(
+            isTopQueriesIndex("top_queries-2025.12.12-" + hash2, createIndexMetadataWithExtraValue("top_queries-2025.12.12-" + hash2))
+        );
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", createIndexMetadataWithExtraValue("top_queries-2024.01.01-012345")));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", createIndexMetadataWithExtraValue("top_queries-2024.01.01-0123w")));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01", createIndexMetadataWithExtraValue("top_queries-2024.01.01")));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", createIndexMetadataWithExtraValue("top_queries-2024.01.32-01234")));
+        assertFalse(
+            isTopQueriesIndex("top_queries-2024.01.32-" + hash1, createIndexMetadataWithExtraValue("top_queries-2024.01.32-" + hash1))
+        );
         assertFalse(isTopQueriesIndex("top_queries-01234", createIndexMetadataWithExtraValue("top_queries-01234")));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", createIndexMetadataWithExtraValue("top_querie-2024.01.01-01234")));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234", createIndexMetadataWithExtraValue("2024.01.01-01234")));
+        assertFalse(
+            isTopQueriesIndex("top_querie-2024.01.01-" + hash1, createIndexMetadataWithExtraValue("top_querie-2024.01.01-" + hash1))
+        );
+        assertFalse(isTopQueriesIndex("2024.01.01-" + hash1, createIndexMetadataWithExtraValue("2024.01.01-" + hash1)));
         assertFalse(isTopQueriesIndex("any_index", createIndexMetadataWithExtraValue("any_index")));
         assertFalse(isTopQueriesIndex("", createIndexMetadataWithExtraValue("")));
         assertFalse(isTopQueriesIndex("_customer_index", createIndexMetadataWithExtraValue("_customer_index")));
     }
 
     public void testIsTopQueriesIndexWithNullMetaData() {
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-01234", null));
-        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-99999", null));
+        // Generate correct hash values for test dates
+        LocalDate date1 = LocalDate.parse("2024.01.01", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        LocalDate date2 = LocalDate.parse("2025.12.12", DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT));
+        String hash1 = ExporterReaderUtils.generateLocalIndexDateHash(date1);
+        String hash2 = ExporterReaderUtils.generateLocalIndexDateHash(date2);
+
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.01-" + hash1, null));
+        assertFalse(isTopQueriesIndex("top_queries-2025.12.12-" + hash2, null));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-012345", null));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01-0123w", null));
         assertFalse(isTopQueriesIndex("top_queries-2024.01.01", null));
-        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-01234", null));
+        assertFalse(isTopQueriesIndex("top_queries-2024.01.32-" + hash1, null));
         assertFalse(isTopQueriesIndex("top_queries-01234", null));
-        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-01234", null));
-        assertFalse(isTopQueriesIndex("2024.01.01-01234", null));
+        assertFalse(isTopQueriesIndex("top_querie-2024.01.01-" + hash1, null));
+        assertFalse(isTopQueriesIndex("2024.01.01-" + hash1, null));
         assertFalse(isTopQueriesIndex("any_index", null));
         assertFalse(isTopQueriesIndex("", null));
         assertFalse(isTopQueriesIndex("_customer_index", null));
