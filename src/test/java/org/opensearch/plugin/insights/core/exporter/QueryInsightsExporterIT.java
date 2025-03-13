@@ -14,6 +14,8 @@ import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /** Rest Action tests for query */
 public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
@@ -26,6 +28,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
      */
     public void testQueryInsightsExporterSettings() throws IOException, InterruptedException {
         createDocument();
+
         for (String setting : invalidExporterSettings()) {
             Request request = new Request("PUT", "/_cluster/settings");
             request.setJsonEntity(setting);
@@ -36,22 +39,20 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
                 assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
             }
         }
+
         Request request = new Request("PUT", "/_cluster/settings");
         request.setJsonEntity(defaultExporterSettings());
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         setLatencyWindowSize("1m");
-        waitForWindowToPass(60);
-        checkLocalIndices("After enabling exporter");
-        disableLocalIndexExporter();
-        checkLocalIndices("After disabling exporter");
-        reEnableLocalIndexExporter();
-        checkLocalIndices("After re-enabling exporter");
         performSearch();
+        waitForWindowToPass(70);
         checkLocalIndices("After search and waiting for data export");
+        disableLocalIndexExporter();
+        reEnableLocalIndexExporter();
         setLocalIndexToDebug();
-        checkLocalIndices("After setting local index to debug");
     }
+
 
     private void createDocument() throws IOException {
         String documentJson = "{\n"
@@ -82,8 +83,16 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     private void checkLocalIndices(String context) throws IOException {
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
-        System.out.println(context + ": " + response.getEntity().getContent());
+        assertEquals(200, response.getStatusLine().getStatusCode());
+        InputStream responseStream = response.getEntity().getContent();
+        String responseContent = new String(responseStream.readAllBytes(), StandardCharsets.UTF_8);
+        System.out.println("Response content for " + context + ": " + responseContent);
+        assertTrue("Expected top_queries-* index to be present in the response",
+            responseContent.contains("top_queries-"));
+
     }
+
+
 
     private void disableLocalIndexExporter() throws IOException {
         String disableExporterJson = "{\n"
