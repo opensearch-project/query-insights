@@ -18,7 +18,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
-import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -43,6 +42,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
@@ -69,7 +69,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
     public void setup() {
         indexName = format.format(ZonedDateTime.now(ZoneOffset.UTC))
             + "-"
-            + generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
+            + ExporterReaderUtils.generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
