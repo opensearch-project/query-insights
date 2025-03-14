@@ -142,7 +142,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
         searchQueryCategorizer.categorize(record);
 
-        verifyMeasurementHistogramsIncremented(record, 2);
+        verifyMeasurementHistogramsIncremented(record, 1);
 
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("function_score")).add(
             eq(1.0d),
