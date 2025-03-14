@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY;
+
 import java.io.IOException;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -74,9 +76,10 @@ public class QueryInsightsExporterFactory {
      * @param id id of the exporter so that exporters can be retrieved and reused across services
      * @param indexPattern the index pattern if creating an index exporter
      * @param indexMapping index mapping file
+     * @param templatePriority the priority value for the template
      * @return LocalIndexExporter the created exporter sink
      */
-    public LocalIndexExporter createLocalIndexExporter(String id, String indexPattern, String indexMapping) {
+    public LocalIndexExporter createLocalIndexExporter(String id, String indexPattern, String indexMapping, long templatePriority) {
         LocalIndexExporter exporter = new LocalIndexExporter(
             client,
             clusterService,
@@ -84,8 +87,21 @@ public class QueryInsightsExporterFactory {
             indexMapping,
             id
         );
+        exporter.setTemplatePriority(templatePriority);
         this.exporters.put(id, exporter);
         return exporter;
+    }
+
+    /**
+     * Create a local index exporter based on provided parameters, using default template priority
+     *
+     * @param id id of the exporter so that exporters can be retrieved and reused across services
+     * @param indexPattern the index pattern if creating an index exporter
+     * @param indexMapping index mapping file
+     * @return LocalIndexExporter the created exporter sink
+     */
+    public LocalIndexExporter createLocalIndexExporter(String id, String indexPattern, String indexMapping) {
+        return createLocalIndexExporter(id, indexPattern, indexMapping, DEFAULT_TEMPLATE_PRIORITY);
     }
 
     /**
@@ -105,11 +121,14 @@ public class QueryInsightsExporterFactory {
      *
      * @param exporter The exporter to update
      * @param indexPattern the index pattern if creating a index exporter
+     * @param templatePriority the priority value for the template (for LocalIndexExporter)
      * @return QueryInsightsExporter the updated exporter sink
      */
-    public QueryInsightsExporter updateExporter(QueryInsightsExporter exporter, String indexPattern) {
+    public QueryInsightsExporter updateExporter(QueryInsightsExporter exporter, String indexPattern, long templatePriority) {
         if (exporter.getClass() == LocalIndexExporter.class) {
-            ((LocalIndexExporter) exporter).setIndexPattern(DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT));
+            LocalIndexExporter localExporter = (LocalIndexExporter) exporter;
+            localExporter.setIndexPattern(DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT));
+            localExporter.setTemplatePriority(templatePriority);
         }
         return exporter;
     }
