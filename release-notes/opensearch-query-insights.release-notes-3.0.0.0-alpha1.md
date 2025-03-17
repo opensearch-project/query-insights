@@ -1,5 +1,5 @@
 ## Version 3.0.0.0-alpha1 Release Notes
-Compatible with OpenSearch 3.0.0.0-alpha1
+Compatible with OpenSearch 3.0.0-alpha1
 
 ### Maintenance
 * Bump version to 3.0.0-alpha1 & upgrade to gradle 8.10.2 ([#247](https://github.com/opensearch-project/query-insights/pull/247))
