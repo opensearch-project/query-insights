@@ -19,5 +19,5 @@ Compatible with OpenSearch 3.0.0.0-Alpha1
 * Fix pipeline on main branch ([#274](https://github.com/opensearch-project/query-insights/pull/274))
 
 ### Documentation
-* 3.0.0.0-Alpha1 Release Notes ([#278](https://github.com/opensearch-project/query-insights/pull/278))
+* 3.0.0.0-Alpha1 Release Notes ([#280](https://github.com/opensearch-project/query-insights/pull/280/files))
 
