@@ -17,7 +17,9 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -33,11 +35,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
+import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
@@ -174,9 +179,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (this::setExporterDeleteAfterAndDelete),
                 (this::validateExporterDeleteAfter)
             );
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_TEMPLATE_PRIORITY, this::setTemplatePriority, this::validateTemplatePriority);
 
         this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
+        this.setTemplatePriority(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TEMPLATE_PRIORITY));
 
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
@@ -527,6 +535,38 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         queryInsightsExporterFactory.validateExporterType(exporterType);
     }
 
+    /**
+     * Set the template priority for all top queries exporters
+     *
+     * @param templatePriority the priority value to use for templates
+     */
+    public void setTemplatePriority(final long templatePriority) {
+        logger.info("Setting query insights index template priority to [{}]", templatePriority);
+        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
+        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
+            logger.debug("Updating query insights index template priority for top queries exporter to [{}]", templatePriority);
+            queryInsightsExporterFactory.updateExporter(
+                topQueriesExporter,
+                QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
+                templatePriority
+            );
+        }
+    }
+
+    /**
+     * Validate the template priority
+     *
+     * @param templatePriority the priority value to validate
+     */
+    public void validateTemplatePriority(final long templatePriority) {
+        if (templatePriority < 0) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "Invalid template priority setting [%d], value should be a non-negative long.", templatePriority)
+            );
+        }
+    }
+
     @Override
     protected void doStart() {
         if (isAnyFeatureEnabled()) {
@@ -598,17 +638,25 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
             final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
             threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
-                final Map<String, IndexMetadata> indexMetadataMap = clusterService.state().metadata().indices();
-                long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
-                    ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
-                );
-                for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
-                    String indexName = entry.getKey();
-                    if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
-                        // delete this index
-                        localIndexExporter.deleteSingleIndex(indexName, client);
+                final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
+                    .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
+                    .metadata(true)
+                    .local(true)
+                    .indicesOptions(IndicesOptions.strictExpand());
+
+                client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
+                    final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
+                    final long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                        ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
+                    );
+                    for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+                        String indexName = entry.getKey();
+                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                            // delete this index
+                            localIndexExporter.deleteSingleIndex(indexName, client);
+                        }
                     }
-                }
+                }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
             });
         }
     }
@@ -620,13 +668,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param localIndexExporter the exporter to handle the local index operations
      */
     void deleteAllTopNIndices(final Client client, final LocalIndexExporter localIndexExporter) {
-        clusterService.state()
-            .metadata()
-            .indices()
-            .entrySet()
-            .stream()
-            .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
-            .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
+        final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
+            .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
+            .metadata(true)
+            .local(true)
+            .indicesOptions(IndicesOptions.strictExpand());
+
+        client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
+            clusterStateResponse.getState()
+                .metadata()
+                .indices()
+                .entrySet()
+                .stream()
+                .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
+                .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
+        }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
     }
 
     /**

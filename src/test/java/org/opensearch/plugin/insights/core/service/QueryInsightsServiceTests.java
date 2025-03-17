@@ -33,8 +33,8 @@ import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.gene
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -46,6 +46,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.opensearch.Version;
+import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
+import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
 import org.opensearch.action.support.replication.ClusterStateCreationUtils;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.IndexMetadata;
@@ -58,6 +60,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.DebugExporter;
@@ -84,13 +87,14 @@ import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
+import org.opensearch.transport.client.ClusterAdminClient;
 import org.opensearch.transport.client.IndicesAdminClient;
 
 /**
  * Unit Tests for {@link QueryInsightsService}.
  */
 public class QueryInsightsServiceTests extends OpenSearchTestCase {
-    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("YYYY.MM.dd", Locale.ROOT);
+    private final DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
     private ThreadPool threadPool;
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
@@ -98,6 +102,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private QueryInsightsService queryInsightsServiceSpy;
     private final AdminClient adminClient = mock(AdminClient.class);
     private final IndicesAdminClient indicesAdminClient = mock(IndicesAdminClient.class);
+    private final ClusterAdminClient clusterAdminClient = mock(ClusterAdminClient.class);
     private ClusterService clusterService;
     private LocalIndexExporter mockLocalIndexExporter;
     private DebugExporter mockDebugExporter;
@@ -144,6 +149,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);
+        when(adminClient.cluster()).thenReturn(clusterAdminClient);
     }
 
     @Override
@@ -352,10 +358,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Create 9 top_queries-* indices with creation dates older than the retention period
         Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
         for (int i = 1; i < 10; i++) {
-            String indexName = "top_queries-2023.01.0"
-                + i
-                + "-"
-                + generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
+            LocalDate date = LocalDate.of(2023, 1, i);
+            String indexName = "top_queries-" + date.format(format) + "-" + generateLocalIndexDateHash(date);
             long creationTime = Instant.now().minus(i + 100, ChronoUnit.DAYS).toEpochMilli(); // Ensure indices are expired
             IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
                 .settings(
@@ -371,6 +375,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
                 .build();
             indexMetadataMap.put(indexName, indexMetadata);
         }
+        // Create some non Query Insights indices
+        for (String indexName : List.of("logs-1", "logs-2", "top_queries-2023.01.01-12345", "top_queries-2023.01.02-12345")) {
+            IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
+                .settings(
+                    Settings.builder()
+                        .put("index.version.created", Version.CURRENT.id)
+                        .put("index.number_of_shards", 1)
+                        .put("index.number_of_replicas", 1)
+                        .put(SETTING_CREATION_DATE, Instant.now().minus(100, ChronoUnit.DAYS).toEpochMilli())
+                )
+                .build();
+            indexMetadataMap.put(indexName, indexMetadata);
+        }
+
         List<AbstractLifecycleComponent> updatedService = createQueryInsightsServiceWithIndexState(indexMetadataMap);
         QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.get(0);
         ClusterService updatedClusterService = (ClusterService) updatedService.get(1);
@@ -385,7 +403,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertTrue(latch.await(10, TimeUnit.SECONDS));
         // Verify that the correct number of indices are deleted
         // Default retention is 7 days, so all 9 indices should be deleted
-        verify(client, times(9)).admin();
+        verify(client, times(1 + 9)).admin(); // one extra to get list of local indices
         verify(adminClient, times(9)).indices();
         verify(indicesAdminClient, times(9)).delete(any(), any());
 
@@ -563,6 +581,16 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             clusterSettings
         );
         ClusterServiceUtils.setState(updatedClusterService, updatedState);
+
+        ClusterStateResponse mockClusterStateResponse = mock(ClusterStateResponse.class);
+        when(mockClusterStateResponse.getState()).thenReturn(updatedState);
+
+        doAnswer(invocation -> {
+            ActionListener<ClusterStateResponse> actionListener = invocation.getArgument(1);
+            actionListener.onResponse(mockClusterStateResponse);
+            return null;
+        }).when(clusterAdminClient).state(any(ClusterStateRequest.class), any(ActionListener.class));
+
         // Initialize the QueryInsightsService with the new cluster service
         QueryInsightsService updatedQueryInsightsService = new QueryInsightsService(
             updatedClusterService,
