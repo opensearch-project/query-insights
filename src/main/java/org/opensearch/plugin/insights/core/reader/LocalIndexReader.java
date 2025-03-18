@@ -34,12 +34,14 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.search.sort.SortBuilders;
+import org.opensearch.search.sort.SortOrder;
 
 /**
  * Local index reader for reading query insights data from local OpenSearch indices.
  */
 public final class LocalIndexReader implements QueryInsightsReader {
-    private final static int MAX_TOP_N_INDEX_READ_SIZE = 1000;
+    private final static int MAX_TOP_N_INDEX_READ_SIZE = 50;
     /**
      * Logger of the local index reader
      */
@@ -128,6 +130,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
                 query.must(QueryBuilders.matchQuery("id", id));
             }
             searchSourceBuilder.query(query);
+            searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
             searchRequest.source(searchSourceBuilder);
             try {
                 SearchResponse searchResponse = client.search(searchRequest).actionGet();
