@@ -9,24 +9,18 @@
 package org.opensearch.plugin.insights.core.exporter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 
 /** Rest Action tests for query */
 public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
-    /**
-     * Test Top Queries setting endpoints with document creation, search, local index exporter control,
-     * and window size configuration.
-     *
-     * @throws IOException IOException
-     */
     public void testQueryInsightsExporterSettings() throws IOException, InterruptedException {
+
         createDocument();
 
         for (String setting : invalidExporterSettings()) {
@@ -48,16 +42,31 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         performSearch();
         waitForWindowToPass(70);
         checkLocalIndices("After search and waiting for data export");
+        checkQueryInsightsIndexTemplate();
         disableLocalIndexExporter();
         reEnableLocalIndexExporter();
         setLocalIndexToDebug();
     }
 
+    private void performSearch() throws IOException {
+        String searchJson = "{\n" + "  \"query\": {\n" + "    \"term\": {\n" + "      \"user.id\": \"cyji\"\n" + "    }\n" + "  }\n" + "}";
+
+        Request searchRequest = new Request("POST", "/my-index-0/_search");
+        searchRequest.setJsonEntity(searchJson);
+        Response response = client().performRequest(searchRequest);
+
+        assertEquals(200, response.getStatusLine().getStatusCode());
+
+        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertTrue("Expected search results for user.id='cyji'", responseContent.contains("\"hits\":"));
+    }
 
     private void createDocument() throws IOException {
         String documentJson = "{\n"
-            + "  \"title\": \"Test Document\",\n"
-            + "  \"content\": \"This is a test document for OpenSearch\"\n"
+            + "  \"@timestamp\": \"2099-11-15T13:12:00\",\n"
+            + "  \"message\": \"this is document 0\",\n"
+            + "  \"user\": { \"id\": \"cyji\", \"age\": 1 }\n"
             + "}";
 
         Request createDocumentRequest = new Request("POST", "/my-index-0/_doc/");
@@ -66,103 +75,74 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         assertEquals(201, response.getStatusLine().getStatusCode());
     }
 
-    private void performSearch() throws IOException {
-        String searchJson = "{\n"
-            + "  \"query\": {\n"
-            + "    \"match\": {\n"
-            + "      \"content\": \"test\"\n"
-            + "    }\n"
-            + "  }\n"
-            + "}";
-        Request searchRequest = new Request("POST", "/my-index-0/_search");
-        searchRequest.setJsonEntity(searchJson);
-        Response response = client().performRequest(searchRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
-    }
-
     private void checkLocalIndices(String context) throws IOException {
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
         assertEquals(200, response.getStatusLine().getStatusCode());
-        InputStream responseStream = response.getEntity().getContent();
-        String responseContent = new String(responseStream.readAllBytes(), StandardCharsets.UTF_8);
-        System.out.println("Response content for " + context + ": " + responseContent);
-        assertTrue("Expected top_queries-* index to be present in the response",
-            responseContent.contains("top_queries-"));
 
+        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue("Expected top_queries-* index to be present", responseContent.contains("top_queries-"));
+
+        // Fetch and check documents in top_queries-* index
+        Request fetchRequest = new Request("GET", "/top_queries-*/_search?size=10");
+        Response fetchResponse = client().performRequest(fetchRequest);
+        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
+
+        String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(
+            "Expected user.id field with value 'cyji' in query insights data",
+            fetchResponseContent.contains("\"user.id\":{\"value\":\"cyji\",\"boost\":1.0}")
+        );
     }
 
-
+    private void checkQueryInsightsIndexTemplate() throws IOException {
+        Request request = new Request("GET", "/_index_template");
+        Response response = client().performRequest(request);
+        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(
+            "Expected default index template for Query Insights to be present",
+            responseContent.contains("\"query_insights_top_queries_template\"")
+        );
+    }
 
     private void disableLocalIndexExporter() throws IOException {
-        String disableExporterJson = "{\n"
-            + "  \"persistent\": {\n"
-            + "    \"search.insights.top_queries.exporter.type\": \"none\"\n"
-            + "  }\n"
-            + "}";
+        String disableExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"none\" } }";
         Request disableExporterRequest = new Request("PUT", "/_cluster/settings");
         disableExporterRequest.setJsonEntity(disableExporterJson);
-        Response response = client().performRequest(disableExporterRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        client().performRequest(disableExporterRequest);
     }
 
     private void reEnableLocalIndexExporter() throws IOException {
-        String enableExporterJson = "{\n"
-            + "  \"persistent\": {\n"
-            + "    \"search.insights.top_queries.exporter.type\": \"local_index\"\n"
-            + "  }\n"
-            + "}";
         Request enableExporterRequest = new Request("PUT", "/_cluster/settings");
-        enableExporterRequest.setJsonEntity(enableExporterJson);
-        Response response = client().performRequest(enableExporterRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        enableExporterRequest.setJsonEntity(defaultExporterSettings());
+        client().performRequest(enableExporterRequest);
     }
 
     private void setLocalIndexToDebug() throws IOException {
-        String debugExporterJson = "{\n"
-            + "  \"persistent\": {\n"
-            + "    \"search.insights.top_queries.exporter.type\": \"debug\"\n"
-            + "  }\n"
-            + "}";
+        String debugExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"debug\" } }";
         Request debugExporterRequest = new Request("PUT", "/_cluster/settings");
         debugExporterRequest.setJsonEntity(debugExporterJson);
-        Response response = client().performRequest(debugExporterRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        client().performRequest(debugExporterRequest);
     }
 
     private void setLatencyWindowSize(String windowSize) throws IOException {
-        String windowSizeJson = "{\n"
-            + "  \"persistent\": {\n"
-            + "    \"search.insights.top_queries.latency.window_size\": \"" + windowSize + "\"\n"
-            + "  }\n"
-            + "}";
+        String windowSizeJson = "{ \"persistent\": { \"search.insights.top_queries.latency.window_size\": \"" + windowSize + "\" } }";
         Request windowSizeRequest = new Request("PUT", "/_cluster/settings");
         windowSizeRequest.setJsonEntity(windowSizeJson);
-        Response response = client().performRequest(windowSizeRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        client().performRequest(windowSizeRequest);
     }
 
     private void waitForWindowToPass(int seconds) throws InterruptedException {
-        System.out.println("Waiting for " + seconds + " seconds for window size to pass...");
-        Thread.sleep(seconds * 1000); // Sleep for the specified number of seconds
+        Thread.sleep(seconds * 1000);
     }
 
     private String defaultExporterSettings() {
-        return "{\n"
-            + "    \"persistent\" : {\n"
-            + "        \"search.insights.top_queries.exporter.type\" : \"local_index\"\n"
-            + "    }\n"
-            + "}";
+        return "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : \"local_index\" } }";
     }
 
     private String[] invalidExporterSettings() {
         return new String[] {
-            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.exporter.type\" : invalid_type\n" + "    }\n" + "}",
-            "{\n"
-                + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.exporter.type\" : local_index,\n"
-                + "        \"search.insights.top_queries.exporter.config.index\" : \"1a2b\"\n"
-                + "    }\n"
-                + "}" };
+            "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : invalid_type } }",
+            "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }" };
     }
 }
