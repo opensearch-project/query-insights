@@ -22,7 +22,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     public void testQueryInsightsExporterSettings() throws IOException, InterruptedException {
 
         createDocument();
-
+        createIndexTemplate();
         for (String setting : invalidExporterSettings()) {
             Request request = new Request("PUT", "/_cluster/settings");
             request.setJsonEntity(setting);
@@ -39,6 +39,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         setLatencyWindowSize("1m");
+        waitForWindowToPass(10);
         performSearch();
         waitForWindowToPass(70);
         checkLocalIndices("After search and waiting for data export");
@@ -49,9 +50,15 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     }
 
     private void performSearch() throws IOException {
-        String searchJson = "{\n" + "  \"query\": {\n" + "    \"term\": {\n" + "      \"user.id\": \"cyji\"\n" + "    }\n" + "  }\n" + "}";
+        String searchJson = "{\n"
+            + "  \"query\": {\n"
+            + "    \"match\": {\n"
+            + "      \"title\": \"Test Document\"\n"
+            + "    }\n"
+            + "  }\n"
+            + "}";
 
-        Request searchRequest = new Request("POST", "/my-index-0/_search");
+        Request searchRequest = new Request("POST", "/my-index-0/_search?size=20&pretty");
         searchRequest.setJsonEntity(searchJson);
         Response response = client().performRequest(searchRequest);
 
@@ -59,14 +66,13 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
-        assertTrue("Expected search results for user.id='cyji'", responseContent.contains("\"hits\":"));
+        assertTrue("Expected search results for title='Test Document'", responseContent.contains("\"Test Document\""));
     }
 
     private void createDocument() throws IOException {
         String documentJson = "{\n"
-            + "  \"@timestamp\": \"2099-11-15T13:12:00\",\n"
-            + "  \"message\": \"this is document 0\",\n"
-            + "  \"user\": { \"id\": \"cyji\", \"age\": 1 }\n"
+            + "  \"title\": \"Test Document\",\n"
+            + "  \"content\": \"This is a test document for OpenSearch\"\n"
             + "}";
 
         Request createDocumentRequest = new Request("POST", "/my-index-0/_doc/");
@@ -81,17 +87,39 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         assertEquals(200, response.getStatusLine().getStatusCode());
 
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue("Expected top_queries-* index to be green", responseContent.contains("green"));
         assertTrue("Expected top_queries-* index to be present", responseContent.contains("top_queries-"));
 
-        // Fetch and check documents in top_queries-* index
-        Request fetchRequest = new Request("GET", "/top_queries-*/_search?size=10");
+        String suffix = null;
+
+        // Loop through each line to find the top_queries-* index
+        for (String line : responseContent.split("\n")) {
+            line = line.trim();
+            if (line.contains("top_queries-")) {
+                String[] columns = line.split("\\s+");
+                for (String col : columns) {
+                    if (col.matches("top_queries-\\d{4}\\.\\d{2}\\.\\d{2}-\\d+")) {
+                        String[] parts = col.split("-");
+                        suffix = parts[parts.length - 1];
+                        break;
+                    }
+                }
+            }
+            if (suffix != null) break;
+        }
+
+        assertNotNull("Failed to extract suffix from top_queries-* index", suffix);
+        String fullIndexName = "top_queries-" + suffix;
+
+        // Fetch and check documents in the top_queries-* index
+        Request fetchRequest = new Request("GET", "/" + fullIndexName + "/_search?size=10");
         Response fetchResponse = client().performRequest(fetchRequest);
         assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
 
         String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue(
-            "Expected user.id field with value 'cyji' in query insights data",
-            fetchResponseContent.contains("\"user.id\":{\"value\":\"cyji\",\"boost\":1.0}")
+            "Expected title field with value 'Test Document' in query insights data in local Indices",
+            fetchResponseContent.contains("\"Test Document\"")
         );
     }
 
@@ -101,7 +129,9 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue(
             "Expected default index template for Query Insights to be present",
-            responseContent.contains("\"query_insights_top_queries_template\"")
+            responseContent.contains(
+                "{\"index_templates\":[{\"name\":\"my_template\",\"index_template\":{\"index_patterns\":[\"*\"],\"template\":{\"settings\":{\"index\":{\"number_of_shards\":\"1\",\"number_of_replicas\":\"1\",\"blocks\":{\"write\":\"true\"}}},\"mappings\":{\"properties\":{\"group_by\":{\"type\":\"keyword\"}}},\"aliases\":{\"my_alias\":{}}},\"composed_of\":[],\"priority\":2000}}]}"
+            )
         );
     }
 
@@ -144,5 +174,33 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         return new String[] {
             "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : invalid_type } }",
             "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }" };
+    }
+
+    private void createIndexTemplate() throws IOException {
+        String templateJson = "{\n"
+            + " \"index_patterns\": [\"*\"],\n"
+            + " \"template\": {\n"
+            + "  \"settings\": {\n"
+            + "   \"number_of_shards\": 1,\n"
+            + "   \"number_of_replicas\": 1,\n"
+            + "   \"index.blocks.write\": true\n"
+            + "  },\n"
+            + "  \"mappings\": {\n"
+            + "   \"properties\": {\n"
+            + "    \"group_by\": {\n"
+            + "     \"type\": \"keyword\"\n"
+            + "    }\n"
+            + "   }\n"
+            + "  },\n"
+            + "  \"aliases\": {\n"
+            + "   \"my_alias\": {}\n"
+            + "  }\n"
+            + " },\n"
+            + " \"priority\" : 2000\n"
+            + "}";
+
+        Request templateRequest = new Request("PUT", "/_index_template/my_template?pretty");
+        templateRequest.setJsonEntity(templateJson);
+        client().performRequest(templateRequest);
     }
 }

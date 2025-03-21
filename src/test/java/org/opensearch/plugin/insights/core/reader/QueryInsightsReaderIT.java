@@ -1,4 +1,5 @@
 package org.opensearch.plugin.insights.core.reader;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -17,17 +18,23 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         setLatencyWindowSize("1m");
+        waitForWindowToPass(10);
         performSearch();
         waitForWindowToPass(70);
-
         fetchHistoricalTopQueries();
 
     }
 
     private void performSearch() throws IOException {
-        String searchJson = "{\n" + "  \"query\": {\n" + "    \"term\": {\n" + "      \"user.id\": \"cyji\"\n" + "    }\n" + "  }\n" + "}";
+        String searchJson = "{\n"
+            + "  \"query\": {\n"
+            + "    \"match\": {\n"
+            + "      \"title\": \"Test Document\"\n"
+            + "    }\n"
+            + "  }\n"
+            + "}";
 
-        Request searchRequest = new Request("POST", "/my-index-0/_search");
+        Request searchRequest = new Request("POST", "/my-index-0/_search?size=20&pretty");
         searchRequest.setJsonEntity(searchJson);
         Response response = client().performRequest(searchRequest);
 
@@ -35,14 +42,13 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
 
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
-        assertTrue("Expected search results for user.id='cyji'", responseContent.contains("\"hits\":"));
+        assertTrue("Expected search results for title='Test Document'", responseContent.contains("\"Test Document\""));
     }
 
     private void createDocument() throws IOException {
         String documentJson = "{\n"
-            + "  \"@timestamp\": \"2099-11-15T13:12:00\",\n"
-            + "  \"message\": \"this is document 0\",\n"
-            + "  \"user\": { \"id\": \"cyji\", \"age\": 1 }\n"
+            + "  \"title\": \"Test Document\",\n"
+            + "  \"content\": \"This is a test document for OpenSearch\"\n"
             + "}";
 
         Request createDocumentRequest = new Request("POST", "/my-index-0/_doc/");
@@ -76,7 +82,9 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
 
         assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
         String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-
-        assertTrue("Expected historical top queries data", fetchResponseContent.contains("\"user.id\":{\"value\":\"cyji\",\"boost\":1.0}"));
+        assertTrue(
+            "Expected historical top queries data",
+            fetchResponseContent.contains("\"match\":{\"title\":{\"query\":\"Test Document\"")
+        );
     }
 }
