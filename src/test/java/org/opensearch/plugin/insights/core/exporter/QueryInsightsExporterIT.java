@@ -51,7 +51,6 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         disableLocalIndexExporter();
         reEnableLocalIndexExporter();
         setLocalIndexToDebug();
-        cleanup(fullIndexName);
 
     }
 
@@ -194,32 +193,6 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         Request templateRequest = new Request("PUT", "/_index_template/my_template?pretty");
         templateRequest.setJsonEntity(templateJson);
         client().performRequest(templateRequest);
-    }
-
-    private void cleanup(String fullIndexName) throws IOException, InterruptedException {
-        Thread.sleep(3000);
-
-        try {
-            client().performRequest(new Request("DELETE", "/" + fullIndexName));
-        } catch (ResponseException ignored) {}
-
-        try {
-            client().performRequest(new Request("DELETE", "/my-index-0"));
-        } catch (ResponseException ignored) {}
-
-        try {
-            client().performRequest(new Request("DELETE", "/_index_template"));
-        } catch (ResponseException ignored) {}
-
-        String resetSettings = "{ \"persistent\": { "
-            + "\"search.insights.top_queries.exporter.type\": \"none\", "
-            + "\"search.insights.top_queries.latency.enabled\": \"false\""
-            + "} }";
-
-        Request resetRequest = new Request("PUT", "/_cluster/settings");
-        resetRequest.setJsonEntity(resetSettings);
-        client().performRequest(resetRequest);
-
     }
 
 }
