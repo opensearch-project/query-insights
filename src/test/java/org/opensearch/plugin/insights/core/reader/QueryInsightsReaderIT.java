@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.Assert;
@@ -78,9 +79,9 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
     }
 
     private void fetchHistoricalTopQueries() throws IOException {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
-        String from = formatter.format(Instant.now().minusSeconds(9600)); // 1 hour ago
-        String to = formatter.format(Instant.now()); // current time
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
+        String from = formatter.format(Instant.now().minusSeconds(9600));
+        String to = formatter.format(Instant.now());
 
         Request fetchRequest = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to);
         Response fetchResponse = client().performRequest(fetchRequest);
