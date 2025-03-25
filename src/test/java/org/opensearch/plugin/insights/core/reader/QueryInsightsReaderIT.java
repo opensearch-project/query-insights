@@ -5,9 +5,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
+import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
@@ -21,7 +24,9 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         waitForWindowToPass(10);
         performSearch();
         waitForWindowToPass(70);
+        String fullIndexName = checkLocalIndices("After search and waiting for data export");
         fetchHistoricalTopQueries();
+        cleanup(fullIndexName);
 
     }
 
@@ -86,5 +91,61 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
             "Expected historical top queries data",
             fetchResponseContent.contains("\"match\":{\"title\":{\"query\":\"Test Document\"")
         );
+    }
+
+    private String checkLocalIndices(String context) throws IOException {
+        Request indicesRequest = new Request("GET", "/_cat/indices?v");
+        Response response = client().performRequest(indicesRequest);
+        assertEquals(200, response.getStatusLine().getStatusCode());
+
+        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue("Expected top_queries-* index to be green", responseContent.contains("green"));
+        assertTrue("Expected top_queries-* index to be present", responseContent.contains("top_queries-"));
+        String suffix = null;
+        Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d+)");
+        Matcher matcher = pattern.matcher(responseContent);
+        if (matcher.find()) {
+            suffix = matcher.group(1);
+        } else {
+            fail("Failed to extract top_queries index suffix");
+        }
+
+        assertNotNull("Failed to extract suffix from top_queries-* index", suffix);
+        String fullIndexName = "top_queries-" + suffix;
+        Request fetchRequest = new Request("GET", "/" + fullIndexName + "/_search?size=10");
+        Response fetchResponse = client().performRequest(fetchRequest);
+        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
+
+        String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(
+            "Expected title field with value 'Test Document' in query insights data in local Indices",
+            fetchResponseContent.contains("\"Test Document\"")
+        );
+        return fullIndexName;
+    }
+
+    private void cleanup(String fullIndexName) throws IOException, InterruptedException {
+        Thread.sleep(3000);
+
+        try {
+            client().performRequest(new Request("DELETE", "/" + fullIndexName));
+        } catch (ResponseException ignored) {}
+
+        try {
+            client().performRequest(new Request("DELETE", "/my-index-0"));
+        } catch (ResponseException ignored) {}
+
+        try {
+            client().performRequest(new Request("DELETE", "/_index_template/my_template"));
+        } catch (ResponseException ignored) {}
+
+        String resetSettings = "{ \"persistent\": { "
+            + "\"search.insights.top_queries.exporter.type\": \"none\", "
+            + "\"search.insights.top_queries.latency.enabled\": \"false\""
+            + "} }";
+
+        Request resetRequest = new Request("PUT", "/_cluster/settings");
+        resetRequest.setJsonEntity(resetSettings);
+        client().performRequest(resetRequest);
     }
 }
