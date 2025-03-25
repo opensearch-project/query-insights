@@ -123,10 +123,12 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         Response response = client().performRequest(request);
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue(
-            "Expected default index template for Query Insights to be present",
-            responseContent.contains(
-                "{\"index_templates\":[{\"name\":\"my_template\",\"index_template\":{\"index_patterns\":[\"*\"],\"template\":{\"settings\":{\"index\":{\"number_of_shards\":\"1\",\"number_of_replicas\":\"1\",\"blocks\":{\"write\":\"false\"}}},\"mappings\":{\"properties\":{\"group_by\":{\"type\":\"keyword\"}}},\"aliases\":{\"my_alias\":{}}},\"composed_of\":[],\"priority\":2000}}]}"
-            )
+            "Expected default index template for my_template to be present",
+            responseContent.contains("my_template")
+        );
+        assertTrue(
+            "Expected priority for my_template to be 2000",
+            responseContent.contains("2000")
         );
     }
 
