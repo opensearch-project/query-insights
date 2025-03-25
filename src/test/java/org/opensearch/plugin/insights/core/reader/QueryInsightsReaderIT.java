@@ -143,9 +143,6 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
             client().performRequest(new Request("DELETE", "/my-index-0"));
         } catch (ResponseException ignored) {}
 
-        try {
-            client().performRequest(new Request("DELETE", "/_index_template"));
-        } catch (ResponseException ignored) {}
 
         String resetSettings = "{ \"persistent\": { "
             + "\"search.insights.top_queries.exporter.type\": \"none\", "
