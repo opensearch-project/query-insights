@@ -122,14 +122,8 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         Request request = new Request("GET", "/_index_template");
         Response response = client().performRequest(request);
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(
-            "Expected default index template for my_template to be present",
-            responseContent.contains("my_template")
-        );
-        assertTrue(
-            "Expected priority for my_template to be 2000",
-            responseContent.contains("2000")
-        );
+        assertTrue("Expected default index template for my_template to be present", responseContent.contains("my_template"));
+        assertTrue("Expected priority for my_template to be 2000", responseContent.contains("2000"));
     }
 
     private void disableLocalIndexExporter() throws IOException {
