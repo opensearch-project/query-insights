@@ -32,7 +32,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         waitForWindowToPass(10);
         performSearch();
         waitForWindowToPass(70);
-        String fullIndexName = checkLocalIndices("After search and waiting for data export");
+        String fullIndexName = checkLocalIndices();
         fetchHistoricalTopQueries();
         cleanup(fullIndexName);
 
@@ -101,7 +101,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         );
     }
 
-    private String checkLocalIndices(String context) throws IOException {
+    private String checkLocalIndices() throws IOException {
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
         assertEquals(200, response.getStatusLine().getStatusCode());
@@ -144,7 +144,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         } catch (ResponseException ignored) {}
 
         try {
-            client().performRequest(new Request("DELETE", "/_index_template/my_template"));
+            client().performRequest(new Request("DELETE", "/_index_template"));
         } catch (ResponseException ignored) {}
 
         String resetSettings = "{ \"persistent\": { "

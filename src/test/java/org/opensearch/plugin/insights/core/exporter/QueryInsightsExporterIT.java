@@ -22,9 +22,9 @@ import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
     public void testQueryInsightsExporterSettings() throws IOException, InterruptedException {
-
+        setLatencyWindowSize("1m");
         createDocument();
-        createIndexTemplate();
+
         for (String setting : invalidExporterSettings()) {
             Request request = new Request("PUT", "/_cluster/settings");
             request.setJsonEntity(setting);
@@ -40,11 +40,13 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         request.setJsonEntity(defaultExporterSettings());
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-        setLatencyWindowSize("1m");
+        createIndexTemplate();
         waitForWindowToPass(10);
         performSearch();
+
         waitForWindowToPass(70);
-        String fullIndexName = checkLocalIndices("After search and waiting for data export");
+        String fullIndexName = null;
+        fullIndexName = checkLocalIndices();
         checkQueryInsightsIndexTemplate();
         disableLocalIndexExporter();
         reEnableLocalIndexExporter();
@@ -85,7 +87,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         assertEquals(201, response.getStatusLine().getStatusCode());
     }
 
-    private String checkLocalIndices(String context) throws IOException {
+    private String checkLocalIndices() throws IOException {
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
         assertEquals(200, response.getStatusLine().getStatusCode());
@@ -123,7 +125,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         assertTrue(
             "Expected default index template for Query Insights to be present",
             responseContent.contains(
-                "{\"index_templates\":[{\"name\":\"my_template\",\"index_template\":{\"index_patterns\":[\"*\"],\"template\":{\"settings\":{\"index\":{\"number_of_shards\":\"1\",\"number_of_replicas\":\"1\",\"blocks\":{\"write\":\"true\"}}},\"mappings\":{\"properties\":{\"group_by\":{\"type\":\"keyword\"}}},\"aliases\":{\"my_alias\":{}}},\"composed_of\":[],\"priority\":2000}}]}"
+                "{\"index_templates\":[{\"name\":\"my_template\",\"index_template\":{\"index_patterns\":[\"*\"],\"template\":{\"settings\":{\"index\":{\"number_of_shards\":\"1\",\"number_of_replicas\":\"1\",\"blocks\":{\"write\":\"false\"}}},\"mappings\":{\"properties\":{\"group_by\":{\"type\":\"keyword\"}}},\"aliases\":{\"my_alias\":{}}},\"composed_of\":[],\"priority\":2000}}]}"
             )
         );
     }
@@ -160,7 +162,8 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     }
 
     private String defaultExporterSettings() {
-        return "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : \"local_index\" } }";
+        return "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : \"local_index\" ,"
+            + "\"search.insights.top_queries.latency.enabled\": \"true\"} }";
     }
 
     private String[] invalidExporterSettings() {
@@ -176,7 +179,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
             + "  \"settings\": {\n"
             + "   \"number_of_shards\": 1,\n"
             + "   \"number_of_replicas\": 1,\n"
-            + "   \"index.blocks.write\": true\n"
+            + "   \"index.blocks.write\": false\n"
             + "  },\n"
             + "  \"mappings\": {\n"
             + "   \"properties\": {\n"
@@ -209,7 +212,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         } catch (ResponseException ignored) {}
 
         try {
-            client().performRequest(new Request("DELETE", "/_index_template/my_template"));
+            client().performRequest(new Request("DELETE", "/_index_template"));
         } catch (ResponseException ignored) {}
 
         String resetSettings = "{ \"persistent\": { "
