@@ -22,6 +22,11 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -567,6 +572,41 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
     }
 
+    /**
+     * Schedules a daily task to delete expired Top N indices.
+     *
+     * @see #deleteExpiredTopNIndices()
+     */
+    private void createDailyDeleteAfterJob() {
+        // Run job once now
+        deleteExpiredTopNIndices();
+
+        // Schedule recurring job with 1-day interval
+        scheduledFutures.add(
+            threadPool.scheduleWithFixedDelay(
+                this::deleteExpiredTopNIndices,
+                new TimeValue(1, TimeUnit.DAYS), // Check for deletable indices once per day
+                QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
+            )
+        );
+    }
+
+    /**
+     * Calculates the duration until the next UTC midnight (00:00:00).
+     * <p>
+     * This method computes the time difference between the given {@code Instant} and the start of the next UTC day
+     * at midnight (00:00:00). It returns the duration as a {@link TimeValue} in milliseconds.
+     *
+     * @param now The current time as an {@link Instant}.
+     * @return A {@link TimeValue} representing the time delay (in milliseconds) until the next UTC midnight.
+     */
+    static TimeValue getInitialDelay(final Instant now) {
+        // Calculate the start of the next UTC day (00:00:00)
+        final Instant startOfNextDay = now.truncatedTo(ChronoUnit.DAYS).plus(1, ChronoUnit.DAYS);
+        final long delayInMillis = Duration.between(now, startOfNextDay).toMillis();
+        return TimeValue.timeValueMillis(delayInMillis);
+    }
+
     @Override
     protected void doStart() {
         if (isAnyFeatureEnabled()) {
@@ -578,12 +618,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                     QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
                 )
             );
-            scheduledFutures.add(
-                threadPool.scheduleWithFixedDelay(
-                    this::deleteExpiredTopNIndices,
-                    new TimeValue(1, TimeUnit.DAYS), // Check for deletable indices once per day
-                    QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
-                )
+
+            // One-time job to run at next UTC 00:00
+            threadPool.schedule(
+                this::createDailyDeleteAfterJob,
+                getInitialDelay(Instant.now()),
+                QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
             );
         }
     }
@@ -646,12 +686,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
                 client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
                     final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
-                    final long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                    final long startOfTodayUtcMillis = LocalDateTime.now(ZoneOffset.UTC)    // Today at 00:00 UTC
+                        .truncatedTo(ChronoUnit.DAYS)
+                        .toInstant(ZoneOffset.UTC)
+                        .toEpochMilli();
+                    final long expirationMillisLong = startOfTodayUtcMillis - TimeUnit.DAYS.toMillis(
                         ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
                     );
                     for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
                         String indexName = entry.getKey();
-                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() < expirationMillisLong) {
                             // delete this index
                             localIndexExporter.deleteSingleIndex(indexName, client);
                         }
