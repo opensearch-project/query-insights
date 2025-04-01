@@ -176,7 +176,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
     private void deleteIndexWithRetryIndex(int maxRetries, long waitMs) throws IOException {
         for (int i = 0; i < maxRetries; i++) {
             try {
-                Response response = client().performRequest(new Request("DELETE", "/top_queries*"));
+                Response response = client().performRequest(new Request("DELETE", "/top_queries"));
                 if (response.getStatusLine().getStatusCode() == 200) {
                     return;
                 }
