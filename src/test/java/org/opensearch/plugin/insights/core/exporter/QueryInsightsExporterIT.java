@@ -201,7 +201,6 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     private void cleanup(String fullIndexName) throws IOException, InterruptedException {
         Thread.sleep(3000);
 
-
         try {
             client().performRequest(new Request("DELETE", "/top_queries"));
         } catch (ResponseException ignored) {}
