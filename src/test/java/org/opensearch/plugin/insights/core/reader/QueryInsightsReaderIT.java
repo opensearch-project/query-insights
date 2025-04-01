@@ -136,7 +136,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         Thread.sleep(3000);
 
         try {
-            client().performRequest(new Request("DELETE", "/" + fullIndexName));
+            client().performRequest(new Request("DELETE", "/top_queries"));
         } catch (ResponseException ignored) {}
 
         try {
