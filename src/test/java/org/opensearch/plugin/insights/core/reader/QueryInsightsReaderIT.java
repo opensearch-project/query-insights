@@ -8,148 +8,62 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import org.junit.Assert;
+import java.util.List;
 import org.opensearch.client.Request;
-import org.opensearch.client.Response;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
-    public void testQueryInsightsReaderSettings() throws IOException, InterruptedException {
-        createDocument();
-        Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity(defaultExporterSettings());
-        Response response = client().performRequest(request);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-        setLatencyWindowSize("1m");
-        waitForWindowToPass(10);
-        performSearch();
-        waitForWindowToPass(70);
-        String fullIndexName = checkLocalIndices();
-        fetchHistoricalTopQueries();
-        cleanup(fullIndexName);
 
-    }
+    public void testQueryInsightsHistoricalTopQueriesRead() throws IOException, InterruptedException {
+        try {
+            createDocument();
+            defaultExporterSettings();
+            setLatencyWindowSize("1m");
+            performSearch();
+            Thread.sleep(70000);
+            checkLocalIndices();
+            List<String[]> allPairs = fetchHistoricalTopQueries("null", "null", "null");
+            assertFalse("Expected at least one top query", allPairs.isEmpty());
+            String selectedId = allPairs.get(0)[0];
+            String selectedNodeId = allPairs.get(0)[1];
+            List<String[]> filteredPairs = fetchHistoricalTopQueries(selectedId, "null", "null");
+            List<String[]> filteredPairs1 = fetchHistoricalTopQueries("null", selectedNodeId, "null");
+            List<String[]> filteredPairs2 = fetchHistoricalTopQueries(selectedId, selectedNodeId, "null");
+            List<String[]> filteredPairs3 = fetchHistoricalTopQueries(selectedId, selectedNodeId, "latency");
 
-    private void performSearch() throws IOException {
-        String searchJson = "{\n"
-            + "  \"query\": {\n"
-            + "    \"match\": {\n"
-            + "      \"title\": \"Test Document\"\n"
-            + "    }\n"
-            + "  }\n"
-            + "}";
-
-        Request searchRequest = new Request("POST", "/my-index-0/_search?size=20&pretty");
-        searchRequest.setJsonEntity(searchJson);
-        Response response = client().performRequest(searchRequest);
-
-        assertEquals(200, response.getStatusLine().getStatusCode());
-
-        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-
-        assertTrue("Expected search results for title='Test Document'", responseContent.contains("\"Test Document\""));
-    }
-
-    private void createDocument() throws IOException {
-        String documentJson = "{\n"
-            + "  \"title\": \"Test Document\",\n"
-            + "  \"content\": \"This is a test document for OpenSearch\"\n"
-            + "}";
-
-        Request createDocumentRequest = new Request("POST", "/my-index-0/_doc/");
-        createDocumentRequest.setJsonEntity(documentJson);
-        Response response = client().performRequest(createDocumentRequest);
-        assertEquals(201, response.getStatusLine().getStatusCode());
-    }
-
-    private void setLatencyWindowSize(String windowSize) throws IOException {
-        String windowSizeJson = "{ \"persistent\": { \"search.insights.top_queries.latency.window_size\": \"" + windowSize + "\" } }";
-        Request windowSizeRequest = new Request("PUT", "/_cluster/settings");
-        windowSizeRequest.setJsonEntity(windowSizeJson);
-        client().performRequest(windowSizeRequest);
-    }
-
-    private void waitForWindowToPass(int seconds) throws InterruptedException {
-        Thread.sleep(seconds * 1000);
-    }
-
-    private String defaultExporterSettings() {
-        return "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : \"local_index\" } }";
-    }
-
-    private void fetchHistoricalTopQueries() throws IOException {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
-        String from = formatter.format(Instant.now().minusSeconds(9600));
-        String to = formatter.format(Instant.now());
-
-        Request fetchRequest = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to);
-        Response fetchResponse = client().performRequest(fetchRequest);
-
-        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
-        String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(
-            "Expected historical top queries data",
-            fetchResponseContent.contains("\"match\":{\"title\":{\"query\":\"Test Document\"")
-        );
-    }
-
-    private String checkLocalIndices() throws IOException {
-        Request indicesRequest = new Request("GET", "/_cat/indices?v");
-        Response response = client().performRequest(indicesRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
-
-        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue("Expected top_queries-* index to be green", responseContent.contains("green"));
-        assertTrue("Expected top_queries-* index to be present", responseContent.contains("top_queries-"));
-        String suffix = null;
-        Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d+)");
-        Matcher matcher = pattern.matcher(responseContent);
-        if (matcher.find()) {
-            suffix = matcher.group(1);
-        } else {
-            fail("Failed to extract top_queries index suffix");
+        } catch (Exception e) {
+            fail("Test failed with exception: " + e.getMessage());
+        } finally {
+            cleanup();
         }
-
-        assertNotNull("Failed to extract suffix from top_queries-* index", suffix);
-        String fullIndexName = "top_queries-" + suffix;
-        Request fetchRequest = new Request("GET", "/" + fullIndexName + "/_search?size=10");
-        Response fetchResponse = client().performRequest(fetchRequest);
-        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
-
-        String fetchResponseContent = new String(fetchResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue(
-            "Expected title field with value 'Test Document' in query insights data in local Indices",
-            fetchResponseContent.contains("\"Test Document\"")
-        );
-        return fullIndexName;
     }
 
-    private void cleanup(String fullIndexName) throws IOException, InterruptedException {
-        Thread.sleep(3000);
+    public void testInvalidDateRangeParameters() throws IOException {
+        String[] invalidEndpoints = new String[] {
+            "/_insights/top_queries?from=2024-00-01T00:00:00.000Z&to=2024-04-07T00:00:00.000Z", // Invalid month
+            "/_insights/top_queries?from=2024-13-01T00:00:00.000Z&to=2024-04-07T00:00:00.000Z", // Month out of range
+            "/_insights/top_queries?from=abcd&to=efgh", // Not a date
+            "/_insights/top_queries?from=&to=", // Empty values
+            "/_insights/top_queries?from=2024-04-10T00:00:00Z", // Missing `to`
+            "/_insights/top_queries?to=2024-04-10T00:00:00Z", // Missing `from`
 
-        try {
-            client().performRequest(new Request("DELETE", "/" + fullIndexName));
-        } catch (ResponseException ignored) {}
+            // Invalid metric type
+            "/_insights/top_queries?from=2025-04-15T17:00:00.000Z&to=2025-04-15T18:00:00.000Z&type=Latency",
+            "/_insights/top_queries?from=2025-04-15T17:00:00.000Z&to=2025-04-15T18:00:00.000Z&type=xyz",
 
-        try {
-            client().performRequest(new Request("DELETE", "/my-index-0"));
-        } catch (ResponseException ignored) {}
+            // Unexpected param
+            "/_insights/top_queries?from=2025-04-15T17:00:00.000Z&to=2025-04-15T18:00:00.000Z&foo=bar",
+            "/_insights/top_queries?from=2025-04-15T17:59:42.304Z&to=2025-04-15T20:39:42.304Zabdncmdkdkssmcmd", };
 
-        String resetSettings = "{ \"persistent\": { "
-            + "\"search.insights.top_queries.exporter.type\": \"none\", "
-            + "\"search.insights.top_queries.latency.enabled\": \"false\""
-            + "} }";
+        for (String endpoint : invalidEndpoints) {
+            runInvalidDateRequest(endpoint);
+        }
+    }
 
-        Request resetRequest = new Request("PUT", "/_cluster/settings");
-        resetRequest.setJsonEntity(resetSettings);
-        client().performRequest(resetRequest);
+    private void runInvalidDateRequest(String endpoint) throws IOException {
+        Request request = new Request("GET", endpoint);
+        ResponseException e = expectThrows(ResponseException.class, () -> client().performRequest(request));
+        assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
     }
 }
