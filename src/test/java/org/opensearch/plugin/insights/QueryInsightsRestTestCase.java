@@ -48,9 +48,13 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
+    private static final Logger logger = LoggerFactory.getLogger(QueryInsightsRestTestCase.class);
 
     protected boolean isHttps() {
         return Optional.ofNullable(System.getProperty("https")).map("true"::equalsIgnoreCase).orElse(false);
@@ -147,6 +151,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     @Before
     public void runBeforeEachTest() throws IOException {
+        // 1. Add proper cleanup before the test
         // Create documents for search
         Request request = new Request("POST", "/my-index-0/_doc");
         request.setJsonEntity(createDocumentsBody());
@@ -368,9 +373,12 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Request request = new Request("GET", endpoint);
         Response response = client().performRequest(request);
 
+
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
 
         String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        logger.debug("Response body: {}", responseBody);
+
         return responseBody;
     }
 
