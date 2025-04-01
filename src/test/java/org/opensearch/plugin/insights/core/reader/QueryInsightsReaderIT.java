@@ -138,7 +138,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         long initialWaitMs = 1000;
         deleteIndexWithRetryIndex(maxRetries, initialWaitMs);
         deleteIndexWithRetrylocalIndex(maxRetries, initialWaitMs);
-        
+
         // Reset settings with retry
         String resetSettings = "{ \"persistent\": { "
             + "\"search.insights.top_queries.exporter.type\": \"none\", "
@@ -197,7 +197,6 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
             }
         }
     }
-
 
     private void updateSettingsWithRetry(String settings, int maxRetries, long waitMs) throws IOException {
         Request resetRequest = new Request("PUT", "/_cluster/settings");
