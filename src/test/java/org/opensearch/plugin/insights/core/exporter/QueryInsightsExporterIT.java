@@ -239,6 +239,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         client().performRequest(resetRequest);
 
     }
+
     private void deleteIndexWithRetry(String indexName) throws IOException {
         int maxRetries = 3;
         for (int i = 0; i < maxRetries; i++) {
@@ -322,8 +323,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
                 if (response.getStatusLine().getStatusCode() == 200) {
                     return;
                 }
-            } catch (ResponseException e) {
-            }
+            } catch (ResponseException e) {}
 
             if (i < maxRetries - 1) {
                 try {
@@ -366,7 +366,6 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
     private void verifyCleanup() throws IOException {
 
-
         // Verify indices are deleted
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
@@ -382,6 +381,5 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         }
 
     }
-
 
 }
