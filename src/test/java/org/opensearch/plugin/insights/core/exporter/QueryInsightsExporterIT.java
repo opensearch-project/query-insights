@@ -52,7 +52,24 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         disableLocalIndexExporter();
         reEnableLocalIndexExporter();
         setLocalIndexToDebug();
-        cleanup(fullIndexName);
+        Thread.sleep(20000);
+
+        // Delete top_queries index with verification
+        if (fullIndexName != null) {
+            deleteIndexWithRetry(fullIndexName);
+        }
+
+        // Delete test index with verification
+        deleteIndexWithRetry("my-index-0");
+
+        // Delete index template with verification
+        deleteTemplateWithRetry();
+
+        // Reset settings with verification
+        resetSettingsWithRetry();
+
+        // Verify all cleanup operations
+        verifyCleanup();
 
     }
 
@@ -209,7 +226,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         } catch (ResponseException ignored) {}
 
         try {
-            client().performRequest(new Request("DELETE", "/_index_template"));
+            client().performRequest(new Request("DELETE", "/index_template"));
         } catch (ResponseException ignored) {}
 
         String resetSettings = "{ \"persistent\": { "
@@ -222,5 +239,149 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         client().performRequest(resetRequest);
 
     }
+    private void deleteIndexWithRetry(String indexName) throws IOException {
+        int maxRetries = 3;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                Request deleteRequest = new Request("DELETE", "/" + indexName);
+                Response response = client().performRequest(deleteRequest);
+                if (response.getStatusLine().getStatusCode() == 200) {
+                    logger.info("Successfully deleted index: {}", indexName);
+
+                    // Verify index is actually deleted
+                    if (!WhetherindexExists(indexName)) {
+                        return;
+                    }
+                }
+            } catch (ResponseException e) {
+                if (e.getResponse().getStatusLine().getStatusCode() == 404) {
+                    // Index doesn't exist, which is fine
+                    logger.info("Index {} already doesn't exist", indexName);
+                    return;
+                }
+                logger.warn("Failed to delete index: {} (attempt {}/{})", indexName, i + 1, maxRetries, e);
+            }
+
+            if (i < maxRetries - 1) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting between retries", ie);
+                }
+            }
+        }
+        throw new IOException("Failed to delete index: " + indexName + " after " + maxRetries + " attempts");
+    }
+
+    private void deleteTemplateWithRetry() throws IOException {
+        int maxRetries = 3;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                Request deleteRequest = new Request("DELETE", "/index_template");
+                Response response = client().performRequest(deleteRequest);
+                if (response.getStatusLine().getStatusCode() == 200) {
+
+                    // Verify template is actually deleted
+                    if (!templateExists()) {
+                        return;
+                    }
+                }
+            } catch (ResponseException e) {
+                if (e.getResponse().getStatusLine().getStatusCode() == 404) {
+
+                    return;
+                }
+
+            }
+
+            if (i < maxRetries - 1) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting between retries", ie);
+                }
+            }
+        }
+        throw new IOException("Failed to delete template after " + maxRetries + " attempts");
+    }
+
+    private void resetSettingsWithRetry() throws IOException {
+        String resetSettings = "{ \"persistent\": { "
+            + "\"search.insights.top_queries.exporter.type\": \"none\", "
+            + "\"search.insights.top_queries.latency.enabled\": \"false\""
+            + "} }";
+
+        int maxRetries = 3;
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                Request resetRequest = new Request("PUT", "/_cluster/settings");
+                resetRequest.setJsonEntity(resetSettings);
+                Response response = client().performRequest(resetRequest);
+                if (response.getStatusLine().getStatusCode() == 200) {
+                    return;
+                }
+            } catch (ResponseException e) {
+            }
+
+            if (i < maxRetries - 1) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting between retries", ie);
+                }
+            }
+        }
+        throw new IOException("Failed to reset settings after " + maxRetries + " attempts");
+    }
+
+    private boolean WhetherindexExists(String indexName) throws IOException {
+        try {
+            Request request = new Request("HEAD", "/" + indexName);
+            Response response = client().performRequest(request);
+            return response.getStatusLine().getStatusCode() == 200;
+        } catch (ResponseException e) {
+            if (e.getResponse().getStatusLine().getStatusCode() == 404) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    private boolean templateExists() throws IOException {
+        try {
+            Request request = new Request("GET", "/_index_template");
+            Response response = client().performRequest(request);
+            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            return !responseBody.contains("my_template");
+        } catch (ResponseException e) {
+            if (e.getResponse().getStatusLine().getStatusCode() == 404) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    private void verifyCleanup() throws IOException {
+
+
+        // Verify indices are deleted
+        Request indicesRequest = new Request("GET", "/_cat/indices?v");
+        Response response = client().performRequest(indicesRequest);
+        String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
+        if (responseBody.contains("my-index-0") || responseBody.contains("top_queries-")) {
+            throw new IOException("Cleanup verification failed: Some indices still exist\n" + responseBody);
+        }
+
+        // Verify templates are deleted
+        if (templateExists()) {
+            throw new IOException("Cleanup verification failed: Template still exists");
+        }
+
+    }
+
 
 }
