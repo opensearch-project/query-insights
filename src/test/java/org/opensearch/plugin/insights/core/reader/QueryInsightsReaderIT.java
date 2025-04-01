@@ -133,7 +133,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
     }
 
     private void cleanup(String fullIndexName) throws IOException, InterruptedException {
-        Thread.sleep(3000);
+        Thread.sleep(10000);
 
         try {
             client().performRequest(new Request("DELETE", "/top_queries"));
@@ -142,6 +142,8 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
         try {
             client().performRequest(new Request("DELETE", "/my-index-0"));
         } catch (ResponseException ignored) {}
+
+
 
         String resetSettings = "{ \"persistent\": { "
             + "\"search.insights.top_queries.exporter.type\": \"none\", "
