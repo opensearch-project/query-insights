@@ -120,13 +120,13 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         return fullIndexName;
     }
 
-    private void checkQueryInsightsIndexTemplate() throws IOException {
-        Request request = new Request("GET", "/_index_template");
-        Response response = client().performRequest(request);
-        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue("Expected default index template for my_template to be present", responseContent.contains("my_template"));
-        assertTrue("Expected priority for my_template to be 2000", responseContent.contains("2000"));
-    }
+     private void checkQueryInsightsIndexTemplate() throws IOException {
+     Request request = new Request("GET", "/_index_template");
+     Response response = client().performRequest(request);
+     String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+     assertTrue("Expected default index template for my_template to be present", responseContent.contains("my_template"));
+     assertTrue("Expected priority for my_template to be 2000", responseContent.contains("2000"));
+     }
 
     private void disableLocalIndexExporter() throws IOException {
         String disableExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"none\" } }";
@@ -198,121 +198,30 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         client().performRequest(templateRequest);
     }
 
-    private void cleanup(String fullIndexName) throws IOException {
-        // Retry logic with exponential backoff
-        int maxRetries = 3;
-        long initialWaitMs = 1000;
-        deleteIndexWithRetryIndex(maxRetries, initialWaitMs);
-        deleteIndexWithRetrylocalIndex(maxRetries, initialWaitMs);
-        // // Delete template with retry
-        // deleteTemplateWithRetry(maxRetries, initialWaitMs);
+    private void cleanup(String fullIndexName) throws IOException, InterruptedException {
+        Thread.sleep(3000);
 
-        // Reset settings with retry
+        try {
+            client().performRequest(new Request("DELETE", "/top_queries"));
+        } catch (ResponseException ignored) {}
+
+        try {
+            client().performRequest(new Request("DELETE", "/my-index-0"));
+        } catch (ResponseException ignored) {}
+
+         try {
+         client().performRequest(new Request("DELETE", "/_index_template"));
+         } catch (ResponseException ignored) {}
+
         String resetSettings = "{ \"persistent\": { "
             + "\"search.insights.top_queries.exporter.type\": \"none\", "
             + "\"search.insights.top_queries.latency.enabled\": \"false\""
             + "} }";
 
-        updateSettingsWithRetry(resetSettings, maxRetries, initialWaitMs);
-    }
-
-    private void deleteIndexWithRetrylocalIndex(int maxRetries, long waitMs) throws IOException {
-        for (int i = 0; i < maxRetries; i++) {
-            try {
-                Response response = client().performRequest(new Request("DELETE", "/my-index-0"));
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    return;
-                }
-            } catch (ResponseException e) {
-                if (e.getResponse().getStatusLine().getStatusCode() == 404) {
-                    // Index doesn't exist, that's fine
-                    return;
-                }
-                if (i == maxRetries - 1) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(waitMs * (long) Math.pow(2, i));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting to retry", ie);
-                }
-            }
-        }
-    }
-
-    private void deleteIndexWithRetryIndex(int maxRetries, long waitMs) throws IOException {
-        for (int i = 0; i < maxRetries; i++) {
-            try {
-                Response response = client().performRequest(new Request("DELETE", "/top_queries"));
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    return;
-                }
-            } catch (ResponseException e) {
-                if (e.getResponse().getStatusLine().getStatusCode() == 404) {
-                    // Index doesn't exist, that's fine
-                    return;
-                }
-                if (i == maxRetries - 1) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(waitMs * (long) Math.pow(2, i));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting to retry", ie);
-                }
-            }
-        }
-    }
-
-    private void deleteTemplateWithRetry(int maxRetries, long waitMs) throws IOException {
-        for (int i = 0; i < maxRetries; i++) {
-            try {
-                Response response = client().performRequest(new Request("DELETE", "/index_template"));
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    return;
-                }
-            } catch (ResponseException e) {
-                if (e.getResponse().getStatusLine().getStatusCode() == 404) {
-                    // Index doesn't exist, that's fine
-                    return;
-                }
-                if (i == maxRetries - 1) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(waitMs * (long) Math.pow(2, i));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting to retry", ie);
-                }
-            }
-        }
-    }
-
-    private void updateSettingsWithRetry(String settings, int maxRetries, long waitMs) throws IOException {
         Request resetRequest = new Request("PUT", "/_cluster/settings");
-        resetRequest.setJsonEntity(settings);
+        resetRequest.setJsonEntity(resetSettings);
+        client().performRequest(resetRequest);
 
-        for (int i = 0; i < maxRetries; i++) {
-            try {
-                Response response = client().performRequest(resetRequest);
-                if (response.getStatusLine().getStatusCode() == 200) {
-                    return;
-                }
-            } catch (ResponseException e) {
-                if (i == maxRetries - 1) {
-                    throw e;
-                }
-                try {
-                    Thread.sleep(waitMs * (long) Math.pow(2, i));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted while waiting to retry", ie);
-                }
-            }
-        }
     }
 
 }
