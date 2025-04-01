@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
-    private static final Logger logger = LoggerFactory.getLogger(QueryInsightsRestTestCase.class);
+    public static final Logger logger = LoggerFactory.getLogger(QueryInsightsRestTestCase.class);
 
     protected boolean isHttps() {
         return Optional.ofNullable(System.getProperty("https")).map("true"::equalsIgnoreCase).orElse(false);
