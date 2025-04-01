@@ -76,13 +76,13 @@ public class RestTopQueriesAction extends BaseRestHandler {
 
     static TopQueriesRequest prepareRequest(final RestRequest request) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
-        final String metricType = request.param("type", MetricType.LATENCY.toString());
+        final String sort = request.param("sort", MetricType.LATENCY.toString());
         final String from = request.param("from", null);
         final String to = request.param("to", null);
         final String id = request.param("id", null);
-        if (!ALLOWED_METRICS.contains(metricType)) {
+        if (!ALLOWED_METRICS.contains(sort)) {
             throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
+                String.format(Locale.ROOT, "request [%s] contains invalid sort parameter [%s]", request.path(), sort)
             );
         }
         boolean isTimeRangeProvided = from != null || to != null;
@@ -90,7 +90,7 @@ public class RestTopQueriesAction extends BaseRestHandler {
             validateTimeRange(request, from, to);
         }
 
-        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, id, nodesIds);
+        return new TopQueriesRequest(MetricType.fromString(sort), from, to, id, nodesIds);
     }
 
     private static void validateTimeRange(RestRequest request, String from, String to) {

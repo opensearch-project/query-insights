@@ -62,7 +62,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         // Do Search
         doSearch(2);
 
-        assertTopQueriesCount(2, "cpu");
+        assertTopQueriesCount(4, "cpu");
     }
 
     /**

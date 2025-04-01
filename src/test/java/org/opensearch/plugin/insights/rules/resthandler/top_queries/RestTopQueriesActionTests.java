@@ -46,14 +46,14 @@ public class RestTopQueriesActionTests extends OpenSearchTestCase {
         assertArrayEquals(nodes, actual.nodesIds());
     }
 
-    public void testInValidType() {
+    public void testInValidSort() {
         Map<String, String> params = new HashMap<>();
-        params.put("type", randomAlphaOfLengthBetween(5, 10).toUpperCase(Locale.ROOT));
+        params.put("sort", randomAlphaOfLengthBetween(5, 10).toUpperCase(Locale.ROOT));
 
         RestRequest restRequest = buildRestRequest(params);
         Exception exception = assertThrows(IllegalArgumentException.class, () -> { RestTopQueriesAction.prepareRequest(restRequest); });
         assertEquals(
-            String.format(Locale.ROOT, "request [/_insights/top_queries] contains invalid metric type [%s]", params.get("type")),
+            String.format(Locale.ROOT, "request [/_insights/top_queries] contains invalid sort parameter [%s]", params.get("sort")),
             exception.getMessage()
         );
     }

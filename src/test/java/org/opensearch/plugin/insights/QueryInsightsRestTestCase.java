@@ -354,14 +354,14 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 case "cpu":
                 case "memory":
                 case "latency":
-                    endpoint = "/_insights/top_queries?type=" + type + "&pretty";
+                    endpoint = "/_insights/top_queries?sort=" + type + "&pretty";
                     break;
                 case "all":
-                    // Keep the default endpoint (no type parameter)
+                    // Keep the default endpoint (no sort parameter)
                     break;
                 default:
-                    // Throw an exception if the type is invalid
-                    throw new IllegalArgumentException("Invalid type: " + type + ". Valid types are 'all', 'cpu', 'memory', or 'latency'.");
+                    // Throw an exception if the sort is invalid
+                    throw new IllegalArgumentException("Invalid sort: " + type + ". Valid types are 'cpu', 'memory', or 'latency'.");
             }
         }
 
