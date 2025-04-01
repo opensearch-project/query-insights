@@ -51,7 +51,6 @@ import org.opensearch.test.rest.OpenSearchRestTestCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
     private static final Logger logger = LoggerFactory.getLogger(QueryInsightsRestTestCase.class);
@@ -372,7 +371,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
         Request request = new Request("GET", endpoint);
         Response response = client().performRequest(request);
-
 
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
 
