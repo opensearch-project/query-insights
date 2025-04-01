@@ -42,14 +42,14 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         setLatencyWindowSize("1m");
-        // createIndexTemplate();
+        createIndexTemplate();
         waitForWindowToPass(10);
         performSearch();
 
         waitForWindowToPass(70);
         String fullIndexName = null;
         fullIndexName = checkLocalIndices();
-        // checkQueryInsightsIndexTemplate();
+        checkQueryInsightsIndexTemplate();
         disableLocalIndexExporter();
         reEnableLocalIndexExporter();
         setLocalIndexToDebug();
@@ -120,13 +120,13 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         return fullIndexName;
     }
 
-    // private void checkQueryInsightsIndexTemplate() throws IOException {
-    // Request request = new Request("GET", "/_index_template");
-    // Response response = client().performRequest(request);
-    // String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-    // assertTrue("Expected default index template for my_template to be present", responseContent.contains("my_template"));
-    // assertTrue("Expected priority for my_template to be 2000", responseContent.contains("2000"));
-    // }
+    private void checkQueryInsightsIndexTemplate() throws IOException {
+        Request request = new Request("GET", "/_index_template");
+        Response response = client().performRequest(request);
+        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue("Expected default index template for my_template to be present", responseContent.contains("my_template"));
+        assertTrue("Expected priority for my_template to be 2000", responseContent.contains("2000"));
+    }
 
     private void disableLocalIndexExporter() throws IOException {
         String disableExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"none\" } }";
@@ -209,9 +209,9 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
             client().performRequest(new Request("DELETE", "/my-index-0"));
         } catch (ResponseException ignored) {}
 
-        // try {
-        // client().performRequest(new Request("DELETE", "/_index_template"));
-        // } catch (ResponseException ignored) {}
+        try {
+            client().performRequest(new Request("DELETE", "/_index_template"));
+        } catch (ResponseException ignored) {}
 
         String resetSettings = "{ \"persistent\": { "
             + "\"search.insights.top_queries.exporter.type\": \"none\", "
