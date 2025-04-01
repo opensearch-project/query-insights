@@ -22,7 +22,6 @@ import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
     public void testQueryInsightsExporterSettings() throws IOException, InterruptedException {
-        setLatencyWindowSize("1m");
         createDocument();
 
         for (String setting : invalidExporterSettings()) {
@@ -38,8 +37,10 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
         Request request = new Request("PUT", "/_cluster/settings");
         request.setJsonEntity(defaultExporterSettings());
+
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        setLatencyWindowSize("1m");
         createIndexTemplate();
         waitForWindowToPass(10);
         performSearch();
@@ -197,7 +198,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
     }
 
     private void cleanup(String fullIndexName) throws IOException, InterruptedException {
-        Thread.sleep(3000);
+        Thread.sleep(10000);
 
         try {
             client().performRequest(new Request("DELETE", "/" + fullIndexName));
