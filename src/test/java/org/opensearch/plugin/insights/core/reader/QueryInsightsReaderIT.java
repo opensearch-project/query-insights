@@ -10,7 +10,6 @@ package org.opensearch.plugin.insights.core.reader;
 import java.io.IOException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
-
 public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
 
     public void testQueryInsightsHistoricalTopQueriesRead() throws IOException, InterruptedException {

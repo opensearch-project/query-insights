@@ -7,9 +7,10 @@
  */
 
 package org.opensearch.plugin.insights.core.exporter;
-import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import org.opensearch.client.ResponseException;
+
 import org.opensearch.client.Request;
+import org.opensearch.client.ResponseException;
+import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 /** Rest Action tests for query */
 public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
@@ -34,8 +35,8 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
         checkQueryInsightsIndexTemplate();
         cleanupIndextemplate();
         disableLocalIndexExporter();
-        defaultExporterSettings();//Re-enabling the Local Index
-        setLocalIndexToDebug();//Ensuring it is able to toggle Local to Debug
+        defaultExporterSettings();// Re-enabling the Local Index
+        setLocalIndexToDebug();// Ensuring it is able to toggle Local to Debug
         cleanup();
     }
 }

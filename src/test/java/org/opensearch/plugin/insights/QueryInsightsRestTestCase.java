@@ -13,7 +13,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -36,7 +40,11 @@ import org.apache.hc.core5.util.Timeout;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
-import org.opensearch.client.*;
+import org.opensearch.client.Request;
+import org.opensearch.client.Response;
+import org.opensearch.client.ResponseException;
+import org.opensearch.client.RestClient;
+import org.opensearch.client.RestClientBuilder;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
@@ -47,7 +55,6 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.rest.OpenSearchRestTestCase;
-import org.opensearch.client.Response;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
@@ -390,7 +397,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         assertEquals(201, response.getStatusLine().getStatusCode());
     }
 
-    protected void performSearch() throws IOException , InterruptedException {
+    protected void performSearch() throws IOException, InterruptedException {
         Thread.sleep(3000);
 
         String searchJson = "{ \"query\": { \"match\": { \"title\": \"Test Document\" } } }";
@@ -411,9 +418,11 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected void defaultExporterSettings() throws IOException {
         Request request = new Request("PUT", "/_cluster/settings");
-        request.setJsonEntity("{ \"persistent\": { " +
-            "\"search.insights.top_queries.exporter.type\": \"local_index\", " +
-            "\"search.insights.top_queries.latency.enabled\": \"true\" } }");
+        request.setJsonEntity(
+            "{ \"persistent\": { "
+                + "\"search.insights.top_queries.exporter.type\": \"local_index\", "
+                + "\"search.insights.top_queries.latency.enabled\": \"true\" } }"
+        );
         Response response = client().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
     }
@@ -432,9 +441,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             logger.warning("Cleanup: Failed to delete /my-index-0: " + e.getMessage());
         }
 
-        String resetSettings = "{ \"persistent\": { " +
-            "\"search.insights.top_queries.exporter.type\": \"none\", " +
-            "\"search.insights.top_queries.latency.enabled\": \"false\" } }";
+        String resetSettings = "{ \"persistent\": { "
+            + "\"search.insights.top_queries.exporter.type\": \"none\", "
+            + "\"search.insights.top_queries.latency.enabled\": \"false\" } }";
         Request resetReq = new Request("PUT", "/_cluster/settings");
         resetReq.setJsonEntity(resetSettings);
         client().performRequest(resetReq);
@@ -449,6 +458,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             logger.warning("Failed to delete /_index_template: " + e.getMessage());
         }
     }
+
     protected void checkLocalIndices() throws IOException {
         Request indicesRequest = new Request("GET", "/_cat/indices?v");
         Response response = client().performRequest(indicesRequest);
@@ -476,9 +486,13 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
         byte[] bytes = fetchResponse.getEntity().getContent().readAllBytes();
 
-        try (XContentParser parser = JsonXContent.jsonXContent.createParser(
-            NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, bytes
-        )) {
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                bytes
+            )
+        ) {
             Map<String, Object> responseMap = parser.map();
 
             Map<String, Object> hitsWrapper = (Map<String, Object>) responseMap.get("hits");
@@ -507,8 +521,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertTrue(measurements.containsKey("latency"));
             assertTrue(measurements.containsKey("memory"));
 
-            List<Map<String, Object>> taskResourceUsages =
-                (List<Map<String, Object>>) source.get("task_resource_usages");
+            List<Map<String, Object>> taskResourceUsages = (List<Map<String, Object>>) source.get("task_resource_usages");
             assertTrue("Expected non-empty task_resource_usages", taskResourceUsages.size() > 0);
         }
     }
@@ -518,9 +531,13 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Response response = client().performRequest(request);
         byte[] bytes = response.getEntity().getContent().readAllBytes();
 
-        try (XContentParser parser = JsonXContent.jsonXContent.createParser(
-            NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, bytes
-        )) {
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                bytes
+            )
+        ) {
             Map<String, Object> parsed = parser.map();
 
             List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
@@ -561,8 +578,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         client().performRequest(debugExporterRequest);
     }
 
-
-
     protected void disableLocalIndexExporter() throws IOException {
         String disableExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"none\" } }";
         Request disableExporterRequest = new Request("PUT", "/_cluster/settings");
@@ -573,8 +588,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected String[] invalidExporterSettings() {
         return new String[] {
             "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : invalid_type } }",
-            "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }"
-        };
+            "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }" };
     }
 
     protected void fetchHistoricalTopQueries() throws IOException {
@@ -588,11 +602,13 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
         byte[] content = fetchResponse.getEntity().getContent().readAllBytes();
 
-        try (XContentParser parser = JsonXContent.jsonXContent.createParser(
-            NamedXContentRegistry.EMPTY,
-            DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-            content
-        )) {
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                content
+            )
+        ) {
             Map<String, Object> root = parser.map();
             List<Map<String, Object>> topQueries = (List<Map<String, Object>>) root.get("top_queries");
             assertNotNull("Expected 'top_queries' field", topQueries);
@@ -633,6 +649,5 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertTrue("Expected at least one query with title='Test Document'", matchFound);
         }
     }
-
 
 }
