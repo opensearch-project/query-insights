@@ -22,6 +22,11 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -31,6 +36,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -38,10 +44,12 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
 import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.cluster.node.DiscoveryNodeRole;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
@@ -101,6 +109,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * the service closed concurrently.
      */
     protected volatile List<Scheduler.Cancellable> scheduledFutures;
+
+    /**
+     * Reference to the Query Insights local index deletion {@link ScheduledFuture}
+     */
+    protected volatile ScheduledFuture deleteIndicesScheduledFuture;
 
     /**
      * Factory for validating and creating exporters
@@ -567,6 +580,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
     }
 
+    /**
+     * Calculates the duration until the next UTC midnight (00:00:00).
+     * <p>
+     * This method computes the time difference between the given {@code Instant} and the start of the next UTC day
+     * at midnight (00:00:00). It returns the duration as a long in milliseconds.
+     *
+     * @param now The current time as an {@link Instant}.
+     * @return A long representing the time delay (in milliseconds) until the next UTC midnight.
+     */
+    static long getInitialDelay(final Instant now) {
+        // Calculate the start of the next UTC day (00:00:00)
+        final Instant startOfNextDay = now.truncatedTo(ChronoUnit.DAYS).plus(1, ChronoUnit.DAYS);
+        return Duration.between(now, startOfNextDay).toMillis();
+    }
+
     @Override
     protected void doStart() {
         if (isAnyFeatureEnabled()) {
@@ -578,13 +606,20 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                     QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
                 )
             );
-            scheduledFutures.add(
-                threadPool.scheduleWithFixedDelay(
-                    this::deleteExpiredTopNIndices,
-                    new TimeValue(1, TimeUnit.DAYS), // Check for deletable indices once per day
-                    QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
-                )
-            );
+            if (threadPool.scheduler() != null) {
+                deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
+                    try {
+                        if (clusterService.isStateInitialised()
+                            && clusterService.localNode().getRoles().contains(DiscoveryNodeRole.CLUSTER_MANAGER_ROLE)) {
+                            deleteExpiredTopNIndices();
+                        }
+                    } catch (Exception e) {
+                        logger.error("Error occurred while deleting expired indices:", e);
+                    }
+                }, getInitialDelay(Instant.now()) + Duration.ofMinutes(5).toMillis(), Duration.ofDays(1).toMillis(), TimeUnit.MILLISECONDS);
+            } else {
+                logger.error("Unable to schedule Query Insights delete job. threadPool.scheduler() is null");
+            }
         }
     }
 
@@ -597,6 +632,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+        FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
     @Override
@@ -646,12 +682,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
                 client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
                     final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
-                    final long expirationMillisLong = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(
+                    final long startOfTodayUtcMillis = LocalDateTime.now(ZoneOffset.UTC)    // Today at 00:00 UTC
+                        .truncatedTo(ChronoUnit.DAYS)
+                        .toInstant(ZoneOffset.UTC)
+                        .toEpochMilli();
+                    final long expirationMillisLong = startOfTodayUtcMillis - TimeUnit.DAYS.toMillis(
                         ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
                     );
                     for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
                         String indexName = entry.getKey();
-                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() <= expirationMillisLong) {
+                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() < expirationMillisLong) {
                             // delete this index
                             localIndexExporter.deleteSingleIndex(indexName, client);
                         }
