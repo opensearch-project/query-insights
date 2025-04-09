@@ -34,7 +34,7 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
     public void testSerialize() throws Exception {
         TopQueries topQueries = QueryInsightsTestUtils.createRandomTopQueries();
         ClusterName clusterName = new ClusterName("test-cluster");
-        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), 10, MetricType.LATENCY);
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
         TopQueriesResponse deserializedResponse = roundTripResponse(response);
         assertEquals(response.toString(), deserializedResponse.toString());
     }
@@ -86,7 +86,7 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
 
         TopQueries topQueries = QueryInsightsTestUtils.createFixedTopQueries(id);
         ClusterName clusterName = new ClusterName("test-cluster");
-        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), 10, MetricType.LATENCY);
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
 
         XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
         char[] xContent = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString().toCharArray();
