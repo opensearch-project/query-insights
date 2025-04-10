@@ -8,11 +8,12 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
+import org.apache.hc.core5.http.ParseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
 
-    public void testQueryInsightsHistoricalTopQueriesRead() throws IOException, InterruptedException {
+    public void testQueryInsightsHistoricalTopQueriesRead() throws IOException, InterruptedException, ParseException {
         createDocument();
         defaultExporterSettings();
         setLatencyWindowSize("1m");

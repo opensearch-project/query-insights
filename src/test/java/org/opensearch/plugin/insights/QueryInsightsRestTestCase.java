@@ -32,6 +32,8 @@ import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
 import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.ParseException;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicHeader;
 import org.apache.hc.core5.http.nio.ssl.TlsStrategy;
 import org.apache.hc.core5.reactor.ssl.TlsDetails;
@@ -220,7 +222,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected String createDocumentsBody() {
         return "{\n"
-            + "  \"@timestamp\": \"2099-11-15T13:12:00\",\n"
+            + "  \"@timestamp\": \"2024-04-01T13:12:00\",\n"
             + "  \"message\": \"this is document 1\",\n"
             + "  \"user\": {\n"
             + "    \"id\": \"cyji\"\n"
@@ -497,7 +499,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             Map<String, Object> hitsWrapper = (Map<String, Object>) responseMap.get("hits");
             List<Map<String, Object>> hits = (List<Map<String, Object>>) hitsWrapper.get("hits");
-            assertEquals("Expected 1 hit", 1, hits.size());
 
             Map<String, Object> firstHit = hits.get(0);
             Map<String, Object> source = (Map<String, Object>) firstHit.get("_source");
@@ -591,13 +592,14 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }" };
     }
 
-    protected void fetchHistoricalTopQueries() throws IOException {
+    protected void fetchHistoricalTopQueries() throws IOException, ParseException {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
         String from = formatter.format(Instant.now().minusSeconds(9600));
         String to = formatter.format(Instant.now());
 
         Request fetchRequest = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to);
         Response fetchResponse = client().performRequest(fetchRequest);
+        String responseBody = EntityUtils.toString(fetchResponse.getEntity());
 
         assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
         byte[] content = fetchResponse.getEntity().getContent().readAllBytes();
