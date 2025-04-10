@@ -70,7 +70,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         } catch (Exception e) {
 
             throw e;
-        } 
+        }
         cleanup();
 
     }
@@ -79,7 +79,6 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         Request catRequest = new Request("GET", "/_cat/indices?v");
         Response catResponse = client().performRequest(catRequest);
         String indicesOutput = EntityUtils.toString(catResponse.getEntity());
-
 
     }
 
@@ -221,7 +220,6 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         Request searchTest = new Request("GET", "/" + indexName + "/_search");
         searchTest.setJsonEntity("{ \"query\": { \"match_all\": {} } }");
         Response searchResp = client().performRequest(searchTest);
-
 
     }
 
