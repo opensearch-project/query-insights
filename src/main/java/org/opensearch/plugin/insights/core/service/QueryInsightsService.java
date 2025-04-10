@@ -44,7 +44,6 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
 import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.cluster.metadata.IndexMetadata;
-import org.opensearch.cluster.node.DiscoveryNodeRole;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
@@ -610,7 +609,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
                     try {
                         if (clusterService.isStateInitialised()
-                            && clusterService.localNode().getRoles().contains(DiscoveryNodeRole.CLUSTER_MANAGER_ROLE)) {
+                            && clusterService.state().getNodes() != null
+                            && clusterService.state().getNodes().isLocalNodeElectedClusterManager()) {
                             deleteExpiredTopNIndices();
                         }
                     } catch (Exception e) {
