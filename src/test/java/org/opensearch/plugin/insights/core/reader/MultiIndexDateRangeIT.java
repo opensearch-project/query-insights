@@ -2,7 +2,6 @@ package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -24,9 +23,9 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
 
     public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).withZone(ZoneOffset.UTC);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
-        List<String> inputDates = List.of("2022-06-21", "2020-10-04", "2023-02-15", "2021-12-29", "2024-03-08");
+        List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
 
         for (String dateStr : inputDates) {
             ZonedDateTime zdt = ZonedDateTime.parse(dateStr, formatter);
