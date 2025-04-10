@@ -24,15 +24,9 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
 
     public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).withZone(ZoneOffset.UTC);
 
-        List<String> inputDates = List.of(
-            "2022-06-21 19:42",
-            "2020-10-04 00:09",
-            "2023-02-15 05:18",
-            "2021-12-29 21:33",
-            "2024-03-08 11:01"
-        );
+        List<String> inputDates = List.of("2022-06-21", "2020-10-04", "2023-02-15", "2021-12-29", "2024-03-08");
 
         for (String dateStr : inputDates) {
             ZonedDateTime zdt = ZonedDateTime.parse(dateStr, formatter);
