@@ -2,6 +2,7 @@ package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -19,53 +20,56 @@ import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
-    private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+    // Use Locale.ROOT and make all formatters static final
+    private static final DateTimeFormatter INDEX_PATTERN = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+    private static final DateTimeFormatter HASH_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
 
     public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
-
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
-
         List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
 
+        // Create indices
         for (String dateStr : inputDates) {
-            ZonedDateTime zdt = ZonedDateTime.parse(dateStr, formatter);
+            ZonedDateTime zdt = LocalDate.parse(dateStr, DATE_FORMATTER).atStartOfDay(ZoneOffset.UTC);
             long timestamp = zdt.toInstant().toEpochMilli();
             String indexName = buildLocalIndexName(zdt);
             createTopQueriesIndex(indexName, timestamp);
         }
 
+        // Allow time for indices to be ready
         Thread.sleep(10000);
-        view_index();
+        // viewIndices(); // renamed from view_index for better naming convention
 
+        // Test date range query
         Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z");
 
         try {
             Response response = client().performRequest(request);
-            String responseBody = EntityUtils.toString(response.getEntity());
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            Assert.assertFalse("Expected non-empty top_queries but got empty list", responseBody.contains("\"top_queries\":[]"));
+            assertEquals(200, response.getStatusLine().getStatusCode());
+
             byte[] bytes = response.getEntity().getContent().readAllBytes();
+            Map<String, Object> parsed = parseResponse(bytes);
 
-            try (
-                XContentParser parser = JsonXContent.jsonXContent.createParser(
-                    NamedXContentRegistry.EMPTY,
-                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                    bytes
-                )
-            ) {
-                Map<String, Object> parsed = parser.map();
-                List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
-
-                // Assert the expected count
-                Assert.assertEquals("Expected 4 top queries", 4, topQueries.size());
-            }
-
-        } catch (Exception e) {
-
-            throw e;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
+            assertNotNull("Top queries should not be null", topQueries);
+            assertFalse("Top queries should not be empty", topQueries.isEmpty());
+            assertEquals("Expected 4 top queries", 4, topQueries.size());
+        } finally {
+            cleanup();
         }
-        cleanup();
+    }
 
+    private Map<String, Object> parseResponse(byte[] bytes) throws IOException {
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                bytes
+            )
+        ) {
+            return parser.map();
+        }
     }
 
     public void view_index() throws IOException, ParseException {
@@ -200,7 +204,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         assertEquals(200, response.getStatusLine().getStatusCode());
 
         Request docrequest = new Request("POST", "/" + indexName + "/_doc");
-        String docBody = createDocumentsBody(timestamp);
+        String docBody = createDocumentBody(timestamp);
 
         docrequest.setJsonEntity(docBody);
 
@@ -216,8 +220,26 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
 
     }
 
-    protected String createDocumentsBody(long timestamp) {
-        return String.format("""
+    private String createDocumentBody(long timestamp) {
+        return String.format(Locale.ROOT, getDocumentTemplate(), timestamp);
+    }
+
+    private String buildLocalIndexName(ZonedDateTime current) {
+        return String.format(
+            Locale.ROOT,
+            "top_queries-%s-%s",
+            current.format(INDEX_PATTERN),
+            generateLocalIndexDateHash(current.toLocalDate())
+        );
+    }
+
+    public static String generateLocalIndexDateHash(LocalDate date) {
+        String dateString = HASH_DATE_FORMATTER.format(date);
+        return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
+    }
+
+    private static String getDocumentTemplate() {
+        return """
             {
               "timestamp": %d,
               "id": "6ac36175-e48e-4b90-9dbb-ee711a7ec629",
@@ -270,16 +292,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
                 }
               }
             }
-            """, timestamp);
-    }
-
-    private String buildLocalIndexName(ZonedDateTime current) {
-        return "top_queries-" + current.format(indexPattern) + "-" + generateLocalIndexDateHash(current.toLocalDate());
-    }
-
-    public static String generateLocalIndexDateHash(LocalDate date) {
-        String dateString = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).format(date);
-        return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
+            """;
     }
 
 }
