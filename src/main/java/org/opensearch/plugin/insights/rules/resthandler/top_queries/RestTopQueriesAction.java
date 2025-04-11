@@ -76,21 +76,37 @@ public class RestTopQueriesAction extends BaseRestHandler {
 
     static TopQueriesRequest prepareRequest(final RestRequest request) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
-        final String metricType = request.param("type", MetricType.LATENCY.toString());
+        final String metricType = request.param("type", null);
+        String sort = request.param("sort", null);
         final String from = request.param("from", null);
         final String to = request.param("to", null);
         final String id = request.param("id", null);
-        if (!ALLOWED_METRICS.contains(metricType)) {
+        if (metricType != null && !ALLOWED_METRICS.contains(metricType)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
             );
         }
+        if (sort != null && !ALLOWED_METRICS.contains(sort)) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "request [%s] contains invalid sort parameter [%s]", request.path(), sort)
+            );
+        }
+        if (metricType != null && sort != null) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "request [%s] contains both 'sort' and 'type'. Please use only 'sort'", request.path())
+            );
+        }
+        if (sort == null) {
+            // if "sort" is undefined, use "type" value or default to latency
+            sort = (metricType != null) ? metricType : MetricType.LATENCY.toString();
+        }
+
         boolean isTimeRangeProvided = from != null || to != null;
         if (isTimeRangeProvided) {
             validateTimeRange(request, from, to);
         }
 
-        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, id, nodesIds);
+        return new TopQueriesRequest(MetricType.fromString(sort), from, to, id, nodesIds);
     }
 
     private static void validateTimeRange(RestRequest request, String from, String to) {

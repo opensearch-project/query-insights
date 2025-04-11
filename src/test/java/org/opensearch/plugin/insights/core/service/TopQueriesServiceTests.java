@@ -128,7 +128,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
     public void testGetTopQueriesWhenNotEnabled() {
         topQueriesService.setEnabled(false);
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.getTopQueriesRecords(false, null, null, null); });
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null).size());
     }
 
     public void testValidateWindowSize() {

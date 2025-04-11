@@ -345,23 +345,23 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
-    protected String getTopQueries(String type) throws IOException {
+    protected String getTopQueries(String sort) throws IOException {
         // Base URL
         String endpoint = "/_insights/top_queries?pretty";
 
-        if (type != null) {
-            switch (type) {
+        if (sort != null) {
+            switch (sort) {
                 case "cpu":
                 case "memory":
                 case "latency":
-                    endpoint = "/_insights/top_queries?type=" + type + "&pretty";
+                    endpoint = "/_insights/top_queries?sort=" + sort + "&pretty";
                     break;
                 case "all":
-                    // Keep the default endpoint (no type parameter)
+                    // Keep the default endpoint (no sort parameter)
                     break;
                 default:
-                    // Throw an exception if the type is invalid
-                    throw new IllegalArgumentException("Invalid type: " + type + ". Valid types are 'all', 'cpu', 'memory', or 'latency'.");
+                    // Throw an exception if the sort is invalid
+                    throw new IllegalArgumentException("Invalid sort: " + sort + ". Valid types are 'cpu', 'memory', or 'latency'.");
             }
         }
 

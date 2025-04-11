@@ -9,7 +9,10 @@
 package org.opensearch.plugin.insights.rules.transport.top_queries;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
@@ -22,7 +25,8 @@ import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportRequest;
 import org.opensearch.transport.TransportService;
@@ -75,21 +79,11 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final List<TopQueries> responses,
         final List<FailedNodeException> failures
     ) {
-        int size;
-        switch (topQueriesRequest.getMetricType()) {
-            case CPU:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_CPU_QUERIES_SIZE);
-                break;
-            case MEMORY:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE);
-                break;
-            default:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE);
-        }
         final String from = topQueriesRequest.getFrom();
         final String to = topQueriesRequest.getTo();
         final String id = topQueriesRequest.getId();
         if (from != null && to != null) {
+            // If from/to param defined, fetch and append historical data to response
             responses.add(
                 new TopQueries(
                     clusterService.localNode(),
@@ -97,7 +91,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 )
             );
         }
-        return new TopQueriesResponse(clusterService.getClusterName(), responses, failures, size, topQueriesRequest.getMetricType());
+        return new TopQueriesResponse(clusterService.getClusterName(), responses, failures, topQueriesRequest.getMetricType());
     }
 
     @Override
@@ -116,10 +110,15 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final String from = request.getFrom();
         final String to = request.getTo();
         final String id = request.getId();
-        return new TopQueries(
-            clusterService.localNode(),
-            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to, id)
-        );
+        Set<SearchQueryRecord> searchQueryRecordsSet = new HashSet<>();
+        for (MetricType metricType : MetricType.values()) {
+            List<SearchQueryRecord> records = queryInsightsService.getTopQueriesService(metricType)
+                .getTopQueriesRecords(true, from, to, id);
+            if (records != null && !records.isEmpty()) {
+                searchQueryRecordsSet.addAll(records);
+            }
+        }
+        return new TopQueries(clusterService.localNode(), new ArrayList<>(searchQueryRecordsSet));
     }
 
     /**

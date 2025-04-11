@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.rest.RestHandler;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.test.OpenSearchTestCase;
@@ -46,7 +47,7 @@ public class RestTopQueriesActionTests extends OpenSearchTestCase {
         assertArrayEquals(nodes, actual.nodesIds());
     }
 
-    public void testInValidType() {
+    public void testInvalidType() {
         Map<String, String> params = new HashMap<>();
         params.put("type", randomAlphaOfLengthBetween(5, 10).toUpperCase(Locale.ROOT));
 
@@ -56,6 +57,46 @@ public class RestTopQueriesActionTests extends OpenSearchTestCase {
             String.format(Locale.ROOT, "request [/_insights/top_queries] contains invalid metric type [%s]", params.get("type")),
             exception.getMessage()
         );
+    }
+
+    public void testInvalidSort() {
+        Map<String, String> params = new HashMap<>();
+        params.put("sort", randomAlphaOfLengthBetween(5, 10).toUpperCase(Locale.ROOT));
+
+        RestRequest restRequest = buildRestRequest(params);
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> { RestTopQueriesAction.prepareRequest(restRequest); });
+        assertEquals(
+            String.format(Locale.ROOT, "request [/_insights/top_queries] contains invalid sort parameter [%s]", params.get("sort")),
+            exception.getMessage()
+        );
+    }
+
+    public void testValidSort() {
+        Map<String, String> params = new HashMap<>();
+        params.put("sort", MetricType.CPU.toString());
+
+        RestRequest restRequest = buildRestRequest(params);
+        TopQueriesRequest actual = RestTopQueriesAction.prepareRequest(restRequest);
+        assertEquals(MetricType.CPU, actual.getMetricType());
+    }
+
+    public void testSortOverrideType() {
+        Map<String, String> params = new HashMap<>();
+        params.put("type", MetricType.MEMORY.toString());
+
+        RestRequest restRequest = buildRestRequest(params);
+        TopQueriesRequest actual = RestTopQueriesAction.prepareRequest(restRequest);
+        assertEquals(MetricType.MEMORY, actual.getMetricType());
+    }
+
+    public void testBothTypeAndSort() {
+        Map<String, String> params = new HashMap<>();
+        params.put("type", MetricType.LATENCY.toString());
+        params.put("sort", MetricType.CPU.toString());
+
+        RestRequest restRequest = buildRestRequest(params);
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> { RestTopQueriesAction.prepareRequest(restRequest); });
+        assertEquals("request [/_insights/top_queries] contains both 'sort' and 'type'. Please use only 'sort'", exception.getMessage());
     }
 
     public void testInValidFrom() {

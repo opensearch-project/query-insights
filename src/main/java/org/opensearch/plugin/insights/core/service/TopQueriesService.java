@@ -271,11 +271,9 @@ public class TopQueriesService {
     private final Predicate<SearchQueryRecord> checkIfInternal = (record) -> {
         Map<Attribute, Object> attributes = record.getAttributes();
         Object indicesObject = attributes.get(Attribute.INDICES);
-        if (indicesObject instanceof Object[]) {
-            Object[] indices = (Object[]) indicesObject;
+        if (indicesObject instanceof Object[] indices) {
             return Arrays.stream(indices).noneMatch(index -> {
-                if (index instanceof String) {
-                    String indexString = (String) index;
+                if (index instanceof String indexString) {
                     return indexString.contains("top_queries");
                 }
                 return false;
@@ -302,7 +300,7 @@ public class TopQueriesService {
         final String from,
         final String to,
         final String id
-    ) throws IllegalArgumentException {
+    ) {
         OperationalMetricsCounter.getInstance()
             .incrementCounter(
                 OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
@@ -310,11 +308,6 @@ public class TopQueriesService {
                     .addTag(METRIC_TYPE_TAG, this.metricType.name())
                     .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
             );
-        if (!enabled) {
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
-            );
-        }
         // read from window snapshots
         final List<SearchQueryRecord> queries = new ArrayList<>(topQueriesCurrentSnapshot.get());
         if (includeLastWindow) {
@@ -353,14 +346,7 @@ public class TopQueriesService {
      * @return List of the records that are in local index (if enabled) with timestamps between from and to
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id)
-        throws IllegalArgumentException {
-        if (!enabled) {
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
-            );
-        }
-
+    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id) {
         final List<SearchQueryRecord> queries = new ArrayList<>();
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader != null) {
@@ -370,9 +356,7 @@ public class TopQueriesService {
                 List<SearchQueryRecord> records = reader.read(from, to, id);
                 Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                     && element.getTimestamp() <= end.toInstant().toEpochMilli();
-                List<SearchQueryRecord> filteredRecords = records.stream()
-                    .filter(checkIfInternal.and(timeFilter))
-                    .collect(Collectors.toList());
+                List<SearchQueryRecord> filteredRecords = records.stream().filter(checkIfInternal.and(timeFilter)).toList();
                 queries.addAll(filteredRecords);
             } catch (Exception e) {
                 logger.error("Failed to read from index: ", e);
