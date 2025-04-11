@@ -183,14 +183,14 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
     public void testDoStart() throws IOException {
         List<AbstractLifecycleComponent> updatedService = createQueryInsightsServiceWithIndexState(Map.of());
-        QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.getFirst();
+        QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.get(0);
         try {
             updatedQueryInsightsService.doStart();
         } catch (Exception e) {
             fail(String.format(Locale.ROOT, "No exception expected when starting query insights service: %s", e.getMessage()));
         }
         assertEquals(1, updatedQueryInsightsService.scheduledFutures.size());
-        assertFalse(updatedQueryInsightsService.scheduledFutures.getFirst().isCancelled());
+        assertFalse(updatedQueryInsightsService.scheduledFutures.get(0).isCancelled());
         assertNotNull(updatedQueryInsightsService.deleteIndicesScheduledFuture);
         assertFalse(updatedQueryInsightsService.deleteIndicesScheduledFuture.isCancelled());
 
