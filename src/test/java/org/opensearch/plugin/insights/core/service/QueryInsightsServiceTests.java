@@ -22,6 +22,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
+import static org.opensearch.plugin.insights.core.service.QueryInsightsService.getInitialDelay;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
@@ -32,6 +33,7 @@ import static org.opensearch.plugin.insights.core.service.categorizer.QueryShape
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -177,6 +179,24 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
             queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null).size()
         );
+    }
+
+    public void testDoStart() throws IOException {
+        List<AbstractLifecycleComponent> updatedService = createQueryInsightsServiceWithIndexState(Map.of());
+        QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.getFirst();
+        try {
+            updatedQueryInsightsService.doStart();
+        } catch (Exception e) {
+            fail(String.format(Locale.ROOT, "No exception expected when starting query insights service: %s", e.getMessage()));
+        }
+        assertEquals(1, updatedQueryInsightsService.scheduledFutures.size());
+        assertFalse(updatedQueryInsightsService.scheduledFutures.getFirst().isCancelled());
+        assertNotNull(updatedQueryInsightsService.deleteIndicesScheduledFuture);
+        assertFalse(updatedQueryInsightsService.deleteIndicesScheduledFuture.isCancelled());
+
+        updatedQueryInsightsService.doStop();
+        IOUtils.close(updatedService.get(1));
+        updatedQueryInsightsService.doClose();
     }
 
     public void testClose() {
@@ -360,7 +380,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         for (int i = 1; i < 10; i++) {
             LocalDate date = LocalDate.of(2023, 1, i);
             String indexName = "top_queries-" + date.format(format) + "-" + generateLocalIndexDateHash(date);
-            long creationTime = Instant.now().minus(i + 100, ChronoUnit.DAYS).toEpochMilli(); // Ensure indices are expired
+            long creationTime = Instant.now().minus(i, ChronoUnit.DAYS).toEpochMilli();
             IndexMetadata indexMetadata = IndexMetadata.builder(indexName)
                 .settings(
                     Settings.builder()
@@ -392,7 +412,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         List<AbstractLifecycleComponent> updatedService = createQueryInsightsServiceWithIndexState(indexMetadataMap);
         QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.get(0);
         ClusterService updatedClusterService = (ClusterService) updatedService.get(1);
-        CountDownLatch latch = new CountDownLatch(9);
+        final int expectedIndicesDeleted = 2;
+        CountDownLatch latch = new CountDownLatch(expectedIndicesDeleted);
         doAnswer(invocation -> {
             latch.countDown();
             return null;
@@ -402,10 +423,10 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
         assertTrue(latch.await(10, TimeUnit.SECONDS));
         // Verify that the correct number of indices are deleted
-        // Default retention is 7 days, so all 9 indices should be deleted
-        verify(client, times(1 + 9)).admin(); // one extra to get list of local indices
-        verify(adminClient, times(9)).indices();
-        verify(indicesAdminClient, times(9)).delete(any(), any());
+        // Default retention is 7 days, so oldest 2 indices should be deleted
+        verify(client, times(expectedIndicesDeleted + 1)).admin(); // one extra to get list of local indices
+        verify(adminClient, times(expectedIndicesDeleted)).indices();
+        verify(indicesAdminClient, times(expectedIndicesDeleted)).delete(any(), any());
 
         IOUtils.close(updatedClusterService);
         updatedQueryInsightsService.doClose();
@@ -557,6 +578,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         verify(queryInsightsReaderFactory, times(1)).closeReader(any());
         // Ensure new exporter is still created
         verify(queryInsightsExporterFactory, times(1)).createDebugExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID);
+    }
+
+    public void testGetInitialDelay() {
+        //// First Test Case (Normal Case) ////
+        Instant instantNormal = Instant.parse("2025-03-26T10:15:30Z");
+        Instant startOfNextDayNormal = instantNormal.truncatedTo(ChronoUnit.DAYS).plus(1, ChronoUnit.DAYS);
+        final long expectedDelayNormal = Duration.between(instantNormal, startOfNextDayNormal).toMillis();
+        assertEquals(expectedDelayNormal, getInitialDelay(instantNormal));
+
+        //// Second Test Case (Edge Case: Midnight UTC) ////
+        Instant instantEdge = Instant.parse("2025-03-26T00:00:00Z");
+        Instant startOfNextDayEdge = instantEdge.plus(1, ChronoUnit.DAYS);
+        final long expectedDelayEdge = Duration.between(instantEdge, startOfNextDayEdge).toMillis();
+        assertEquals(expectedDelayEdge, getInitialDelay(instantEdge));
     }
 
     // Util functions
