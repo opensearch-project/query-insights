@@ -11,9 +11,9 @@ package org.opensearch.plugin.insights.core.service.grouper;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.PriorityBlockingQueue;
 import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.utils.IndexedPriorityQueue;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -27,7 +27,7 @@ import org.opensearch.test.OpenSearchTestCase;
  */
 public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
     private MinMaxHeapQueryGrouper minMaxHeapQueryGrouper;
-    private PriorityBlockingQueue<SearchQueryRecord> topQueriesStore = new PriorityBlockingQueue<>(
+    private IndexedPriorityQueue<String, SearchQueryRecord> topQueriesStore = new IndexedPriorityQueue<>(
         100,
         (a, b) -> SearchQueryRecord.compare(a, b, MetricType.LATENCY)
     );

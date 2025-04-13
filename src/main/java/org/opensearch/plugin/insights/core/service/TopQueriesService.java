@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -46,6 +46,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGrouper;
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
+import org.opensearch.plugin.insights.core.utils.IndexedPriorityQueue;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -99,7 +100,7 @@ public class TopQueriesService {
     /**
      * The internal thread-safe store that holds the top n queries insight data
      */
-    private final PriorityBlockingQueue<SearchQueryRecord> topQueriesStore;
+    private final IndexedPriorityQueue<String, SearchQueryRecord> topQueriesStore;
 
     /**
      * The AtomicReference of a snapshot of the current window top queries for getters to consume
@@ -128,6 +129,8 @@ public class TopQueriesService {
 
     private final QueryGrouper queryGrouper;
 
+    private final AtomicLong insertSequence = new AtomicLong();
+
     TopQueriesService(
         final Client client,
         final MetricType metricType,
@@ -144,7 +147,7 @@ public class TopQueriesService {
         this.topNSize = QueryInsightsSettings.DEFAULT_TOP_N_SIZE;
         this.windowSize = QueryInsightsSettings.DEFAULT_WINDOW_SIZE;
         this.windowStart = -1L;
-        topQueriesStore = new PriorityBlockingQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
+        topQueriesStore = new IndexedPriorityQueue<>(topNSize, (a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot = new AtomicReference<>(new ArrayList<>());
         topQueriesHistorySnapshot = new AtomicReference<>(new ArrayList<>());
         queryGrouper = new MinMaxHeapQueryGrouper(
@@ -411,7 +414,7 @@ public class TopQueriesService {
         // add records in current window, if there are any, to the top n store
         addToTopNStore(recordsInThisWindow);
         // update the current window snapshot for getters to consume
-        final List<SearchQueryRecord> newSnapShot = new ArrayList<>(topQueriesStore);
+        final List<SearchQueryRecord> newSnapShot = new ArrayList<>(topQueriesStore.getAllValues());
         newSnapShot.sort((a, b) -> SearchQueryRecord.compare(a, b, metricType));
         topQueriesCurrentSnapshot.set(newSnapShot);
     }
@@ -422,7 +425,10 @@ public class TopQueriesService {
                 queryGrouper.add(record);
             }
         } else {
-            topQueriesStore.addAll(records);
+            for (SearchQueryRecord record : records) {
+                String uniqueKey = String.valueOf(insertSequence.getAndIncrement());
+                topQueriesStore.insert(uniqueKey, record);
+            }
             // remove top elements for fix sizing priority queue
             while (topQueriesStore.size() > topNSize) {
                 topQueriesStore.poll();
@@ -442,7 +448,7 @@ public class TopQueriesService {
             final List<SearchQueryRecord> history = new ArrayList<>();
             // rotate the current window to history store only if the data belongs to the last window
             if (windowStart == newWindowStart - windowSize.getMillis()) {
-                history.addAll(topQueriesStore);
+                history.addAll(topQueriesStore.getAllValues());
             }
             topQueriesHistorySnapshot.set(history);
             topQueriesStore.clear();
