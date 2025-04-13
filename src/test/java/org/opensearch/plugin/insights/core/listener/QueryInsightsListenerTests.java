@@ -345,4 +345,13 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         return queryInsightsListener;
     }
+
+    public void testSkipProfileQuery() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.profile(true);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+
+        verify(queryInsightsService, times(0)).addRecord(any());
+    }
 }

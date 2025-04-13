@@ -221,6 +221,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+        // Skip profile queries
+        if (searchRequestContext.getRequest().source().profile()) {
+            return;
+        }
+
         SearchTask searchTask = context.getTask();
         List<TaskResourceInfo> tasksResourceUsages = searchRequestContext.getPhaseResourceUsage();
         tasksResourceUsages.add(
