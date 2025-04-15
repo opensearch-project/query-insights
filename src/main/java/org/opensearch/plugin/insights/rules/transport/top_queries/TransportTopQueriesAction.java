@@ -89,11 +89,13 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final String from = topQueriesRequest.getFrom();
         final String to = topQueriesRequest.getTo();
         final String id = topQueriesRequest.getId();
+        final Boolean verbose = topQueriesRequest.getVerbose();
         if (from != null && to != null) {
             responses.add(
                 new TopQueries(
                     clusterService.localNode(),
-                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType()).getTopQueriesRecordsFromIndex(from, to, id)
+                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType())
+                        .getTopQueriesRecordsFromIndex(from, to, id, verbose)
                 )
             );
         }
@@ -116,9 +118,10 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final String from = request.getFrom();
         final String to = request.getTo();
         final String id = request.getId();
+        final Boolean verbose = request.getVerbose();
         return new TopQueries(
             clusterService.localNode(),
-            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to, id)
+            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to, id, verbose)
         );
     }
 
