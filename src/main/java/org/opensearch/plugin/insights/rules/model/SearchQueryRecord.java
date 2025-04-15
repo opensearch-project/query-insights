@@ -110,6 +110,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private String groupingId;
 
     /**
+     * Array of search query record {@link Attribute} to ignore when verbose is false
+     */
+    public static final Attribute[] VERBOSE_ONLY_FIELDS = { Attribute.TASK_RESOURCE_USAGES, Attribute.SOURCE, Attribute.PHASE_LATENCY_MAP };
+
+    /**
      * Constructor of SearchQueryRecord
      *
      * @param in the StreamInput to read the SearchQueryRecord from
@@ -169,6 +174,25 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.attributes = attributes;
         this.timestamp = timestamp;
         this.id = id;
+    }
+
+    /**
+     * Copy Constructor of {@link SearchQueryRecord}.
+     * <p>
+     * Creates a new {@link SearchQueryRecord} by copying the values from another
+     * {@link SearchQueryRecord}. This constructor performs a shallow copy of the
+     * given record, meaning that the references to mutable objects (such as the
+     * {@link #measurements} and {@link #attributes} maps) are copied, but the
+     * objects inside the maps are shared between the original and the copied record.
+     *
+     * @param other the {@link SearchQueryRecord} to copy.
+     */
+    public SearchQueryRecord(SearchQueryRecord other) {
+        this.measurements = new HashMap<>(other.measurements);
+        this.attributes = new HashMap<>(other.attributes);
+        this.timestamp = other.timestamp;
+        this.id = other.id;
+        this.groupingId = other.groupingId;
     }
 
     /**
@@ -477,4 +501,22 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     public String getGroupingId() {
         return this.groupingId;
     }
+
+    /**
+     * Creates a new {@link SearchQueryRecord} by removing specific attributes
+     * from the attributes map. The original record remains unchanged.
+     *
+     * @return a new {@link SearchQueryRecord} without some attributes.
+     */
+    public SearchQueryRecord copyAndSimplifyRecord() {
+        // Create a new instance by copying the current record
+        SearchQueryRecord simplifiedRecord = new SearchQueryRecord(this);
+
+        // Remove verbose-only attributes
+        for (Attribute attribute : VERBOSE_ONLY_FIELDS) {
+            simplifiedRecord.getAttributes().remove(attribute);
+        }
+        return simplifiedRecord;
+    }
+
 }
