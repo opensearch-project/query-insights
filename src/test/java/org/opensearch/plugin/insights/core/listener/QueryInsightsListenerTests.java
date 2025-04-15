@@ -79,7 +79,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         ClusterServiceUtils.setState(clusterService, state);
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
         when(queryInsightsService.getTopQueriesService(MetricType.LATENCY)).thenReturn(topQueriesService);
-
+        when(searchRequestContext.getRequest()).thenReturn(searchRequest);
         ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
         threadPool.getThreadContext().setHeaders(new Tuple<>(Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel"), new HashMap<>()));
     }
@@ -347,11 +347,10 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     }
 
     public void testSkipProfileQuery() {
-        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-        searchSourceBuilder.profile(true);
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().profile(true);
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
-        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
-
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
     }
 }
