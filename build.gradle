@@ -48,6 +48,7 @@ apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.rest-test'
 apply plugin: 'opensearch.repositories'
+apply plugin: 'opensearch.java-agent'
 
 def pluginName = 'query-insights'
 def pluginDescription = 'OpenSearch Query Insights plugin'
