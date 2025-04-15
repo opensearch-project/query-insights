@@ -37,6 +37,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
@@ -56,6 +57,7 @@ import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthSt
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.threadpool.ThreadPool;
+import reactor.util.annotation.NonNull;
 
 /**
  * Service responsible for gathering and storing top N queries
@@ -294,14 +296,16 @@ public class TopQueriesService {
      * @param from start timestamp
      * @param to end timestamp
      * @param id unique identifier for query/query group
+     * @param verbose whether to return full output
      * @return List of the records that are in the query insight store
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
     public List<SearchQueryRecord> getTopQueriesRecords(
-        final boolean includeLastWindow,
-        final String from,
-        final String to,
-        final String id
+        @NonNull final boolean includeLastWindow,
+        @Nullable final String from,
+        @Nullable final String to,
+        @Nullable final String id,
+        @Nullable final Boolean verbose
     ) throws IllegalArgumentException {
         OperationalMetricsCounter.getInstance()
             .incrementCounter(
@@ -336,6 +340,11 @@ public class TopQueriesService {
             filterQueries = filterQueries.stream().filter(record -> record.getId().equals(id)).collect(Collectors.toList());
         }
 
+        // If verbose is false (not null), trim records
+        if (Boolean.FALSE.equals(verbose)) {
+            filterQueries = filterQueries.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList());
+        }
+
         return Stream.of(filterQueries)
             .flatMap(Collection::stream)
             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
@@ -350,10 +359,11 @@ public class TopQueriesService {
      * @param from start timestamp
      * @param to   end timestamp
      * @param id search query record id
+     * @param verbose whether to return full output
      * @return List of the records that are in local index (if enabled) with timestamps between from and to
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id)
+    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id, final Boolean verbose)
         throws IllegalArgumentException {
         if (!enabled) {
             throw new IllegalArgumentException(
@@ -367,7 +377,7 @@ public class TopQueriesService {
             try {
                 final ZonedDateTime start = ZonedDateTime.parse(from);
                 final ZonedDateTime end = ZonedDateTime.parse(to);
-                List<SearchQueryRecord> records = reader.read(from, to, id);
+                List<SearchQueryRecord> records = reader.read(from, to, id, verbose);
                 Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                     && element.getTimestamp() <= end.toInstant().toEpochMilli();
                 List<SearchQueryRecord> filteredRecords = records.stream()

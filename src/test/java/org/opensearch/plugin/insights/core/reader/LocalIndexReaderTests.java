@@ -87,7 +87,15 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         String id = "example-hashcode";
         List<SearchQueryRecord> records = List.of();
         try {
-            records = localIndexReader.read(time, time, id);
+            records = localIndexReader.read(time, time, id, true);
+        } catch (Exception e) {
+            fail("No exception should be thrown when reading query insights data");
+        }
+        assertNotNull(records);
+        assertEquals(1, records.size());
+
+        try {
+            records = localIndexReader.read(time, time, id, false);
         } catch (Exception e) {
             fail("No exception should be thrown when reading query insights data");
         }
