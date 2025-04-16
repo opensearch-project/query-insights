@@ -21,7 +21,7 @@ public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
             defaultExporterSettings();
             setLatencyWindowSize("1m");
             performSearch();
-            Thread.sleep(70000);
+            Thread.sleep(80000);
             checkLocalIndices();
             List<String[]> allPairs = fetchHistoricalTopQueries("null", "null", "null");
             assertFalse("Expected at least one top query", allPairs.isEmpty());
