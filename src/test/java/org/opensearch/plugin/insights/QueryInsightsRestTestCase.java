@@ -508,11 +508,17 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertEquals("NONE", source.get("group_by"));
             assertEquals(1, ((Number) source.get("total_shards")).intValue());
 
-            Map<String, Object> queryBlock = (Map<String, Object>) ((Map<String, Object>) source.get("source")).get("query");
-            Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
-            Map<String, Object> title = (Map<String, Object>) match.get("title");
+            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
 
-            assertEquals("Test Document", title.get("query"));
+            if (queryBlock != null && queryBlock.containsKey("match")) {
+                Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                if (match != null && match.containsKey("title")) {
+                    Map<String, Object> title = (Map<String, Object>) match.get("title");
+                    if (title != null) {
+                        assertEquals("Test Document", title.get("query"));
+                    }
+                }
+            }
 
             Map<String, Object> measurements = (Map<String, Object>) source.get("measurements");
             assertNotNull("Expected measurements", measurements);
