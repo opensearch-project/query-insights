@@ -400,7 +400,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void performSearch() throws IOException, InterruptedException {
-        Thread.sleep(3000);
+        Thread.sleep(5000);
 
         String searchJson = "{ \"query\": { \"match\": { \"title\": \"Test Document\" } } }";
         Request req = new Request("POST", "/my-index-0/_search?size=20");
@@ -430,7 +430,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void cleanup() throws IOException, InterruptedException {
-        Thread.sleep(10000);
+        Thread.sleep(12000);
 
         try {
             client().performRequest(new Request("DELETE", "/top_queries"));
