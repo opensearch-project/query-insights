@@ -75,7 +75,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
 
     }
 
-    private void createTopQueriesIndex(String indexName, long timestamp) throws IOException,  InterruptedException {
+    private void createTopQueriesIndex(String indexName, long timestamp) throws IOException, InterruptedException {
         String mapping = "{\n"
             + "  \"mappings\": {\n"
             + "    \"dynamic\": true,\n"
