@@ -15,8 +15,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import org.apache.hc.core5.http.ParseException;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.http.util.EntityUtils;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
@@ -29,7 +28,7 @@ import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
-    public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
+    public void testMultiIndexDateRangeRetrieval() throws IOException, InterruptedException {
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
@@ -76,7 +75,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
 
     }
 
-    private void createTopQueriesIndex(String indexName, long timestamp) throws IOException, ParseException, InterruptedException {
+    private void createTopQueriesIndex(String indexName, long timestamp) throws IOException,  InterruptedException {
         String mapping = "{\n"
             + "  \"mappings\": {\n"
             + "    \"dynamic\": true,\n"
@@ -288,7 +287,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
     }
 
-    public void testInvalidMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
+    public void testInvalidMultiIndexDateRangeRetrieval() throws IOException, InterruptedException {
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
