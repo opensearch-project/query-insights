@@ -272,6 +272,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
                 + "}",
             timestamp
         );
+
     }
 
     private String buildLocalIndexName(ZonedDateTime current) {

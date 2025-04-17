@@ -22,7 +22,6 @@ import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportRequest;
 import org.opensearch.transport.TransportService;
@@ -75,29 +74,21 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final List<TopQueries> responses,
         final List<FailedNodeException> failures
     ) {
-        int size;
-        switch (topQueriesRequest.getMetricType()) {
-            case CPU:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_CPU_QUERIES_SIZE);
-                break;
-            case MEMORY:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE);
-                break;
-            default:
-                size = clusterService.getClusterSettings().get(QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE);
-        }
         final String from = topQueriesRequest.getFrom();
         final String to = topQueriesRequest.getTo();
         final String id = topQueriesRequest.getId();
+        final Boolean verbose = topQueriesRequest.getVerbose();
         if (from != null && to != null) {
+            // If date range is provided, fetch historical data from local index
             responses.add(
                 new TopQueries(
                     clusterService.localNode(),
-                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType()).getTopQueriesRecordsFromIndex(from, to, id)
+                    queryInsightsService.getTopQueriesService(topQueriesRequest.getMetricType())
+                        .getTopQueriesRecordsFromIndex(from, to, id, verbose)
                 )
             );
         }
-        return new TopQueriesResponse(clusterService.getClusterName(), responses, failures, size, topQueriesRequest.getMetricType());
+        return new TopQueriesResponse(clusterService.getClusterName(), responses, failures, topQueriesRequest.getMetricType());
     }
 
     @Override
@@ -116,9 +107,10 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final String from = request.getFrom();
         final String to = request.getTo();
         final String id = request.getId();
+        final Boolean verbose = request.getVerbose();
         return new TopQueries(
             clusterService.localNode(),
-            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to, id)
+            queryInsightsService.getTopQueriesService(request.getMetricType()).getTopQueriesRecords(true, from, to, id, verbose)
         );
     }
 

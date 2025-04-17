@@ -36,6 +36,7 @@ import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -89,7 +90,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         topQueriesService.consumeRecords(records);
         assertTrue(
             QueryInsightsTestUtils.checkRecordsEqualsWithoutOrder(
-                topQueriesService.getTopQueriesRecords(false, null, null, null),
+                topQueriesService.getTopQueriesRecords(false, null, null, null, null),
                 records,
                 MetricType.LATENCY
             )
@@ -102,20 +103,20 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         records = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, System.currentTimeMillis() - 1000 * 60 * 10, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
 
         // Create 10 records at now + 1 minute, to make sure they belong to the current window
         records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(10, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(10, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
     }
 
     public void testSmallNSize() {
         final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(10);
         topQueriesService.setTopNSize(1);
         topQueriesService.consumeRecords(records);
-        assertEquals(1, topQueriesService.getTopQueriesRecords(false, null, null, null).size());
+        assertEquals(1, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
     }
 
     public void testValidateTopNSize() {
@@ -128,7 +129,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
     public void testGetTopQueriesWhenNotEnabled() {
         topQueriesService.setEnabled(false);
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.getTopQueriesRecords(false, null, null, null); });
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
     }
 
     public void testValidateWindowSize() {
@@ -161,13 +162,13 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         records = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, System.currentTimeMillis() - 1000 * 60 * 10, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
 
         // Create 10 records at now + 1 minute, to make sure they belong to the current window
         records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(10, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(10, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
     }
 
     public void testRollingWindowsWithDifferentGroup() {
@@ -179,14 +180,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
 
         // Create 10 records at now + 1 minute, to make sure they belong to the current window
         records = QueryInsightsTestUtils.generateQueryInsightRecords(10, 10, System.currentTimeMillis() + 1000 * 60, 0);
         QueryInsightsTestUtils.populateSameQueryHashcodes(records);
         topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
         topQueriesService.consumeRecords(records);
-        assertEquals(1, topQueriesService.getTopQueriesRecords(true, null, null, null).size());
+        assertEquals(1, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
     }
 
     public void testGetHealthStats_EmptyService() {
@@ -421,7 +422,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Validate that the records for "id-1" are correctly retrieved
         assertTrue(
             QueryInsightsTestUtils.checkRecordsEqualsWithoutOrder(
-                topQueriesService.getTopQueriesRecords(false, null, null, "id-1"),
+                topQueriesService.getTopQueriesRecords(false, null, null, "id-1", null),
                 records1.stream().filter(record -> "id-1".equals(record.getId())).collect(Collectors.toList()),
                 MetricType.LATENCY
             )
@@ -430,10 +431,39 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Validate that the records for "id-2" are correctly retrieved
         assertTrue(
             QueryInsightsTestUtils.checkRecordsEqualsWithoutOrder(
-                topQueriesService.getTopQueriesRecords(false, null, null, "id-2"),
+                topQueriesService.getTopQueriesRecords(false, null, null, "id-2", null),
                 records1.stream().filter(record -> "id-2".equals(record.getId())).collect(Collectors.toList()),
                 MetricType.LATENCY
             )
         );
+    }
+
+    public void testTopQueriesVerbose() {
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        topQueriesService.consumeRecords(records);
+
+        // verbose = null
+        List<SearchQueryRecord> results = topQueriesService.getTopQueriesRecords(false, null, null, null, null);
+        for (SearchQueryRecord record : results) {
+            assertNotNull(record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES));
+            assertNotNull(record.getAttributes().get(Attribute.SOURCE));
+            assertNotNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
+        }
+
+        // verbose = true
+        results = topQueriesService.getTopQueriesRecords(false, null, null, null, true);
+        for (SearchQueryRecord record : results) {
+            assertNotNull(record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES));
+            assertNotNull(record.getAttributes().get(Attribute.SOURCE));
+            assertNotNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
+        }
+
+        // verbose = false
+        results = topQueriesService.getTopQueriesRecords(false, null, null, null, false);
+        for (SearchQueryRecord record : results) {
+            assertNull(record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES));
+            assertNull(record.getAttributes().get(Attribute.SOURCE));
+            assertNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
+        }
     }
 }

@@ -23,6 +23,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     final String from;
     final String to;
     final String id;
+    final Boolean verbose;
 
     /**
      * Constructor for TopQueriesRequest
@@ -35,6 +36,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
         this.metricType = MetricType.readFromStream(in);
         this.from = null;
         this.to = null;
+        this.verbose = null;
         this.id = null;
     }
 
@@ -45,13 +47,23 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
      * @param metricType {@link MetricType}
      * @param from start timestamp
      * @param to end timestamp
+     * @param id query/group id
+     * @param verbose whether to return full output
      * @param nodesIds the nodeIds specified in the request
      */
-    public TopQueriesRequest(final MetricType metricType, final String from, final String to, final String id, final String... nodesIds) {
+    public TopQueriesRequest(
+        final MetricType metricType,
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        final String... nodesIds
+    ) {
         super(nodesIds);
         this.metricType = metricType;
         this.from = from;
         this.to = to;
+        this.verbose = verbose;
         this.id = id;
     }
 
@@ -65,7 +77,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
 
     /**
      * Get from for timestamp request
-     * @return String of fromtimestamp
+     * @return String of from timestamp
      */
     public String getFrom() {
         return from;
@@ -81,10 +93,18 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
 
     /**
      * Get id which is the query_id and query_group_id
-     * @return String of to timestamp
+     * @return String of id
      */
     public String getId() {
         return id;
+    }
+
+    /**
+     * Get verbose value for request
+     * @return Boolean verbose value
+     */
+    public Boolean getVerbose() {
+        return verbose;
     }
 
     @Override
