@@ -50,22 +50,21 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
             Response response = client().performRequest(request);
             String responseBody = EntityUtils.toString(response.getEntity());
             Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            Assert.assertFalse("Expected non-empty top_queries but got empty list", responseBody.contains("\"top_queries\":[]"));
-            byte[] bytes = response.getEntity().getContent().readAllBytes();
 
             try (
                 XContentParser parser = JsonXContent.jsonXContent.createParser(
                     NamedXContentRegistry.EMPTY,
                     DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                    bytes
+                    responseBody
                 )
             ) {
                 Map<String, Object> parsed = parser.map();
                 List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
 
-                // Assert the expected count
-                Assert.assertEquals("Expected 4 top queries", 4, topQueries.size());
+                Assert.assertNotNull("Expected 'top_queries' key in response, but was null", topQueries);
+                Assert.assertEquals("Expected 4 top queries, but got: " + topQueries.size(), 4, topQueries.size());
             }
+            
 
         } catch (Exception e) {
 
