@@ -64,7 +64,6 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
                 Assert.assertNotNull("Expected 'top_queries' key in response, but was null", topQueries);
                 Assert.assertEquals("Expected 4 top queries, but got: " + topQueries.size(), 4, topQueries.size());
             }
-            
 
         } catch (Exception e) {
 
