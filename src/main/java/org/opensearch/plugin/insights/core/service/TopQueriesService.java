@@ -306,7 +306,7 @@ public class TopQueriesService {
         @Nullable final String to,
         @Nullable final String id,
         @Nullable final Boolean verbose
-    ) throws IllegalArgumentException {
+    ) {
         OperationalMetricsCounter.getInstance()
             .incrementCounter(
                 OperationalMetric.TOP_N_QUERIES_USAGE_COUNT,
@@ -314,11 +314,6 @@ public class TopQueriesService {
                     .addTag(METRIC_TYPE_TAG, this.metricType.name())
                     .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
             );
-        if (!enabled) {
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
-            );
-        }
         // read from window snapshots
         final List<SearchQueryRecord> queries = new ArrayList<>(topQueriesCurrentSnapshot.get());
         if (includeLastWindow) {
@@ -363,14 +358,12 @@ public class TopQueriesService {
      * @return List of the records that are in local index (if enabled) with timestamps between from and to
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(final String from, final String to, final String id, final Boolean verbose)
-        throws IllegalArgumentException {
-        if (!enabled) {
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Cannot get top n queries for [%s] when it is not enabled.", metricType.toString())
-            );
-        }
-
+    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose
+    ) {
         final List<SearchQueryRecord> queries = new ArrayList<>();
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader != null) {
