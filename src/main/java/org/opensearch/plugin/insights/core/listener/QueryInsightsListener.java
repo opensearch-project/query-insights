@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
@@ -18,9 +19,11 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -220,9 +223,18 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         constructSearchQueryRecord(context, searchRequestContext);
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
         // Skip profile queries
         if (searchRequestContext.getRequest().source().profile()) {
+            return true;
+        }
+
+        Set<String> excludedIndices = new HashSet<>(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
+        return excludedIndices.containsAll(List.of(searchRequestContext.getSuccessfulSearchShardIndices()));
+    }
+
+    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+        if (skipSearchRequest(searchRequestContext)) {
             return;
         }
 
