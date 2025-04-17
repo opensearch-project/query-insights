@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -67,11 +68,14 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     private final TopQueriesService topQueriesService = mock(TopQueriesService.class);
     private final ThreadPool threadPool = new TestThreadPool("QueryInsightsThreadPool");
     private ClusterService clusterService;
+    private final List<String> EXCLUDED_INDICES = List.of("first-excluded-index", "second-excluded-index");
 
     @Before
     public void setup() {
         Settings.Builder settingsBuilder = Settings.builder();
-        Settings settings = settingsBuilder.build();
+        Settings settings = settingsBuilder
+            .putList(TOP_N_QUERIES_EXCLUDED_INDICES.getKey(), EXCLUDED_INDICES)
+            .build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary("test", true, 1 + randomInt(3), randomInt(2));
@@ -350,6 +354,23 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().profile(true);
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+    }
+
+    public void testSkipQueryFromExcludedIndices() {
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        // Search request having one excluded index
+        String [] mockedIndices = new String[]{ EXCLUDED_INDICES.get(0) };
+        when(searchRequest.indices()).thenReturn(mockedIndices);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+
+        // Search request having all excluded indices
+        mockedIndices = new String[]{ EXCLUDED_INDICES.get(0), EXCLUDED_INDICES.get(1) };
+        when(searchRequest.indices()).thenReturn(mockedIndices);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
     }
