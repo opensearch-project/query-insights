@@ -195,6 +195,16 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
+    protected String disableTopQueriesSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.cpu.enabled\" : \"false\"\n"
+            + "    }\n"
+            + "}";
+    }
+
     protected String defaultTopQueriesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"

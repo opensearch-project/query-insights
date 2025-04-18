@@ -23,9 +23,12 @@ import org.opensearch.core.action.ActionResponse;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
+import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
@@ -119,16 +122,35 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetRestHandlers() {
         List<RestHandler> components = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
-        assertEquals(2, components.size());
+        assertEquals(3, components.size());
         assertTrue(components.get(0) instanceof RestTopQueriesAction);
         assertTrue(components.get(1) instanceof RestHealthStatsAction);
+        assertTrue(components.get(2) instanceof RestLiveQueriesAction);
     }
 
     public void testGetActions() {
         List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> components = queryInsightsPlugin.getActions();
-        assertEquals(2, components.size());
+        assertEquals(3, components.size());
         assertTrue(components.get(0).getAction() instanceof TopQueriesAction);
         assertTrue(components.get(1).getAction() instanceof HealthStatsAction);
+        assertTrue(components.get(2).getAction() instanceof LiveQueriesAction);
+    }
+
+    public void testLiveQueriesActionRegistration() {
+        List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> actions = queryInsightsPlugin.getActions();
+        boolean hasLiveQueriesAction = actions.stream().anyMatch(handler -> handler.getAction().name().equals(LiveQueriesAction.NAME));
+        assertTrue("Plugin should register LiveQueriesAction", hasLiveQueriesAction);
+
+        boolean hasLiveQueriesTransport = actions.stream()
+            .filter(handler -> handler.getAction().name().equals(LiveQueriesAction.NAME))
+            .anyMatch(handler -> handler.getTransportAction().equals(TransportLiveQueriesAction.class));
+        assertTrue("Plugin should register TransportLiveQueriesAction", hasLiveQueriesTransport);
+    }
+
+    public void testLiveQueriesRestActionRegistration() {
+        List<RestHandler> restHandlers = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
+        boolean hasLiveQueriesRestHandler = restHandlers.stream().anyMatch(handler -> handler instanceof RestLiveQueriesAction);
+        assertTrue("Plugin should register RestLiveQueriesAction", hasLiveQueriesRestHandler);
     }
 
 }

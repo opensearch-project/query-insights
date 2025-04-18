@@ -80,6 +80,12 @@ public class QueryInsightsSettings {
      *
      */
     public static final String TOP_QUERIES_BASE_URI = PLUGINS_BASE_URI + "/top_queries";
+
+    /**
+     * Settings for Live Queries
+     */
+    public static final String LIVE_QUERIES_BASE_URI = PLUGINS_BASE_URI + "/live_queries";
+
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
     /** Default prefix for top N queries grouping feature */
