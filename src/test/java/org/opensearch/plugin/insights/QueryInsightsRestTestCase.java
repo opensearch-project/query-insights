@@ -451,10 +451,11 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         assertEquals(200, response.getStatusLine().getStatusCode());
 
         String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
         assertTrue("Expected top_queries-* index to be green", responseContent.contains("green"));
 
         String suffix = null;
-        Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d+)");
+        Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d{5})");
         Matcher matcher = pattern.matcher(responseContent);
         if (matcher.find()) {
             suffix = matcher.group(1);
