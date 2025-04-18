@@ -12,6 +12,7 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,10 +30,12 @@ import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.cluster.ClusterName;
+import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.node.DiscoveryNode;
+import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.common.io.stream.BytesStreamOutput;
-import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
@@ -46,6 +49,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.VersionUtils;
+import org.opensearch.test.tasks.MockTaskManager;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.AdminClient;
@@ -73,8 +77,11 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         threadPool = mock(ThreadPool.class);
         clusterService = mock(ClusterService.class);
         transportService = mock(TransportService.class);
+        MockTaskManager taskManager = new MockTaskManager(Settings.EMPTY, threadPool, Collections.emptySet());
+        when(transportService.getTaskManager()).thenReturn(taskManager);
         client = mock(Client.class, Answers.RETURNS_DEEP_STUBS); // Use deep stubs for client.admin().cluster()
         actionFilters = mock(ActionFilters.class);
+        when(actionFilters.filters()).thenReturn(new org.opensearch.action.support.ActionFilter[0]);
 
         localNode = new DiscoveryNode(
             "local_node_id",
@@ -85,6 +92,10 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         );
         when(clusterService.localNode()).thenReturn(localNode);
         when(clusterService.getClusterName()).thenReturn(new ClusterName("test-cluster"));
+        // Stub cluster state to include the local node
+        DiscoveryNodes discoveryNodes = DiscoveryNodes.builder().add(localNode).localNodeId(localNode.getId()).build();
+        ClusterState clusterState = ClusterState.builder(clusterService.getClusterName()).nodes(discoveryNodes).build();
+        when(clusterService.state()).thenReturn(clusterState);
 
         // Mock the client administrative calls
         adminClient = mock(AdminClient.class);
@@ -141,18 +152,23 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<TaskInfo> tasks = List.of(searchTask, nonSearchTask);
         ListTasksResponse listTasksResponse = new ListTasksResponse(tasks, emptyList(), emptyList());
 
-        // Mock the listTasks future
-        PlainActionFuture<ListTasksResponse> future = PlainActionFuture.newFuture();
-        future.onResponse(listTasksResponse);
-        when(clusterAdminClient.listTasks(any(ListTasksRequest.class))).thenReturn(future);
+        // Mock the listTasks asynchronous call
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
-        // Execute node operation
-        TransportLiveQueriesAction.NodeRequest nodeRequest = transportLiveQueriesAction.newNodeRequest(request);
-        LiveQueries liveQueries = transportLiveQueriesAction.nodeOperation(nodeRequest);
+        // Execute via execute()
+        PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, futureResponse);
+        LiveQueriesResponse clusterResponse = futureResponse.actionGet();
+        List<LiveQueries> nodes = clusterResponse.getNodes();
+        assertEquals(1, nodes.size());
+        LiveQueries liveQueries = nodes.get(0);
 
-        // Verify ListTasksRequest parameters
-        verify(clusterAdminClient).listTasks(any(ListTasksRequest.class));
-        // Could add ArgumentCaptor to verify request details (verbose=true, actions filter)
+        // Verify listTasks invoked asynchronously
+        verify(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
         // Verify results
         assertEquals(1, liveQueries.getLiveQueries().size());
@@ -173,12 +189,16 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<TaskInfo> tasks = List.of(searchTask);
         ListTasksResponse listTasksResponse = new ListTasksResponse(tasks, emptyList(), emptyList());
 
-        PlainActionFuture<ListTasksResponse> future = PlainActionFuture.newFuture();
-        future.onResponse(listTasksResponse);
-        when(clusterAdminClient.listTasks(any(ListTasksRequest.class))).thenReturn(future);
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
-        TransportLiveQueriesAction.NodeRequest nodeRequest = transportLiveQueriesAction.newNodeRequest(request);
-        LiveQueries liveQueries = transportLiveQueriesAction.nodeOperation(nodeRequest);
+        PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, futureResponse);
+        LiveQueriesResponse clusterResponse = futureResponse.actionGet();
+        LiveQueries liveQueries = clusterResponse.getNodes().get(0);
 
         assertEquals(1, liveQueries.getLiveQueries().size());
         SearchQueryRecord record = liveQueries.getLiveQueries().get(0);
@@ -190,50 +210,33 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     public void testNodeOperationHandlesException() {
         LiveQueriesRequest request = new LiveQueriesRequest(true, localNode.getId());
 
-        // Mock listTasks to throw an exception
-        PlainActionFuture<ListTasksResponse> future = PlainActionFuture.newFuture();
-        future.onFailure(new RuntimeException("Simulated task fetch error"));
-        when(clusterAdminClient.listTasks(any(ListTasksRequest.class))).thenReturn(future);
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onFailure(new RuntimeException("Simulated task fetch error"));
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
-        TransportLiveQueriesAction.NodeRequest nodeRequest = transportLiveQueriesAction.newNodeRequest(request);
-        LiveQueries liveQueries = transportLiveQueriesAction.nodeOperation(nodeRequest);
-
-        // Verify that the operation completes and returns an empty list
-        assertNotNull(liveQueries);
-        assertEquals(localNode, liveQueries.getNode());
-        assertTrue(liveQueries.getLiveQueries().isEmpty());
-        // Check logs for error message (cannot easily verify logs in unit test)
+        PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, futureResponse);
+        expectThrows(RuntimeException.class, futureResponse::actionGet);
     }
 
-    public void testNewResponse() {
+    public void testResponseConstructor() {
         LiveQueriesRequest request = new LiveQueriesRequest(true);
         LiveQueries nodeResponse = new LiveQueries(localNode, Collections.emptyList());
         List<LiveQueries> responses = List.of(nodeResponse);
         List<FailedNodeException> failures = Collections.emptyList();
 
-        LiveQueriesResponse clusterResponse = transportLiveQueriesAction.newResponse(request, responses, failures);
+        LiveQueriesResponse clusterResponse = new LiveQueriesResponse(
+            clusterService.getClusterName(),
+            responses,
+            failures,
+            request.isVerbose()
+        );
 
         assertNotNull(clusterResponse);
         assertEquals(clusterService.getClusterName(), clusterResponse.getClusterName());
         assertEquals(responses, clusterResponse.getNodes());
         assertEquals(failures, clusterResponse.failures());
-    }
-
-    public void testNewNodeRequest() {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, "node1");
-        TransportLiveQueriesAction.NodeRequest nodeRequest = transportLiveQueriesAction.newNodeRequest(request);
-        assertEquals(request, nodeRequest.request);
-    }
-
-    public void testNodeRequestSerialization() throws IOException {
-        LiveQueriesRequest request = new LiveQueriesRequest(randomBoolean(), "node1", "node2");
-        TransportLiveQueriesAction.NodeRequest originalNodeRequest = new TransportLiveQueriesAction.NodeRequest(request);
-        BytesStreamOutput out = new BytesStreamOutput();
-        originalNodeRequest.writeTo(out);
-        StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
-        TransportLiveQueriesAction.NodeRequest deserializedNodeRequest = new TransportLiveQueriesAction.NodeRequest(in);
-
-        assertEquals(originalNodeRequest.request.isVerbose(), deserializedNodeRequest.request.isVerbose());
-        assertArrayEquals(originalNodeRequest.request.nodesIds(), deserializedNodeRequest.request.nodesIds());
     }
 }
