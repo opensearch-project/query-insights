@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP;
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
@@ -19,9 +20,12 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -32,6 +36,7 @@ import org.opensearch.action.search.SearchRequestOperationsListener;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
+import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -42,6 +47,7 @@ import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 
 /**
@@ -58,6 +64,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldNameEnabled;
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
+    private Set<String> excludedIndicesHashSet;
 
     /**
      * Constructor for QueryInsightsListener
@@ -131,6 +138,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 v -> this.queryInsightsService.setMaximumGroups(v),
                 v -> this.queryInsightsService.validateMaximumGroups(v)
             );
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
+                l -> this.setExcludedIndices(l),
+                l -> this.queryInsightsService.validateExcludedIndices(l)
+            );
         this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
         this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
 
@@ -145,6 +158,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
+        excludedIndicesHashSet = new HashSet<>(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
+    }
+
+    private void setExcludedIndices(List<String> excludedIndices) {
+        this.excludedIndicesHashSet = new HashSet<>(excludedIndices);
     }
 
     /**
@@ -221,9 +239,44 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         constructSearchQueryRecord(context, searchRequestContext);
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
         // Skip profile queries
-        if (searchRequestContext.getRequest().source().profile()) {
+        if (Optional.ofNullable(searchRequestContext)
+            .map(SearchRequestContext::getRequest)
+            .map(SearchRequest::source)
+            .map(SearchSourceBuilder::profile)
+            .orElse(false)) {
+            return true;
+        }
+
+        return Optional.ofNullable(searchRequestContext.getSuccessfulSearchShardIndices())
+            .map(set -> set.stream().map(Index::getName))
+            .map(indexNames -> indexNames.anyMatch(index -> matchedExcludedIndices(index, excludedIndicesHashSet)))
+            .orElse(false);
+    }
+
+    private boolean matchedExcludedIndices(String indexName, Set<String> excludedIndices) {
+        return Optional.ofNullable(indexName).map(index -> {
+            for (String excludedIndex : excludedIndices) {
+                if (excludedIndex.contains("*")) {
+                    // Wildcard match
+                    String regex = excludedIndex.replace("*", ".*");
+                    if (index.matches(regex)) {
+                        return true;
+                    }
+                } else {
+                    // Exact match
+                    if (excludedIndex.equals(index)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }).orElse(false);
+    }
+
+    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+        if (skipSearchRequest(searchRequestContext)) {
             return;
         }
 

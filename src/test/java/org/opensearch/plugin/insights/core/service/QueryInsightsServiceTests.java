@@ -40,6 +40,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -649,5 +650,44 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Create a local index exporter with a retention period of 7 days
         updatedQueryInsightsService.queryInsightsExporterFactory.createLocalIndexExporter(TOP_QUERIES_EXPORTER_ID, "YYYY.MM.dd", "");
         return List.of(updatedQueryInsightsService, updatedClusterService);
+    }
+
+    public void testExcludedIndicesValidation() {
+        List<String> containNullList = new ArrayList<>();
+        containNullList.add("index1");
+        containNullList.add(null);
+        assertThrows(
+            "Excluded index name cannot be null.",
+            IllegalArgumentException.class,
+            () -> queryInsightsService.validateExcludedIndices(containNullList)
+        );
+
+        List<String> containEmptyList = List.of("index1", "");
+        assertThrows(
+            "Excluded index name should not be blank.",
+            IllegalArgumentException.class,
+            () -> queryInsightsService.validateExcludedIndices(containEmptyList)
+        );
+
+        List<String> containBlankList = List.of("index1", "  ");
+        assertThrows(
+            "Excluded index name should not be blank.",
+            IllegalArgumentException.class,
+            () -> queryInsightsService.validateExcludedIndices(containBlankList)
+        );
+
+        List<String> containOnlyBlankList = List.of("  ");
+        assertThrows(
+            "Excluded index name should not be blank.",
+            IllegalArgumentException.class,
+            () -> queryInsightsService.validateExcludedIndices(containOnlyBlankList)
+        );
+
+        List<String> validResetValue = List.of("");
+        try {
+            queryInsightsService.validateExcludedIndices(validResetValue);
+        } catch (Exception e) {
+            fail("Expect no exception when excluded indices is reset");
+        }
     }
 }

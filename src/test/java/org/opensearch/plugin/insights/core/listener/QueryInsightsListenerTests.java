@@ -13,12 +13,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,6 +42,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -67,11 +70,13 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     private final TopQueriesService topQueriesService = mock(TopQueriesService.class);
     private final ThreadPool threadPool = new TestThreadPool("QueryInsightsThreadPool");
     private ClusterService clusterService;
+    private final String WILDCARD_EXCLUDED_PREFIX = "wildcard-excluded-";
+    private final List<String> EXCLUDED_INDICES = List.of("first-excluded-index", "second-excluded-index", WILDCARD_EXCLUDED_PREFIX + "*");
 
     @Before
     public void setup() {
         Settings.Builder settingsBuilder = Settings.builder();
-        Settings settings = settingsBuilder.build();
+        Settings settings = settingsBuilder.putList(TOP_N_QUERIES_EXCLUDED_INDICES.getKey(), EXCLUDED_INDICES).build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary("test", true, 1 + randomInt(3), randomInt(2));
@@ -350,6 +355,39 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().profile(true);
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+    }
+
+    public void testSkipQueryFromExcludedIndices() {
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        // Search request having one excluded index
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index(EXCLUDED_INDICES.get(0), "uuid-1"),
+                new Index("index-2", "uuid-2")
+            )));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+
+        // Search request having all excluded indices
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index(EXCLUDED_INDICES.get(0), "uuid-1"),
+                new Index(EXCLUDED_INDICES.get(1), "uuid-2")
+            )));
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+
+        // Search request having index matched wildcard
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index(WILDCARD_EXCLUDED_PREFIX + "first-index", "uuid-1"),
+                new Index("non-excluded-index", "uuid-2")
+            )));
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
     }
