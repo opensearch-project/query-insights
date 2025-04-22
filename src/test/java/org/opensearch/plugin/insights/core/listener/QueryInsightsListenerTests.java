@@ -390,5 +390,70 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
+
+
+        // Search request having no matched excluded index
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index("first", "uuid-1"),
+                new Index("second-non-excluded-index", "uuid-2")
+            )));
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testExcludedIndicesValidation() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        List<String> containNullList = new ArrayList<>();
+        containNullList.add("index1");
+        containNullList.add(null);
+        assertThrows(
+            "Excluded index name cannot be null.",
+            IllegalArgumentException.class,
+            () -> queryInsightsListener.validateExcludedIndices(containNullList)
+        );
+
+        List<String> containEmptyList = List.of("index1", "");
+        assertThrows(
+            "Excluded index name should not be blank.",
+            IllegalArgumentException.class,
+            () -> queryInsightsListener.validateExcludedIndices(containEmptyList)
+        );
+
+        List<String> containBlankList = List.of("index1", "  ");
+        assertThrows(
+            "Excluded index name should not be blank when there are multiple indices.",
+            IllegalArgumentException.class,
+            () -> queryInsightsListener.validateExcludedIndices(containBlankList)
+        );
+
+        List<String> validResetValue = List.of("");
+        try {
+            queryInsightsListener.validateExcludedIndices(validResetValue);
+        } catch (Exception e) {
+            fail("Expect no exception when excluded indices is reset.");
+        }
+
+        List<String> validIndicesList = List.of("first-index", "wildcard-index*");
+        try {
+            queryInsightsListener.validateExcludedIndices(validIndicesList);
+        } catch (Exception e) {
+            fail("Expect no exception when valid excluded indices is set.");
+        }
     }
 }

@@ -19,7 +19,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUER
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
@@ -35,7 +34,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledFuture;
@@ -142,8 +140,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     private QueryShapeGenerator queryShapeGenerator;
 
-    private List<String> excludedIndices = new ArrayList<>();
-
     private final Client client;
     SinkType sinkType;
 
@@ -201,8 +197,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.setTemplatePriority(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TEMPLATE_PRIORITY));
-        this.setExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
-
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
@@ -532,32 +526,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                     MAX_DELETE_AFTER_VALUE
                 )
             );
-        }
-    }
-
-    /**
-     * Setter for excluded indices
-     * @param excludedIndices
-     */
-    public void setExcludedIndices(List<String> excludedIndices) {
-        this.excludedIndices = excludedIndices;
-    }
-
-    /**
-     * Validate the index name for excluded indices
-     * @param excludedIndices
-     */
-    public void validateExcludedIndices(List<String> excludedIndices) {
-        for (String index : excludedIndices) {
-            if (Objects.isNull(index)) {
-                throw new IllegalArgumentException("Excluded index name cannot be null.");
-            }
-            if (!index.isEmpty() && index.isBlank()) {
-                throw new IllegalArgumentException("Excluded index name should not be blank.");
-            }
-        }
-        if (excludedIndices.size() > 1 && excludedIndices.stream().anyMatch(String::isBlank)) {
-            throw new IllegalArgumentException("Excluded index name should not be blank.");
         }
     }
 

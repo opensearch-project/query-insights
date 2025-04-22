@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +37,7 @@ import org.opensearch.action.search.SearchRequestOperationsListener;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
+import org.opensearch.common.regex.Regex;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -138,14 +140,17 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 v -> this.queryInsightsService.setMaximumGroups(v),
                 v -> this.queryInsightsService.validateMaximumGroups(v)
             );
+        this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+        this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
-                l -> this.setExcludedIndices(l),
-                l -> this.queryInsightsService.validateExcludedIndices(l)
+                this::setExcludedIndices,
+                this::validateExcludedIndices
             );
-        this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
-        this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+        validateExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
+        setExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
 
         // Internal settings for grouping attributes
         clusterService.getClusterSettings().addSettingsUpdateConsumer(TOP_N_QUERIES_GROUPING_FIELD_NAME, this::setGroupingFieldNameEnabled);
@@ -251,28 +256,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         return Optional.ofNullable(searchRequestContext.getSuccessfulSearchShardIndices())
             .map(set -> set.stream().map(Index::getName))
-            .map(indexNames -> indexNames.anyMatch(index -> matchedExcludedIndices(index, excludedIndicesHashSet)))
+            .map(indexNames -> indexNames.anyMatch(this::matchedExcludedIndices))
             .orElse(false);
     }
 
-    private boolean matchedExcludedIndices(String indexName, Set<String> excludedIndices) {
-        return Optional.ofNullable(indexName).map(index -> {
-            for (String excludedIndex : excludedIndices) {
-                if (excludedIndex.contains("*")) {
-                    // Wildcard match
-                    String regex = excludedIndex.replace("*", ".*");
-                    if (index.matches(regex)) {
-                        return true;
-                    }
-                } else {
-                    // Exact match
-                    if (excludedIndex.equals(index)) {
-                        return true;
-                    }
-                }
-            }
+    private boolean matchedExcludedIndices(String indexName) {
+        if (indexName == null || excludedIndicesHashSet == null) {
             return false;
-        }).orElse(false);
+        }
+        return excludedIndicesHashSet.stream().anyMatch(pattern -> Regex.simpleMatch(pattern, indexName));
     }
 
     private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
@@ -357,6 +349,21 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
+        }
+    }
+
+    /**
+     * Validate the index name for excluded indices
+     * @param excludedIndices list of index to validate
+     */
+    public void validateExcludedIndices(List<String> excludedIndices) {
+        if (excludedIndices.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("Excluded index name cannot be null.");
+        }
+        if (excludedIndices.size() > 1) {
+            if (excludedIndices.stream().anyMatch(String::isBlank)) {
+                throw new IllegalArgumentException("Excluded index name should not be blank when there are multiple indices.");
+            }
         }
     }
 
