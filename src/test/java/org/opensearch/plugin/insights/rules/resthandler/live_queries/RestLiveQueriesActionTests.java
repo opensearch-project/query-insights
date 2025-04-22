@@ -12,17 +12,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.junit.Before;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.RestChannel;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.rest.FakeRestRequest;
-import org.opensearch.transport.client.node.NodeClient;
 
 /**
  * Unit tests for the {@link RestLiveQueriesAction} class.
@@ -30,25 +29,20 @@ import org.opensearch.transport.client.node.NodeClient;
 public class RestLiveQueriesActionTests extends OpenSearchTestCase {
 
     private RestLiveQueriesAction restLiveQueriesAction;
-    private NodeClient client;
-    private RestChannel channel;
 
     @Before
     public void setUp() throws Exception {
         super.setUp();
         restLiveQueriesAction = new RestLiveQueriesAction();
-        client = mock(NodeClient.class);
-        channel = mock(RestChannel.class);
+        RestChannel channel = mock(RestChannel.class);
         when(channel.newBuilder()).thenThrow(new AssertionError("Should not be called in prepareRequest test"));
     }
 
     public void testRoutes() {
         List<BaseRestHandler.Route> routes = restLiveQueriesAction.routes();
-        assertEquals(2, routes.size());
-        assertEquals(RestRequest.Method.GET, routes.get(0).getMethod());
-        assertEquals(QueryInsightsSettings.LIVE_QUERIES_BASE_URI, routes.get(0).getPath());
-        assertEquals(RestRequest.Method.GET, routes.get(1).getMethod());
-        assertEquals(String.format(Locale.ROOT, "%s/{nodeId}", QueryInsightsSettings.LIVE_QUERIES_BASE_URI), routes.get(1).getPath());
+        assertEquals(1, routes.size());
+        assertEquals(RestRequest.Method.GET, routes.getFirst().getMethod());
+        assertEquals(QueryInsightsSettings.LIVE_QUERIES_BASE_URI, routes.getFirst().getPath());
     }
 
     public void testGetName() {
@@ -56,7 +50,7 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testPrepareRequestWithNodeIds() {
-        Map<String, String> params = Map.of("nodeId", "node1,node2", "verbose", "false", "timeout", "1m");
+        Map<String, String> params = Map.of("nodeId", "node1,node2", "verbose", "false");
         RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath("/_insights/live_queries/node1,node2")
             .withParams(params)
             .withMethod(RestRequest.Method.GET)
@@ -67,7 +61,6 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
         assertEquals("node1", liveQueriesRequest.nodesIds()[0]);
         assertEquals("node2", liveQueriesRequest.nodesIds()[1]);
         assertFalse(liveQueriesRequest.isVerbose());
-        assertEquals("1m", liveQueriesRequest.timeout().getStringRep());
     }
 
     public void testPrepareRequestWithoutNodeIds() {
@@ -88,5 +81,87 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
         LiveQueriesRequest liveQueriesRequest = RestLiveQueriesAction.prepareRequest(request);
         assertEquals(0, liveQueriesRequest.nodesIds().length); // Expect cluster-wide
         assertTrue(liveQueriesRequest.isVerbose()); // Default verbose is true
+    }
+
+    public void testPrepareRequestWithCustomParams() {
+        Map<String, String> params = Map.of("nodeId", "node1", "verbose", "false", "sort", "cpu", "size", "3");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(
+            QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "/node1"
+        ).withParams(params).withMethod(RestRequest.Method.GET).build();
+        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
+        assertArrayEquals(new String[] { "node1" }, req.nodesIds());
+        assertFalse(req.isVerbose());
+        assertEquals(MetricType.CPU, req.getSortBy());
+        assertEquals(3, req.getSize());
+    }
+
+    public void testDefaultSortAndSize() {
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
+        assertEquals(MetricType.LATENCY, req.getSortBy());
+        assertEquals(QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, req.getSize());
+    }
+
+    public void testPrepareRequestInvalidSort() {
+        Map<String, String> params = Map.of("sort", "invalid_metric");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
+    }
+
+    public void testPrepareRequestWithSortOnly() {
+        Map<String, String> params = Map.of("sort", "memory");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
+        assertEquals(MetricType.MEMORY, req.getSortBy());
+        assertEquals(100, req.getSize());
+    }
+
+    public void testPrepareRequestWithSizeOnly() {
+        Map<String, String> params = Map.of("size", "5");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
+        assertEquals(MetricType.LATENCY, req.getSortBy());
+        assertEquals(5, req.getSize());
+    }
+
+    public void testPrepareRequestWithZeroSize() {
+        Map<String, String> params = Map.of("size", "0");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
+        assertEquals(0, req.getSize());
+    }
+
+    public void testPrepareRequestInvalidVerbose() {
+        // non-boolean verbose parameter
+        Map<String, String> params = Map.of("verbose", "notABoolean");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
+    }
+
+    public void testPrepareRequestInvalidSize() {
+        // non-numeric size parameter
+        Map<String, String> params = Map.of("size", "notANumber");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
     }
 }

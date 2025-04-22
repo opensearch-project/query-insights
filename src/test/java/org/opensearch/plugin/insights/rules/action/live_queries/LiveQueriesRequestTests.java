@@ -11,6 +11,8 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 import java.io.IOException;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -18,52 +20,87 @@ import org.opensearch.test.OpenSearchTestCase;
  */
 public class LiveQueriesRequestTests extends OpenSearchTestCase {
 
-    public void testConstructorWithNodeIdsAndVerbose() {
-        String[] nodeIds = { "node1", "node2" };
+    public void testSerialization() throws IOException {
         boolean verbose = true;
-        LiveQueriesRequest request = new LiveQueriesRequest(verbose, nodeIds);
-        assertNotNull(request);
-        assertArrayEquals(nodeIds, request.nodesIds());
-        assertTrue(request.isVerbose());
+        MetricType sortBy = MetricType.CPU;
+        int size = 5;
+        String[] nodeIds = new String[] { "nodeA", "nodeB", "nodeC" };
 
-        verbose = false;
-        request = new LiveQueriesRequest(verbose, nodeIds);
-        assertNotNull(request);
-        assertArrayEquals(nodeIds, request.nodesIds());
-        assertFalse(request.isVerbose());
-    }
+        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds);
 
-    public void testConstructorWithStreamInput() throws IOException {
-        String[] nodeIds = { "node1", "node2" };
-        boolean verbose = randomBoolean();
-        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, nodeIds);
         BytesStreamOutput out = new BytesStreamOutput();
         originalRequest.writeTo(out);
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
-        LiveQueriesRequest requestFromStream = new LiveQueriesRequest(in);
-        assertNotNull(requestFromStream);
-        assertArrayEquals(nodeIds, requestFromStream.nodesIds());
-        assertEquals(verbose, requestFromStream.isVerbose());
+        LiveQueriesRequest deserializedRequest = new LiveQueriesRequest(in);
+
+        assertEquals(originalRequest.isVerbose(), deserializedRequest.isVerbose());
+        assertEquals(originalRequest.getSortBy(), deserializedRequest.getSortBy());
+        assertEquals(originalRequest.getSize(), deserializedRequest.getSize());
+        assertArrayEquals(originalRequest.nodesIds(), deserializedRequest.nodesIds());
     }
 
-    public void testWriteTo() throws IOException {
-        String[] nodeIds = { "node1", "node2" };
-        boolean verbose = randomBoolean();
-        LiveQueriesRequest request = new LiveQueriesRequest(verbose, nodeIds);
+    public void testSerializationWithEmptyNodes() throws IOException {
+        boolean verbose = false;
+        MetricType sortBy = MetricType.MEMORY;
+        int size = 3;
+        String[] nodeIds = new String[0];
+
+        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds);
+
         BytesStreamOutput out = new BytesStreamOutput();
-        request.writeTo(out);
+        originalRequest.writeTo(out);
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
         LiveQueriesRequest deserializedRequest = new LiveQueriesRequest(in);
-        assertNotNull(deserializedRequest);
-        assertArrayEquals(nodeIds, deserializedRequest.nodesIds());
-        assertEquals(verbose, deserializedRequest.isVerbose());
+
+        assertEquals(originalRequest.isVerbose(), deserializedRequest.isVerbose());
+        assertEquals(originalRequest.getSortBy(), deserializedRequest.getSortBy());
+        assertEquals(originalRequest.getSize(), deserializedRequest.getSize());
+        assertArrayEquals(originalRequest.nodesIds(), deserializedRequest.nodesIds());
+        assertEquals(0, deserializedRequest.nodesIds().length);
     }
 
-    public void testIsVerbose() {
-        LiveQueriesRequest requestTrue = new LiveQueriesRequest(true, "node1");
-        assertTrue(requestTrue.isVerbose());
+    public void testMainConstructor() {
+        boolean verbose = true;
+        MetricType sortBy = MetricType.CPU;
+        int size = 50;
+        String[] nodeIds = { "node1", "node2" };
 
-        LiveQueriesRequest requestFalse = new LiveQueriesRequest(false, "node1");
-        assertFalse(requestFalse.isVerbose());
+        LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeIds);
+
+        assertTrue(request.isVerbose());
+        assertEquals(MetricType.CPU, request.getSortBy());
+        assertEquals(50, request.getSize());
+        assertArrayEquals(new String[] { "node1", "node2" }, request.nodesIds());
+    }
+
+    public void testConvenienceConstructor() {
+        boolean verbose = false;
+        String[] nodeIds = { "node3" };
+
+        LiveQueriesRequest request = new LiveQueriesRequest(verbose, nodeIds);
+
+        assertFalse(request.isVerbose());
+        assertEquals(MetricType.LATENCY, request.getSortBy());
+        assertEquals(QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, request.getSize());
+        assertArrayEquals(new String[] { "node3" }, request.nodesIds());
+    }
+
+    public void testConvenienceConstructorNoNodes() {
+        boolean verbose = true;
+        // No node IDs specified
+        LiveQueriesRequest request = new LiveQueriesRequest(verbose);
+
+        assertTrue(request.isVerbose());
+        assertEquals(MetricType.LATENCY, request.getSortBy());
+        assertEquals(QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, request.getSize());
+        assertEquals(0, request.nodesIds().length);
+    }
+
+    public void testGetters() {
+        LiveQueriesRequest request = new LiveQueriesRequest(false, MetricType.MEMORY, 10, "nodeA");
+        assertFalse(request.isVerbose());
+        assertEquals(MetricType.MEMORY, request.getSortBy());
+        assertEquals(10, request.getSize());
+        assertArrayEquals(new String[] { "nodeA" }, request.nodesIds());
     }
 }

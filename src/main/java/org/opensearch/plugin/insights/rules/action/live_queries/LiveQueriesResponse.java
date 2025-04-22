@@ -9,24 +9,21 @@
 package org.opensearch.plugin.insights.rules.action.live_queries;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.List;
-import org.opensearch.action.FailedNodeException;
-import org.opensearch.action.support.nodes.BaseNodesResponse;
-import org.opensearch.cluster.ClusterName;
+import org.opensearch.core.action.ActionResponse;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
-import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Transport response for cluster/node level live queries information.
  */
-public class LiveQueriesResponse extends BaseNodesResponse<LiveQueries> implements ToXContentFragment {
+public class LiveQueriesResponse extends ActionResponse implements ToXContentObject {
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
+    private final List<SearchQueryRecord> liveQueries;
 
     /**
      * Constructor for LiveQueriesResponse.
@@ -35,64 +32,41 @@ public class LiveQueriesResponse extends BaseNodesResponse<LiveQueries> implemen
      * @throws IOException if the stream cannot be deserialized.
      */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
-        super(in);
+        this.liveQueries = in.readList(SearchQueryRecord::new);
     }
 
     /**
      * Constructor for LiveQueriesResponse
      *
-     * @param clusterName The current cluster name
-     * @param nodes A list that contains live queries results from all nodes
-     * @param failures A list that contains FailedNodeException
-     * @param verbose Whether verbose query information was requested (used by constructor, but not stored)
+     * @param liveQueries A flat list containing live queries results from relevant nodes
      */
-    public LiveQueriesResponse(
-        final ClusterName clusterName,
-        final List<LiveQueries> nodes,
-        final List<FailedNodeException> failures,
-        final boolean verbose
-    ) {
-        super(clusterName, nodes, failures);
+    public LiveQueriesResponse(final List<SearchQueryRecord> liveQueries) {
+        this.liveQueries = liveQueries;
+    }
+
+    /**
+     * Get the live queries list
+     * @return the list of live query records
+     */
+    public List<SearchQueryRecord> getLiveQueries() {
+        return liveQueries;
     }
 
     @Override
-    protected List<LiveQueries> readNodesFrom(final StreamInput in) throws IOException {
-        return in.readList(LiveQueries::new);
-    }
-
-    @Override
-    protected void writeNodesTo(final StreamOutput out, final List<LiveQueries> nodes) throws IOException {
-        out.writeList(nodes);
+    public void writeTo(final StreamOutput out) throws IOException {
+        out.writeList(liveQueries);
     }
 
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
-        final List<LiveQueries> results = getNodes();
         builder.startObject();
-        toClusterLevelResult(builder, params, results);
-        return builder.endObject();
-    }
-
-    /**
-     * Merge live queries results from nodes into cluster level results in XContent format.
-     *
-     * @param builder XContent builder
-     * @param params serialization parameters
-     * @param results live queries results from all nodes
-     * @throws IOException if an error occurs
-     */
-    private void toClusterLevelResult(final XContentBuilder builder, final Params params, final List<LiveQueries> results)
-        throws IOException {
-        final List<SearchQueryRecord> allQueries = results.stream()
-            .map(LiveQueries::getLiveQueries)
-            .flatMap(Collection::stream)
-            .sorted((a, b) -> SearchQueryRecord.compare(a, b, MetricType.LATENCY) * -1)
-            .toList();
-
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
-        for (SearchQueryRecord query : allQueries) {
+
+        for (SearchQueryRecord query : liveQueries) {
             query.toXContent(builder, params);
         }
         builder.endArray();
+        builder.endObject();
+        return builder;
     }
 }

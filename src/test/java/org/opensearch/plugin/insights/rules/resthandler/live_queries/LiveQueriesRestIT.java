@@ -62,12 +62,6 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
 
     /**
      * Try to detect live queries by running multiple concurrent search operations and polling the API.
-     *  TODO: Limitation of this integ test: It's hard to simulate a long running query without being flaky.
-     *   We can try using a painless script to simulate with sleep, but by default QueryInsightsRestTestCase disables painless.
-     * This test tries its best to simulate long running queries.
-     * It will pass if:
-     * 1. We find at least one live query, or
-     * 2. We hit our polling limit without finding any (due to test environment limitations)
      */
     @SuppressWarnings("unchecked")
     public void testLiveQueriesWithConcurrentSearches() throws Exception {
@@ -122,6 +116,16 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         logger.info("Beginning to poll the live queries API");
         boolean foundLiveQueries = false;
         List<Map<String, Object>> liveQueries = new ArrayList<>();
+        Response nodesRes = client().performRequest(new Request("GET", "/_nodes"));
+        Map<String, Object> nodesMap = entityAsMap(nodesRes);
+        Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
+        String nodeId = nodes.keySet().iterator().next();
+
+        String[] params = new String[] { "?size=1", "", "?size=0", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
+        Map<String, Boolean> foundParams = new java.util.HashMap<>();
+        for (String param : params) {
+            foundParams.put(param, false);
+        }
 
         // Create a separate thread to poll the API while search queries are running
         for (int attempt = 0; attempt < MAX_POLL_ATTEMPTS && !shouldStop.get(); attempt++) {
@@ -145,9 +149,37 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
 
                 logger.info("Polling attempt {}: Found {} live queries", attempt, liveQueries.size());
 
-                if (liveQueries != null && !liveQueries.isEmpty()) {
-                    logger.info("Successfully found live queries on attempt {}", attempt);
+                if (!liveQueries.isEmpty()) {
                     foundLiveQueries = true;
+                }
+                // Run parameter tests on each polling cycle
+                for (String param : params) {
+                    if (!foundParams.get(param)) {
+                        Request pReq = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param);
+                        Response pRes = client().performRequest(pReq);
+                        assertEquals(200, pRes.getStatusLine().getStatusCode());
+                        Map<String, Object> pMap = entityAsMap(pRes);
+                        assertTrue(pMap.containsKey("live_queries"));
+                        List<?> pList = (List<?>) pMap.get("live_queries");
+                        boolean ok;
+                        if ("?size=0".equals(param)) {
+                            ok = pList.isEmpty();
+                        } else if ("?verbose=false".equals(param)) {
+                            ok = pList.stream().allMatch(q -> !((Map<String, Object>) q).containsKey("description"));
+                        } else if (param.startsWith("?nodeId=")) {
+                            String filterNode = param.substring("?nodeId=".length());
+                            ok = pList.stream().allMatch(q -> filterNode.equals(((Map<String, Object>) q).get("node_id")));
+                        } else {
+                            ok = !pList.isEmpty();
+                        }
+                        if (ok) {
+                            foundParams.put(param, true);
+                        }
+                    }
+                }
+                // Break only when main and all param tests have passed
+                if (foundLiveQueries && !foundParams.containsValue(false)) {
+                    logger.info("All checks succeeded by attempt {}", attempt);
                     break;
                 }
             } catch (Exception e) {
@@ -167,7 +199,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
 
         // We either found live queries or exhausted our polling attempts.
         if (foundLiveQueries) {
-            logger.info("Test detected live queries: {}", liveQueries);
+            logger.info("Test detected live queries, total: {}", liveQueries.size());
             assertTrue("Should have found at least one live query", !liveQueries.isEmpty());
 
             // Validate the format of live queries based on LiveQueries.java and LiveQueriesResponse.java
@@ -213,10 +245,10 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
                 assertTrue("Description should be a string", query.get("description") instanceof String);
             }
         } else {
-            logger.info(
-                "No live queries found after {} attempts - this is acceptable due to test environment limitations",
-                MAX_POLL_ATTEMPTS
-            );
+            fail("No live queries found.");
+        }
+        for (String param : params) {
+            assertTrue("Parameter test for '" + param + "' did not pass", foundParams.get(param));
         }
     }
 
@@ -225,44 +257,25 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
      */
     @SuppressWarnings("unchecked")
     public void testAllParameters() throws IOException {
-        // Get node information for node-specific filtering
+        // Retrieve one node ID for filtering tests
         Request nodesRequest = new Request("GET", "/_nodes");
         Response nodesResponse = client().performRequest(nodesRequest);
         Map<String, Object> nodesMap = entityAsMap(nodesResponse);
         Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
-
-        if (nodes == null || nodes.isEmpty()) {
-            fail("No nodes information available");
-        }
-
-        // Get the first node ID
+        assertNotNull(nodes);
+        assertFalse(nodes.isEmpty());
         String nodeId = nodes.keySet().iterator().next();
 
-        // Test combinations of parameters
-
-        // 1. Test verbose parameter - should return correct response with verbose=true (default)
-        Request verboseRequest = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI);
-        Response verboseResponse = client().performRequest(verboseRequest);
-        assertEquals(200, verboseResponse.getStatusLine().getStatusCode());
-
-        Map<String, Object> verboseMap = entityAsMap(verboseResponse);
-        assertTrue(verboseMap.containsKey("live_queries"));
-
-        // 2. Test verbose=false - should return correct response without extra details
-        Request nonVerboseRequest = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?verbose=false");
-        Response nonVerboseResponse = client().performRequest(nonVerboseRequest);
-        assertEquals(200, nonVerboseResponse.getStatusLine().getStatusCode());
-
-        Map<String, Object> nonVerboseMap = entityAsMap(nonVerboseResponse);
-        assertTrue(nonVerboseMap.containsKey("live_queries"));
-
-        // 3. Test node-specific requests - should return data for the specified node
-        Request nodeSpecificRequest = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "/" + nodeId);
-        Response nodeSpecificResponse = client().performRequest(nodeSpecificRequest);
-        assertEquals(200, nodeSpecificResponse.getStatusLine().getStatusCode());
-
-        Map<String, Object> nodeSpecificMap = entityAsMap(nodeSpecificResponse);
-        assertTrue(nodeSpecificMap.containsKey("live_queries"));
+        // Define parameter combinations to test
+        String[] params = new String[] { "", "?verbose=false", "?sort=cpu", "?size=1", "?size=0", "?nodeId=" + nodeId };
+        for (String param : params) {
+            String uri = QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param;
+            Request req = new Request("GET", uri);
+            Response res = client().performRequest(req);
+            assertEquals("Status for param '" + param + "'", 200, res.getStatusLine().getStatusCode());
+            Map<String, Object> map = entityAsMap(res);
+            assertTrue("Response should contain live_queries for param '" + param + "'", map.containsKey("live_queries"));
+        }
     }
 
     /**

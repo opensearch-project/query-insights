@@ -86,6 +86,11 @@ public class QueryInsightsSettings {
      */
     public static final String LIVE_QUERIES_BASE_URI = PLUGINS_BASE_URI + "/live_queries";
 
+    /**
+     * Default number of results to return for live queries
+     */
+    public static final int DEFAULT_LIVE_QUERIES_SIZE = 100;
+
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
     /** Default prefix for top N queries grouping feature */

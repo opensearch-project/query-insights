@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.rules.transport.live_queries;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,11 +18,10 @@ import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.HandledTransportAction;
-import org.opensearch.cluster.node.DiscoveryNode;
-import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueries;
+import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
+import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -45,41 +43,30 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     private static final Logger logger = LogManager.getLogger(TransportLiveQueriesAction.class);
     private static final String TOTAL = "total";
 
-    private final ClusterService clusterService;
     private final Client client;
 
     @Inject
-    public TransportLiveQueriesAction(
-        final ThreadPool threadPool,
-        final ClusterService clusterService,
-        final TransportService transportService,
-        final Client client,
-        final ActionFilters actionFilters
-    ) {
+    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
-        this.clusterService = clusterService;
         this.client = client;
     }
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
-        // Prepare list-tasks request
         ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search*");
-        if (request.timeout() != null) {
-            listTasksRequest.setTimeout(request.timeout());
-        }
-        String[] nodesIds = request.nodesIds();
-        if (nodesIds != null && nodesIds.length > 0) {
-            listTasksRequest.setNodes(nodesIds);
+
+        // Set nodes filter if provided in the request
+        String[] requestedNodeIds = request.nodesIds();
+        if (requestedNodeIds != null && requestedNodeIds.length > 0) {
+            listTasksRequest.setNodes(requestedNodeIds);
         }
 
-        // Execute tasks request asynchronously to avoid blocking transport threads
+        // Execute tasks request asynchronously to avoid blocking
         client.admin().cluster().listTasks(listTasksRequest, new ActionListener<ListTasksResponse>() {
             @Override
             public void onResponse(ListTasksResponse taskResponse) {
                 try {
-                    // Group tasks by node and build records
-                    Map<String, List<SearchQueryRecord>> perNode = new HashMap<>();
+                    List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
                         if (!taskInfo.getAction().startsWith("indices:data/read/search")) {
                             continue;
@@ -90,14 +77,22 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
                         Map<MetricType, Measurement> measurements = new HashMap<>();
                         measurements.put(MetricType.LATENCY, new Measurement(runningNanos));
-                        measurements.put(
-                            MetricType.CPU,
-                            new Measurement(taskInfo.getResourceStats().getResourceUsageInfo().get(TOTAL).getCpuTimeInNanos())
-                        );
-                        measurements.put(
-                            MetricType.MEMORY,
-                            new Measurement(taskInfo.getResourceStats().getResourceUsageInfo().get(TOTAL).getMemoryInBytes())
-                        );
+
+                        long cpuNanos = 0L;
+                        long memBytes = 0L;
+                        TaskResourceStats stats = taskInfo.getResourceStats();
+                        if (stats != null) {
+                            Map<String, TaskResourceUsage> usageInfo = stats.getResourceUsageInfo();
+                            if (usageInfo != null) {
+                                TaskResourceUsage totalUsage = usageInfo.get(TOTAL);
+                                if (totalUsage != null) {
+                                    cpuNanos = totalUsage.getCpuTimeInNanos();
+                                    memBytes = totalUsage.getMemoryInBytes();
+                                }
+                            }
+                        }
+                        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
+                        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
 
                         Map<Attribute, Object> attributes = new HashMap<>();
                         attributes.put(Attribute.NODE_ID, nodeId);
@@ -111,23 +106,15 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             attributes,
                             taskInfo.getTaskId().toString()
                         );
-                        perNode.computeIfAbsent(nodeId, id -> new ArrayList<>()).add(record);
+                        allFilteredRecords.add(record);
                     }
 
-                    // Build node-level responses
-                    List<LiveQueries> nodeResponses = new ArrayList<>();
-                    for (Map.Entry<String, List<SearchQueryRecord>> entry : perNode.entrySet()) {
-                        DiscoveryNode node = clusterService.state().nodes().get(entry.getKey());
-                        nodeResponses.add(new LiveQueries(node, entry.getValue()));
-                    }
-
-                    LiveQueriesResponse response = new LiveQueriesResponse(
-                        clusterService.getClusterName(),
-                        nodeResponses,
-                        Collections.emptyList(),
-                        request.isVerbose()
-                    );
-                    listener.onResponse(response);
+                    // Sort descending by the requested metric and apply size limit in one pass
+                    List<SearchQueryRecord> finalRecords = allFilteredRecords.stream()
+                        .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
+                        .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
+                        .toList();
+                    listener.onResponse(new LiveQueriesResponse(finalRecords));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
