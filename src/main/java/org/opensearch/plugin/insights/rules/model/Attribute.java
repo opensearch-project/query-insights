@@ -64,7 +64,11 @@ public enum Attribute {
     /**
      * Grouping type of the query record (none, similarity)
      */
-    GROUP_BY;
+    GROUP_BY,
+    /**
+     * The description of the search query, often used in live queries.
+     */
+    DESCRIPTION;
 
     /**
      * Read an Attribute from a StreamInput
