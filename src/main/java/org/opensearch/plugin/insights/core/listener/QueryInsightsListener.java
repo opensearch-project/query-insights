@@ -24,7 +24,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -51,6 +50,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
+import reactor.util.annotation.NonNull;
 
 /**
  * The listener for query insights services.
@@ -163,7 +163,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
-        excludedIndicesHashSet = new HashSet<>(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -254,9 +253,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             return true;
         }
 
-        return Optional.ofNullable(searchRequestContext.getSuccessfulSearchShardIndices())
-            .map(set -> set.stream().map(Index::getName))
-            .map(indexNames -> indexNames.anyMatch(this::matchedExcludedIndices))
+        if (excludedIndicesHashSet.isEmpty()) {
+            return false;
+        }
+
+        return Optional.ofNullable(searchRequestContext)
+            .map(SearchRequestContext::getSuccessfulSearchShardIndices)
+            .map(indices -> indices.stream().map(Index::getName).anyMatch(this::matchedExcludedIndices))
             .orElse(false);
     }
 
@@ -356,13 +359,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      * Validate the index name for excluded indices
      * @param excludedIndices list of index to validate
      */
-    public void validateExcludedIndices(List<String> excludedIndices) {
-        if (excludedIndices.stream().anyMatch(Objects::isNull)) {
-            throw new IllegalArgumentException("Excluded index name cannot be null.");
-        }
-        if (excludedIndices.size() > 1) {
-            if (excludedIndices.stream().anyMatch(String::isBlank)) {
-                throw new IllegalArgumentException("Excluded index name should not be blank when there are multiple indices.");
+    public void validateExcludedIndices(@NonNull List<String> excludedIndices) {
+        for (String index : excludedIndices) {
+            if (index == null) {
+                throw new IllegalArgumentException("Excluded index name cannot be null.");
+            }
+            if (index.isBlank()) {
+                throw new IllegalArgumentException("Excluded index name cannot be blank.");
             }
         }
     }

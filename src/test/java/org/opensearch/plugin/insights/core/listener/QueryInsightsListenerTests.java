@@ -430,24 +430,24 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         List<String> containEmptyList = List.of("index1", "");
         assertThrows(
-            "Excluded index name should not be blank.",
+            "Excluded index name cannot be blank.",
             IllegalArgumentException.class,
             () -> queryInsightsListener.validateExcludedIndices(containEmptyList)
         );
 
         List<String> containBlankList = List.of("index1", "  ");
         assertThrows(
-            "Excluded index name should not be blank when there are multiple indices.",
+            "Excluded index name cannot be blank.",
             IllegalArgumentException.class,
             () -> queryInsightsListener.validateExcludedIndices(containBlankList)
         );
 
-        List<String> validResetValue = List.of("");
-        try {
-            queryInsightsListener.validateExcludedIndices(validResetValue);
-        } catch (Exception e) {
-            fail("Expect no exception when excluded indices is reset.");
-        }
+        List<String> blankResetValue = List.of("");
+        assertThrows(
+            "Excluded index name cannot be blank.",
+            IllegalArgumentException.class,
+            () -> queryInsightsListener.validateExcludedIndices(blankResetValue)
+        );
 
         List<String> validIndicesList = List.of("first-index", "wildcard-index*");
         try {
