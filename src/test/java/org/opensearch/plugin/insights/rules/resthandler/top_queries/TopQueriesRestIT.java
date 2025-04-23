@@ -47,22 +47,20 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
-        waitForEmptyTopQueriesResponse();
-
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
 
-        doSearch(2);
+        doSearch(10);
 
-        assertTopQueriesCount(2, "latency");
+        assertTopQueriesCount(5, "latency");
 
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
 
         // Do Search
-        doSearch(2);
+        doSearch(10);
 
-        assertTopQueriesCount(2, "cpu");
+        assertTopQueriesCount(5, "cpu");
     }
 
     /**
