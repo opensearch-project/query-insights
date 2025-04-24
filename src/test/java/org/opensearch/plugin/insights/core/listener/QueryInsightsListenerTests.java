@@ -449,6 +449,13 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             () -> queryInsightsListener.validateExcludedIndices(blankResetValue)
         );
 
+        List<String> indexNameWithUpperCaseChar = List.of("acceptedIndex", "rejectedIndex");
+        assertThrows(
+            "Index name must be lowercase.",
+            IllegalArgumentException.class,
+            () -> queryInsightsListener.validateExcludedIndices(indexNameWithUpperCaseChar)
+        );
+
         List<String> validIndicesList = List.of("first-index", "wildcard-index*");
         try {
             queryInsightsListener.validateExcludedIndices(validIndicesList);

@@ -20,13 +20,14 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.search.SearchPhaseContext;
@@ -36,7 +37,6 @@ import org.opensearch.action.search.SearchRequestOperationsListener;
 import org.opensearch.action.search.SearchTask;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.regex.Regex;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -66,7 +66,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldNameEnabled;
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
-    private Set<String> excludedIndicesHashSet;
+    private Set<Pattern> excludedIndicesPattern;
 
     /**
      * Constructor for QueryInsightsListener
@@ -166,7 +166,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
-        this.excludedIndicesHashSet = new HashSet<>(excludedIndices);
+        this.excludedIndicesPattern = excludedIndices.stream()
+            .map(index -> index.contains("*") ? index.replace("*", ".*") : index)
+            .map(Pattern::compile)
+            .collect(Collectors.toSet());
     }
 
     /**
@@ -253,7 +256,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             return true;
         }
 
-        if (excludedIndicesHashSet.isEmpty()) {
+        if (excludedIndicesPattern.isEmpty()) {
             return false;
         }
 
@@ -264,10 +267,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     private boolean matchedExcludedIndices(String indexName) {
-        if (indexName == null || excludedIndicesHashSet == null) {
+        if (indexName == null || excludedIndicesPattern == null) {
             return false;
         }
-        return excludedIndicesHashSet.stream().anyMatch(pattern -> Regex.simpleMatch(pattern, indexName));
+        return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
     private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
@@ -366,6 +369,9 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             if (index.isBlank()) {
                 throw new IllegalArgumentException("Excluded index name cannot be blank.");
+            }
+            if (index.chars().anyMatch(Character::isUpperCase)) {
+                throw new IllegalArgumentException("Index name must be lowercase.");
             }
         }
     }
