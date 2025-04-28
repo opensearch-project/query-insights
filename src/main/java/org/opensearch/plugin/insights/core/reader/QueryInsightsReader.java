@@ -22,9 +22,10 @@ public interface QueryInsightsReader extends Closeable {
      * @param from string
      * @param to   string
      * @param id query/group id
+     * @param verbose whether to return full output
      * @return List of SearchQueryRecord
      */
-    List<SearchQueryRecord> read(final String from, final String to, final String id);
+    List<SearchQueryRecord> read(final String from, final String to, final String id, final Boolean verbose);
 
     String getId();
 }

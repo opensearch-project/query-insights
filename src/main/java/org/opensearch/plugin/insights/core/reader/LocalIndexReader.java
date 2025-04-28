@@ -9,11 +9,13 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -22,6 +24,7 @@ import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.Strings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexNotFoundException;
@@ -31,6 +34,7 @@ import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -101,10 +105,11 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * @param from start timestamp
      * @param to   end timestamp
      * @param id query/group id
+     * @param verbose whether to return full output
      * @return list of SearchQueryRecords whose timestamps fall between from and to
      */
     @Override
-    public List<SearchQueryRecord> read(final String from, final String to, String id) {
+    public List<SearchQueryRecord> read(final String from, final String to, final String id, final Boolean verbose) {
         List<SearchQueryRecord> records = new ArrayList<>();
         if (from == null || to == null) {
             return records;
@@ -116,6 +121,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
             end = now;
         }
         ZonedDateTime curr = start;
+        // TODO: send single search request instead of one per index
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String indexName = buildLocalIndexName(curr);
             SearchRequest searchRequest = new SearchRequest(indexName);
@@ -130,6 +136,13 @@ public final class LocalIndexReader implements QueryInsightsReader {
                 query.must(QueryBuilders.matchQuery("id", id));
             }
             searchSourceBuilder.query(query);
+            if (Boolean.FALSE.equals(verbose)) {
+                // Exclude these fields
+                searchSourceBuilder.fetchSource(
+                    Strings.EMPTY_ARRAY,
+                    Arrays.stream(VERBOSE_ONLY_FIELDS).map(Attribute::toString).toArray(String[]::new)
+                );
+            }
             searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
             searchRequest.source(searchSourceBuilder);
             try {

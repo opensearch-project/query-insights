@@ -22,7 +22,7 @@ public class TopQueriesRequestTests extends OpenSearchTestCase {
      * Check that we can set the metric type
      */
     public void testSetMetricType() throws Exception {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, randomAlphaOfLength(5));
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, randomAlphaOfLength(5), null);
         TopQueriesRequest deserializedRequest = roundTripRequest(request);
         assertEquals(request.getMetricType(), deserializedRequest.getMetricType());
     }
