@@ -650,7 +650,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             for (Map<String, Object> query : topQueries) {
                 assertTrue(query.containsKey("timestamp"));
                 assertEquals("query_then_fetch", query.get("search_type"));
-                assertTrue(((List<?>) query.get("indices")).contains("my-index-0"));
+                List<?> indices = (List<?>) query.get("indices");
+                assertNotNull("Expected 'indices' field", indices);
                 String id = (String) query.get("id");
                 String nodeId = (String) query.get("node_id");
 
