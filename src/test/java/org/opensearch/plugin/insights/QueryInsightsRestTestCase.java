@@ -667,7 +667,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 if (filterNodeID != null && !filterNodeID.equals("null") && !filterNodeID.equals(nodeId)) {
                     nodeIdMismatchFound = true;
                 }
-
                 idNodePairs.add(new String[] { id, nodeId });
 
                 Map<String, Object> source = (Map<String, Object>) query.get("source");
