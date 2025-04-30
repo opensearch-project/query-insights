@@ -30,7 +30,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "top_queries";
     private final MetricType metricType;
-    private final int top_n_size;
 
     /**
      * Constructor for TopQueriesResponse.
@@ -40,7 +39,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
      */
     public TopQueriesResponse(final StreamInput in) throws IOException {
         super(in);
-        top_n_size = in.readInt();
         metricType = in.readEnum(MetricType.class);
     }
 
@@ -50,18 +48,15 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
      * @param clusterName The current cluster name
      * @param nodes A list that contains top queries results from all nodes
      * @param failures A list that contains FailedNodeException
-     * @param top_n_size The top N size to return to the user
      * @param metricType the {@link MetricType} to be returned in this response
      */
     public TopQueriesResponse(
         final ClusterName clusterName,
         final List<TopQueries> nodes,
         final List<FailedNodeException> failures,
-        final int top_n_size,
         final MetricType metricType
     ) {
         super(clusterName, nodes, failures);
-        this.top_n_size = top_n_size;
         this.metricType = metricType;
     }
 
@@ -73,7 +68,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
     @Override
     protected void writeNodesTo(final StreamOutput out, final List<TopQueries> nodes) throws IOException {
         out.writeList(nodes);
-        out.writeLong(top_n_size);
         out.writeEnum(metricType);
     }
 
@@ -112,7 +106,6 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
             .map(TopQueries::getTopQueriesRecord)
             .flatMap(Collection::stream)
             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
-            .limit(top_n_size)
             .collect(Collectors.toList());
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
         for (SearchQueryRecord record : all_records) {

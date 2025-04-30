@@ -10,11 +10,17 @@ package org.opensearch.plugin.insights;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -37,11 +43,13 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
+import org.opensearch.client.ResponseException;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.RestClientBuilder;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.MediaType;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -51,6 +59,8 @@ import org.opensearch.test.rest.OpenSearchRestTestCase;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
+    private static final Logger logger = Logger.getLogger(QueryInsightsRestTestCase.class.getName());
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
 
     protected boolean isHttps() {
         return Optional.ofNullable(System.getProperty("https")).map("true"::equalsIgnoreCase).orElse(false);
@@ -185,6 +195,16 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
+    protected String disableTopQueriesSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.cpu.enabled\" : \"false\"\n"
+            + "    }\n"
+            + "}";
+    }
+
     protected String defaultTopQueriesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
@@ -212,7 +232,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected String createDocumentsBody() {
         return "{\n"
-            + "  \"@timestamp\": \"2099-11-15T13:12:00\",\n"
+            + "  \"@timestamp\": \"2024-04-01T13:12:00\",\n"
             + "  \"message\": \"this is document 1\",\n"
             + "  \"user\": {\n"
             + "    \"id\": \"cyji\"\n"
@@ -626,6 +646,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             boolean matchFound = false;
 
+
             boolean idMismatchFound = false;
             boolean nodeIdMismatchFound = false;
 
@@ -633,6 +654,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             for (Map<String, Object> query : topQueries) {
                 assertTrue(query.containsKey("timestamp"));
+
 
                 List<?> indices = (List<?>) query.get("indices");
                 assertNotNull("Expected 'indices' field", indices);
@@ -676,6 +698,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             }
 
             return idNodePairs;
+
         }
 
     }
