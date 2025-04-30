@@ -489,6 +489,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             fail("Failed to extract top_queries index suffix");
         }
 
+        assertNotNull("Failed to extract suffix from top_queries-* index", suffix);
         String fullIndexName = "top_queries-" + suffix;
         assertTrue("Expected top_queries-{" + fullIndexName + "} index to be present", responseContent.contains(fullIndexName));
 
@@ -506,31 +507,40 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             )
         ) {
             Map<String, Object> responseMap = parser.map();
+
             Map<String, Object> hitsWrapper = (Map<String, Object>) responseMap.get("hits");
             List<Map<String, Object>> hits = (List<Map<String, Object>>) hitsWrapper.get("hits");
-
-            assertFalse("Expected at least one hit", hits.isEmpty());
 
             Map<String, Object> firstHit = hits.get(0);
             Map<String, Object> source = (Map<String, Object>) firstHit.get("_source");
 
-            assertTrue("Expected 'search_type' field", source.containsKey("search_type"));
-            assertTrue("Expected 'group_by' field", source.containsKey("group_by"));
-            assertTrue("Expected 'total_shards' field", source.containsKey("total_shards"));
+            assertEquals("query_then_fetch", source.get("search_type"));
+            assertEquals("NONE", source.get("group_by"));
+            assertEquals(1, ((Number) source.get("total_shards")).intValue());
+
+            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+
+            if (queryBlock != null && queryBlock.containsKey("match")) {
+                Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                if (match != null && match.containsKey("title")) {
+                    Map<String, Object> title = (Map<String, Object>) match.get("title");
+                    if (title != null) {
+                        assertEquals("Test Document", title.get("query"));
+                    }
+                }
+            }
 
             Map<String, Object> measurements = (Map<String, Object>) source.get("measurements");
-            assertNotNull("Expected 'measurements'", measurements);
-            assertTrue("Expected 'cpu' in measurements", measurements.containsKey("cpu"));
-            assertTrue("Expected 'latency' in measurements", measurements.containsKey("latency"));
-            assertTrue("Expected 'memory' in measurements", measurements.containsKey("memory"));
+            assertNotNull("Expected measurements", measurements);
+            assertTrue(measurements.containsKey("cpu"));
+            assertTrue(measurements.containsKey("latency"));
+            assertTrue(measurements.containsKey("memory"));
 
             List<Map<String, Object>> taskResourceUsages = (List<Map<String, Object>>) source.get("task_resource_usages");
-            assertNotNull("Expected 'task_resource_usages'", taskResourceUsages);
-            assertFalse("Expected non-empty 'task_resource_usages'", taskResourceUsages.isEmpty());
+            assertTrue("Expected non-empty task_resource_usages", taskResourceUsages.size() > 0);
         }
     }
 
-    @SuppressWarnings("unchecked")
     protected void checkQueryInsightsIndexTemplate() throws IOException {
         Request request = new Request("GET", "/_index_template?pretty");
         Response response = client().performRequest(request);
@@ -546,39 +556,29 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             Map<String, Object> parsed = parser.map();
 
             List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
-            assertNotNull("Expected 'index_templates' to exist", templates);
-            assertFalse("Expected at least one index template", templates.isEmpty());
+            assertNotNull("Expected index_templates to exist", templates);
+            assertFalse("Expected at least one index_template", templates.isEmpty());
 
             Map<String, Object> firstTemplate = templates.get(0);
-            assertTrue("Missing 'name' in template", firstTemplate.containsKey("name"));
-            assertTrue("Missing 'index_template' in template", firstTemplate.containsKey("index_template"));
+            assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
 
             Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
 
-            assertTrue("Missing 'index_patterns'", indexTemplate.containsKey("index_patterns"));
             List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
-            assertTrue("Missing 'template' section", indexTemplate.containsKey("template"));
+            assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
+
             Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
-
-            assertTrue("Missing 'settings' in template", template.containsKey("settings"));
             Map<String, Object> settings = (Map<String, Object>) template.get("settings");
-            assertTrue("Missing 'index' settings", settings.containsKey("index"));
             Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
+            assertEquals("1", indexSettings.get("number_of_shards"));
+            assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
 
-            assertTrue("Expected 'number_of_shards'", indexSettings.containsKey("number_of_shards"));
-            assertTrue("Expected 'auto_expand_replicas'", indexSettings.containsKey("auto_expand_replicas"));
-
-            assertTrue("Missing 'mappings' in template", template.containsKey("mappings"));
             Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
-
-            assertTrue("Missing '_meta' in mappings", mappings.containsKey("_meta"));
             Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
+            assertEquals(1, ((Number) meta.get("schema_version")).intValue());
+            assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
 
-            assertTrue("Expected 'schema_version' in _meta", meta.containsKey("schema_version"));
-
-            assertTrue("Missing 'properties' in mappings", mappings.containsKey("properties"));
             Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
-
             assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
             assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
             assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
@@ -612,7 +612,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return fetchHistoricalTopQueries(from, to, ID, NODEID, Type);
     }
 
-    @SuppressWarnings("unchecked")
     protected List<String[]> fetchHistoricalTopQueries(String from, String to, String filterId, String filterNodeID, String type)
         throws IOException {
         String endpoint = "/_insights/top_queries?from=" + from + "&to=" + to;
@@ -629,8 +628,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
         Request fetchRequest = new Request("GET", endpoint);
         Response fetchResponse = client().performRequest(fetchRequest);
-        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
 
+        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
         byte[] content = fetchResponse.getEntity().getContent().readAllBytes();
 
         try (
@@ -645,19 +644,18 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertNotNull("Expected 'top_queries' field", topQueries);
             assertFalse("Expected at least one top query", topQueries.isEmpty());
 
+            boolean matchFound = false;
+
             boolean idMismatchFound = false;
             boolean nodeIdMismatchFound = false;
+
             List<String[]> idNodePairs = new ArrayList<>();
 
             for (Map<String, Object> query : topQueries) {
-                assertTrue("Missing 'timestamp'", query.containsKey("timestamp"));
-                assertTrue("Missing 'indices'", query.containsKey("indices"));
-                assertTrue("Missing 'id'", query.containsKey("id"));
-                assertTrue("Missing 'node_id'", query.containsKey("node_id"));
-                assertTrue("Missing 'source'", query.containsKey("source"));
-                assertTrue("Missing 'measurements'", query.containsKey("measurements"));
-                assertTrue("Missing 'task_resource_usages'", query.containsKey("task_resource_usages"));
+                assertTrue(query.containsKey("timestamp"));
 
+                List<?> indices = (List<?>) query.get("indices");
+                assertNotNull("Expected 'indices' field", indices);
                 String id = (String) query.get("id");
                 String nodeId = (String) query.get("node_id");
 
@@ -669,21 +667,24 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 }
                 idNodePairs.add(new String[] { id, nodeId });
 
-                Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
-                assertTrue("Expected 'cpu' in measurements", measurements.containsKey("cpu"));
-                assertTrue("Expected 'memory' in measurements", measurements.containsKey("memory"));
-                assertTrue("Expected 'latency' in measurements", measurements.containsKey("latency"));
-
+                Map<String, Object> source = (Map<String, Object>) query.get("source");
+                Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+                Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                Map<String, Object> title = (Map<String, Object>) match.get("title");
                 List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
-                assertFalse("Expected non-empty 'task_resource_usages'", taskUsages.isEmpty());
-
+                assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
                 for (Map<String, Object> task : taskUsages) {
-                    assertTrue("Missing 'action'", task.containsKey("action"));
-                    assertTrue("Missing 'taskResourceUsage'", task.containsKey("taskResourceUsage"));
+                    assertTrue("Missing action", task.containsKey("action"));
                     Map<String, Object> usage = (Map<String, Object>) task.get("taskResourceUsage");
-                    assertNotNull("Missing 'cpu_time_in_nanos'", usage.get("cpu_time_in_nanos"));
-                    assertNotNull("Missing 'memory_in_bytes'", usage.get("memory_in_bytes"));
+                    assertNotNull("Missing cpu_time_in_nanos", usage.get("cpu_time_in_nanos"));
+                    assertNotNull("Missing memory_in_bytes", usage.get("memory_in_bytes"));
                 }
+
+                Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
+                assertNotNull("Expected measurements", measurements);
+                assertTrue(measurements.containsKey("cpu"));
+                assertTrue(measurements.containsKey("memory"));
+                assertTrue(measurements.containsKey("latency"));
             }
 
             if (filterId != null && !filterId.equals("null")) {
@@ -692,8 +693,11 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             if (filterNodeID != null && !filterNodeID.equals("null")) {
                 assertFalse("One or more node IDs did not match the filterNodeID", nodeIdMismatchFound);
             }
+
             return idNodePairs;
+
         }
+
     }
 
     protected List<String[]> fetchHistoricalTopQueries(Instant from, Instant to, String ID, String NODEID, String Type) throws IOException {
