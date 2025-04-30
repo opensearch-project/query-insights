@@ -646,7 +646,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             boolean matchFound = false;
 
-
             boolean idMismatchFound = false;
             boolean nodeIdMismatchFound = false;
 
@@ -654,7 +653,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             for (Map<String, Object> query : topQueries) {
                 assertTrue(query.containsKey("timestamp"));
-
 
                 List<?> indices = (List<?>) query.get("indices");
                 assertNotNull("Expected 'indices' field", indices);
