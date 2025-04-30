@@ -645,7 +645,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertNotNull("Expected 'top_queries' field", topQueries);
             assertFalse("Expected at least one top query", topQueries.isEmpty());
 
-
             boolean idMismatchFound = false;
             boolean nodeIdMismatchFound = false;
             List<String[]> idNodePairs = new ArrayList<>();
@@ -659,7 +658,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 assertTrue("Missing 'measurements'", query.containsKey("measurements"));
                 assertTrue("Missing 'task_resource_usages'", query.containsKey("task_resource_usages"));
 
-
                 String id = (String) query.get("id");
                 String nodeId = (String) query.get("node_id");
 
@@ -670,7 +668,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                     nodeIdMismatchFound = true;
                 }
                 idNodePairs.add(new String[] { id, nodeId });
-
 
                 Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
                 assertTrue("Expected 'cpu' in measurements", measurements.containsKey("cpu"));
