@@ -37,10 +37,10 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
 
     private static final Logger logger = LogManager.getLogger(LiveQueriesRestIT.class);
     private static final String TEST_INDEX = "test-index";
-    private static final int MAX_POLL_ATTEMPTS = 1000;  // Maximum number of times to poll the live queries API
+    private static final int MAX_POLL_ATTEMPTS = 4000;  // Maximum number of times to poll the live queries API
     private static final int POLL_INTERVAL_MS = 5;  // Time between polling attempts
     private static final int CONCURRENT_QUERIES = 5;  // Number of concurrent queries to run
-    private static final int MAX_QUERY_ITERATION = 100; // Max number of times to run the queries
+    private static final int MAX_QUERY_ITERATION = 1000; // Max number of times to run the queries
     private static final int QUERY_DURATION_MS = 10000; // Time each query should run
 
     /**
@@ -66,7 +66,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
     @SuppressWarnings("unchecked")
     public void testLiveQueriesWithConcurrentSearches() throws Exception {
         // Create index and add documents with some data
-        createIndexWithData(100);
+        createIndexWithData(500);
 
         // Set up a coordinator for the search threads
         CountDownLatch startLatch = new CountDownLatch(1);
