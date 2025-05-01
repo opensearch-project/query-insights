@@ -99,7 +99,7 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
     protected String updateMaxGroupsExcludingTopNSetting() {
         return "{\n"
             + "    \"persistent\" : {\n"
-            + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 1\n"
+            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 1\n"
             + "    }\n"
             + "}";
     }
