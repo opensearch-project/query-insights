@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
 
 import java.time.ZoneOffset;
@@ -35,11 +36,13 @@ import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.SortBuilders;
 import org.opensearch.search.sort.SortOrder;
+import reactor.util.annotation.NonNull;
 
 /**
  * Local index reader for reading query insights data from local OpenSearch indices.
@@ -102,14 +105,21 @@ public final class LocalIndexReader implements QueryInsightsReader {
     /**
      * Export a list of SearchQueryRecord from local index
      *
-     * @param from start timestamp
-     * @param to   end timestamp
-     * @param id query/group id
-     * @param verbose whether to return full output
+     * @param from       start timestamp
+     * @param to         end timestamp
+     * @param id         query/group id
+     * @param verbose    whether to return full output
+     * @param metricType metric type to read
      * @return list of SearchQueryRecords whose timestamps fall between from and to
      */
     @Override
-    public List<SearchQueryRecord> read(final String from, final String to, final String id, final Boolean verbose) {
+    public List<SearchQueryRecord> read(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @NonNull final MetricType metricType
+    ) {
         List<SearchQueryRecord> records = new ArrayList<>();
         if (from == null || to == null) {
             return records;
@@ -134,6 +144,9 @@ public final class LocalIndexReader implements QueryInsightsReader {
 
             if (id != null) {
                 query.must(QueryBuilders.matchQuery("id", id));
+            } else {
+                // Add metric type filter only when (id == null)
+                query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
             }
             searchSourceBuilder.query(query);
             if (Boolean.FALSE.equals(verbose)) {

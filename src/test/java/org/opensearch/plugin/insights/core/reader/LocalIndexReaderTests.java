@@ -32,6 +32,7 @@ import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.SearchHits;
@@ -87,7 +88,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         String id = "example-hashcode";
         List<SearchQueryRecord> records = List.of();
         try {
-            records = localIndexReader.read(time, time, id, true);
+            records = localIndexReader.read(time, time, id, true, MetricType.LATENCY);
         } catch (Exception e) {
             fail("No exception should be thrown when reading query insights data");
         }
@@ -95,7 +96,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         assertEquals(1, records.size());
 
         try {
-            records = localIndexReader.read(time, time, id, false);
+            records = localIndexReader.read(time, time, id, false, MetricType.LATENCY);
         } catch (Exception e) {
             fail("No exception should be thrown when reading query insights data");
         }

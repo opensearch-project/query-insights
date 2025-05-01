@@ -370,7 +370,7 @@ public class TopQueriesService {
             try {
                 final ZonedDateTime start = ZonedDateTime.parse(from);
                 final ZonedDateTime end = ZonedDateTime.parse(to);
-                List<SearchQueryRecord> records = reader.read(from, to, id, verbose);
+                List<SearchQueryRecord> records = reader.read(from, to, id, verbose, metricType);
                 Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                     && element.getTimestamp() <= end.toInstant().toEpochMilli();
                 List<SearchQueryRecord> filteredRecords = records.stream()
@@ -454,6 +454,12 @@ public class TopQueriesService {
             }
             topQueriesCurrentSnapshot.set(new ArrayList<>());
             windowStart = newWindowStart;
+
+            // update top_n_query map for all top queries in the window
+            for (SearchQueryRecord record : history) {
+                record.setTopNTrue(metricType);
+            }
+
             // export to the configured sink
             QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
             if (exporter != null) {

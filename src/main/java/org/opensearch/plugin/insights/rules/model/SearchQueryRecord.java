@@ -10,12 +10,15 @@ package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
@@ -32,6 +35,7 @@ import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
+import reactor.util.annotation.NonNull;
 
 /**
  * SearchQueryRecord represents a minimal atomic record stored in the Query Insight Framework,
@@ -100,6 +104,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * UUID
      */
     public static final String ID = "id";
+    /**
+     * A map indicating for which metric type(s) this record was in the Top N
+     */
+    public static final String TOP_N_QUERY = "top_n_query";
+    /**
+     * Default, immutable `top_n_query` map. All values initialized to {@code false}
+     */
+    public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
+        Arrays.stream(MetricType.values()).collect(Collectors.toMap(MetricType::toString, metric -> Boolean.FALSE))
+    );
 
     /**
      * Query Group hashcode
@@ -311,6 +325,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         }
                         attributes.put(Attribute.LABELS, labels);
                         break;
+                    case TOP_N_QUERY:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        Map<String, Boolean> metricTypeMap = new HashMap<>();
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String metricName = parser.currentName();
+                            parser.nextToken();
+                            metricTypeMap.put(metricName, parser.booleanValue());
+                        }
+                        attributes.put(Attribute.TOP_N_QUERY, metricTypeMap);
+                        break;
                     default:
                         break;
                 }
@@ -406,8 +430,70 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         attributes.put(attribute, value);
     }
 
+    /**
+     * Update top_n_query attribute for the specified metricType
+     *
+     * @param metricType metric to update
+     */
+    public void setTopNTrue(@NonNull final MetricType metricType) {
+        @SuppressWarnings("unchecked")
+        Map<String, Boolean> topNMap = (Map<String, Boolean>) attributes.get(Attribute.TOP_N_QUERY);
+
+        if (topNMap == null) {
+            // topNMap should never be null
+            // If it is, copy DEFAULT_TOP_N_QUERY_MAP then update to true
+            topNMap = new HashMap<>(DEFAULT_TOP_N_QUERY_MAP);
+            topNMap.put(metricType.toString(), true);
+            attributes.put(Attribute.TOP_N_QUERY, topNMap);
+        } else {
+            topNMap.put(metricType.toString(), true);
+        }
+    }
+
+    /**
+     * Serializes this object into an {@link XContentBuilder} for indexing or internal use.
+     * <p>
+     * This method includes all fields except the {@code Attribute.TOP_N_QUERY} field, which is explicitly excluded.
+     * It also serializes all {@link Measurement} objects under the "measurements" field using their own {@code toXContent} method.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @return The updated {@link XContentBuilder} with this object's content.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
+        builder.startObject();
+        builder.field("timestamp", timestamp);
+        builder.field("id", id);
+
+        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
+            if (entry.getKey() == Attribute.TOP_N_QUERY) { // Always skip TOP_N_QUERY attribute
+                continue;
+            }
+            builder.field(entry.getKey().toString(), entry.getValue());
+        }
+        builder.startObject(MEASUREMENTS);
+        for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
+            builder.field(entry.getKey().toString());  // MetricType as field name
+            entry.getValue().toXContent(builder, params);  // Serialize Measurement object
+        }
+        builder.endObject();
+        return builder.endObject();
+    }
+
+    /**
+     * Serializes this object into an {@link XContentBuilder} for external export (e.g. backup or reporting).
+     * <p>
+     * Unlike {@link #toXContent}, this method includes all attributes, including {@code Attribute.TOP_N_QUERY}.
+     * It also serializes all {@link Measurement} objects under the "measurements" field using their own {@code toXContent} method.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @return The updated {@link XContentBuilder} with this object's full content.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
+    public XContentBuilder toXContentForExport(final XContentBuilder builder, final Params params) throws IOException {
         builder.startObject();
         builder.field("timestamp", timestamp);
         builder.field("id", id);

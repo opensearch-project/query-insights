@@ -8,14 +8,17 @@
 
 package org.opensearch.plugin.insights.rules.model;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.test.OpenSearchTestCase;
@@ -54,6 +57,39 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         SearchQueryRecord record1 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
         SearchQueryRecord record2 = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
         assertEquals(record1, record2);
+    }
+
+    public void testToXContent() throws IOException {
+        SearchQueryRecord originalRecord = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
+
+        // Serialize with toXContent
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        originalRecord.toXContent(builder, null);
+        builder.flush();
+
+        // Deserialize with fromXContent
+        String json = builder.toString();
+        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
+
+        originalRecord.getAttributes().remove(Attribute.TOP_N_QUERY);
+        assertEquals(originalRecord, parsedRecord);
+    }
+
+    public void testToXContentForExport() throws IOException {
+        SearchQueryRecord originalRecord = QueryInsightsTestUtils.createFixedSearchQueryRecord("id");
+
+        // Serialize with toXContentForExport
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        originalRecord.toXContentForExport(builder, null);
+        builder.flush();
+
+        // Deserialize with fromXContent
+        String json = builder.toString();
+        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
+
+        assertEquals(originalRecord, parsedRecord);
     }
 
     public void testFromXContent() {

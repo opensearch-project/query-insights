@@ -466,4 +466,26 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             assertNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
         }
     }
+
+    public void testUpdateTopNMap() {
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(
+            5,
+            5,
+            System.currentTimeMillis() - 1000 * 60 * 10,
+            0
+        );
+        // Update window size to simulate start of new window in consumeRecords
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+
+        List<SearchQueryRecord> results = topQueriesService.getTopQueriesRecords(false, null, null, null, null);
+        for (SearchQueryRecord record : results) {
+            @SuppressWarnings("unchecked")
+            Map<String, Boolean> topNMap = (Map<String, Boolean>) record.getAttributes().get(Attribute.TOP_N_QUERY);
+
+            assertTrue(topNMap.get(MetricType.LATENCY.toString()));
+            assertFalse(topNMap.get(MetricType.CPU.toString()));
+            assertFalse(topNMap.get(MetricType.MEMORY.toString()));
+        }
+    }
 }
