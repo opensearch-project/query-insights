@@ -8,6 +8,7 @@
 package org.opensearch.plugin.insights.core.reader;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -29,8 +30,7 @@ import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
-    public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
-
+    void createLocalIndices() throws IOException, ParseException, InterruptedException {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
 
         List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
@@ -44,156 +44,116 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         }
 
         Thread.sleep(10000);
+    }
+
+    public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
+        createLocalIndices();
 
         Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z");
 
-        try {
-            Response response = client().performRequest(request);
-            String responseBody = EntityUtils.toString(response.getEntity());
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            Assert.assertFalse("Expected non-empty top_queries but got empty list", responseBody.contains("\"top_queries\":[]"));
-            byte[] bytes = response.getEntity().getContent().readAllBytes();
+        Response response = client().performRequest(request);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        Assert.assertFalse("Expected non-empty top_queries but got empty list", responseBody.contains("\"top_queries\":[]"));
+        byte[] bytes = response.getEntity().getContent().readAllBytes();
 
-            try (
-                XContentParser parser = JsonXContent.jsonXContent.createParser(
-                    NamedXContentRegistry.EMPTY,
-                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                    bytes
-                )
-            ) {
-                Map<String, Object> parsed = parser.map();
-                List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                bytes
+            )
+        ) {
+            Map<String, Object> parsed = parser.map();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
 
-                // Assert the expected count
-                Assert.assertEquals("Expected 4 top queries", 4, topQueries.size());
-            }
-
-        } catch (Exception e) {
-
-            throw e;
+            // Assert the expected count
+            Assert.assertEquals("Expected 4 top queries", 4, topQueries.size());
         }
         cleanup();
+    }
 
+    public void testReaderTopNLabels() throws IOException, ParseException, InterruptedException {
+        createLocalIndices();
+
+        // type=cpu, 4 top queries
+        Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z&type=cpu");
+
+        Response response = client().performRequest(request);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        Assert.assertFalse("Expected non-empty top_queries but got empty list", responseBody.contains("\"top_queries\":[]"));
+        byte[] bytes = response.getEntity().getContent().readAllBytes();
+
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                bytes
+            )
+        ) {
+            Map<String, Object> parsed = parser.map();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> topQueries = (List<Map<String, Object>>) parsed.get("top_queries");
+
+            // Assert the expected count
+            Assert.assertEquals("Expected 4 top queries", 4, topQueries.size());
+        }
+
+        // type=memory, 0 top queries
+        request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z&type=memory");
+
+        response = client().performRequest(request);
+        responseBody = EntityUtils.toString(response.getEntity());
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        Assert.assertTrue("Expected empty top_queries", responseBody.contains("\"top_queries\":[]"));
+
+        cleanup();
+    }
+
+    public void testInvalidMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+
+        List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
+
+        for (String dateStr : inputDates) {
+            LocalDate localDate = LocalDate.parse(dateStr, formatter);
+            ZonedDateTime zdt = localDate.atStartOfDay(ZoneOffset.UTC);
+            long timestamp = zdt.toInstant().toEpochMilli();
+            String indexName = buildbadLocalIndexName(zdt);
+            createTopQueriesIndex(indexName, timestamp);
+        }
+
+        Thread.sleep(10000);
+
+        Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z");
+
+        Response response = client().performRequest(request);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        Assert.assertTrue("Expected empty top_queries", responseBody.contains("\"top_queries\":[]"));
+        cleanup();
     }
 
     private void createTopQueriesIndex(String indexName, long timestamp) throws IOException, ParseException, InterruptedException {
-        String mapping = "{\n"
-            + "  \"mappings\": {\n"
-            + "    \"dynamic\": true,\n"
-            + "    \"_meta\": {\n"
-            + "      \"schema_version\": 1,\n"
-            + "      \"query_insights_feature_space\": \"top_n_queries\"\n"
-            + "    },\n"
-            + "    \"properties\": {\n"
-            + "      \"id\": {\n"
-            + "        \"type\": \"text\",\n"
-            + "        \"fields\": {\n"
-            + "          \"keyword\": {\n"
-            + "            \"type\": \"keyword\",\n"
-            + "            \"ignore_above\": 256\n"
-            + "          }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"node_id\": {\n"
-            + "        \"type\": \"text\",\n"
-            + "        \"fields\": {\n"
-            + "          \"keyword\": {\n"
-            + "            \"type\": \"keyword\",\n"
-            + "            \"ignore_above\": 256\n"
-            + "          }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"timestamp\": { \"type\": \"long\" },\n"
-            + "      \"total_shards\": { \"type\": \"long\" },\n"
-            + "      \"group_by\": {\n"
-            + "        \"type\": \"text\",\n"
-            + "        \"fields\": {\n"
-            + "          \"keyword\": {\n"
-            + "            \"type\": \"keyword\",\n"
-            + "            \"ignore_above\": 256\n"
-            + "          }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"phase_latency_map\": {\n"
-            + "        \"properties\": {\n"
-            + "          \"expand\": { \"type\": \"long\" },\n"
-            + "          \"fetch\": { \"type\": \"long\" },\n"
-            + "          \"query\": { \"type\": \"long\" }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"search_type\": {\n"
-            + "        \"type\": \"text\",\n"
-            + "        \"fields\": {\n"
-            + "          \"keyword\": {\n"
-            + "            \"type\": \"keyword\",\n"
-            + "            \"ignore_above\": 256\n"
-            + "          }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"task_resource_usages\": {\n"
-            + "        \"properties\": {\n"
-            + "          \"action\": {\n"
-            + "            \"type\": \"text\",\n"
-            + "            \"fields\": {\n"
-            + "              \"keyword\": {\n"
-            + "                \"type\": \"keyword\",\n"
-            + "                \"ignore_above\": 256\n"
-            + "              }\n"
-            + "            }\n"
-            + "          },\n"
-            + "          \"nodeId\": {\n"
-            + "            \"type\": \"text\",\n"
-            + "            \"fields\": {\n"
-            + "              \"keyword\": {\n"
-            + "                \"type\": \"keyword\",\n"
-            + "                \"ignore_above\": 256\n"
-            + "              }\n"
-            + "            }\n"
-            + "          },\n"
-            + "          \"parentTaskId\": { \"type\": \"long\" },\n"
-            + "          \"taskId\": { \"type\": \"long\" },\n"
-            + "          \"taskResourceUsage\": {\n"
-            + "            \"properties\": {\n"
-            + "              \"cpu_time_in_nanos\": { \"type\": \"long\" },\n"
-            + "              \"memory_in_bytes\": { \"type\": \"long\" }\n"
-            + "            }\n"
-            + "          }\n"
-            + "        }\n"
-            + "      },\n"
-            + "      \"measurements\": {\n"
-            + "        \"properties\": {\n"
-            + "          \"latency\": {\n"
-            + "            \"properties\": {\n"
-            + "              \"number\": { \"type\": \"double\" },\n"
-            + "              \"count\": { \"type\": \"integer\" },\n"
-            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
-            + "            }\n"
-            + "          },\n"
-            + "          \"cpu\": {\n"
-            + "            \"properties\": {\n"
-            + "              \"number\": { \"type\": \"double\" },\n"
-            + "              \"count\": { \"type\": \"integer\" },\n"
-            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
-            + "            }\n"
-            + "          },\n"
-            + "          \"memory\": {\n"
-            + "            \"properties\": {\n"
-            + "              \"number\": { \"type\": \"double\" },\n"
-            + "              \"count\": { \"type\": \"integer\" },\n"
-            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
-            + "            }\n"
-            + "          }\n"
-            + "        }\n"
-            + "      }\n"
-            + "    }\n"
-            + "  },\n"
+        String mappingJson = new String(
+            getClass().getClassLoader().getResourceAsStream("mappings/top-queries-record.json").readAllBytes(),
+            StandardCharsets.UTF_8
+        );
+        String jsonBody = ""
+            + "{\n"
             + "  \"settings\": {\n"
             + "    \"index.number_of_shards\": 1,\n"
             + "    \"index.auto_expand_replicas\": \"0-2\"\n"
-            + "  }\n"
+            + "  },\n"
+            + "  \"mappings\": "
+            + mappingJson
+            + "\n"
             + "}";
+
         Request request = new Request("PUT", "/" + indexName);
-        request.setJsonEntity(mapping);
+        request.setJsonEntity(jsonBody);
 
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
@@ -268,6 +228,11 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
                 + "      \"count\": 1,\n"
                 + "      \"aggregationType\": \"NONE\"\n"
                 + "    }\n"
+                + "  },\n"
+                + "  \"top_n_query\": {\n"
+                + "    \"latency\": true,\n"
+                + "    \"cpu\": true,\n"
+                + "    \"memory\": false\n"
                 + "  }\n"
                 + "}",
             timestamp
@@ -287,37 +252,4 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         String dateString = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).format(date);
         return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
     }
-
-    public void testInvalidMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
-
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
-
-        List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
-
-        for (String dateStr : inputDates) {
-            LocalDate localDate = LocalDate.parse(dateStr, formatter);
-            ZonedDateTime zdt = localDate.atStartOfDay(ZoneOffset.UTC);
-            long timestamp = zdt.toInstant().toEpochMilli();
-            String indexName = buildbadLocalIndexName(zdt);
-            createTopQueriesIndex(indexName, timestamp);
-        }
-
-        Thread.sleep(10000);
-
-        Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z");
-
-        try {
-            Response response = client().performRequest(request);
-            String responseBody = EntityUtils.toString(response.getEntity());
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            Assert.assertTrue("Expected empty top_queries", responseBody.contains("\"top_queries\":[]"));
-
-        } catch (Exception e) {
-
-            throw e;
-        }
-        cleanup();
-
-    }
-
 }
