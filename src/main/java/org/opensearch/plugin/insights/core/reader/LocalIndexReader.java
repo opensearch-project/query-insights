@@ -19,8 +19,9 @@ import java.util.Arrays;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.search.MultiSearchRequest;
+import org.opensearch.action.search.MultiSearchResponse;
 import org.opensearch.action.search.SearchRequest;
-import org.opensearch.action.search.SearchResponse;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.Strings;
@@ -121,7 +122,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
             end = now;
         }
         ZonedDateTime curr = start;
-        // TODO: send single search request instead of one per index
+        MultiSearchRequest multiSearchRequest = new MultiSearchRequest();
         while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
             String indexName = buildLocalIndexName(curr);
             SearchRequest searchRequest = new SearchRequest(indexName);
@@ -145,19 +146,24 @@ public final class LocalIndexReader implements QueryInsightsReader {
             }
             searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
             searchRequest.source(searchSourceBuilder);
-            try {
-                SearchResponse searchResponse = client.search(searchRequest).actionGet();
-                for (SearchHit hit : searchResponse.getHits()) {
-                    XContentParser parser = XContentType.JSON.xContent()
-                        .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
-                    SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
-                    records.add(record);
-                }
-            } catch (IndexNotFoundException ignored) {} catch (Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
-                logger.error("Unable to parse search hit: ", e);
-            }
+            multiSearchRequest.add(searchRequest);
             curr = curr.plusDays(1);
+        }
+        try {
+            MultiSearchResponse multiSearchResponse = client.multiSearch(multiSearchRequest).actionGet();
+            for (MultiSearchResponse.Item s : multiSearchResponse) {
+                if (s.getResponse() != null) {
+                    for (SearchHit hit : s.getResponse().getHits()) {
+                        XContentParser parser = XContentType.JSON.xContent()
+                            .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
+                        SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
+                        records.add(record);
+                    }
+                }
+            }
+        } catch (IndexNotFoundException ignored) {} catch (Exception e) {
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
+            logger.error("Unable to parse search hit: ", e);
         }
         return records;
     }

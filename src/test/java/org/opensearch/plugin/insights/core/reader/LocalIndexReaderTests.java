@@ -23,7 +23,8 @@ import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.search.TotalHits;
 import org.junit.Before;
-import org.opensearch.action.search.SearchRequest;
+import org.opensearch.action.search.MultiSearchRequest;
+import org.opensearch.action.search.MultiSearchResponse;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.common.action.ActionFuture;
 import org.opensearch.common.document.DocumentField;
@@ -52,8 +53,9 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
     }
 
     @SuppressWarnings("unchecked")
-    public void testReadRecords() {
+    public void testReadRecords() throws IOException {
         ActionFuture<SearchResponse> responseActionFuture = mock(ActionFuture.class);
+        ActionFuture<MultiSearchResponse> multiSearchResponseActionFuture = mock(ActionFuture.class);
         Map<String, Object> sourceMap = new HashMap<>();
         sourceMap.put("timestamp", ZonedDateTime.now(ZoneOffset.UTC).toInstant().toEpochMilli());
         sourceMap.put("indices", Collections.singletonList("my-index-0"));
@@ -80,9 +82,15 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         hit.sourceRef(sourceRef);
         SearchHits searchHits = new SearchHits(new SearchHit[] { hit }, new TotalHits(1, TotalHits.Relation.EQUAL_TO), 1.0f);
         SearchResponse searchResponse = mock(SearchResponse.class);
+        Exception ex = new Exception();
+        MultiSearchResponse.Item item = new MultiSearchResponse.Item(searchResponse, ex);
+        MultiSearchResponse.Item[] arrayItems = new MultiSearchResponse.Item[1];
+        arrayItems[0] = item;
+        MultiSearchResponse multiSearchResponse = new MultiSearchResponse(arrayItems, 100L);
         when(searchResponse.getHits()).thenReturn(searchHits);
         when(responseActionFuture.actionGet()).thenReturn(searchResponse);
-        when(client.search(any(SearchRequest.class))).thenReturn(responseActionFuture);
+        when(multiSearchResponseActionFuture.actionGet()).thenReturn(multiSearchResponse);
+        when(client.multiSearch(any(MultiSearchRequest.class))).thenReturn(multiSearchResponseActionFuture);
         String time = ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_DATE_TIME);
         String id = "example-hashcode";
         List<SearchQueryRecord> records = List.of();
