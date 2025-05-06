@@ -161,7 +161,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
                     }
                 }
             }
-        } catch (IndexNotFoundException ignored) {} catch (Exception e) {
+        } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
             logger.error("Unable to parse search hit: ", e);
         }
