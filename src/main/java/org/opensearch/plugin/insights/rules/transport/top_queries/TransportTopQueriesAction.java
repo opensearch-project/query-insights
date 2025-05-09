@@ -12,14 +12,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.opensearch.action.FailedNodeException;
-import org.opensearch.core.action.ActionListener;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
+import org.opensearch.common.util.concurrent.ThreadContext;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
-import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -73,66 +73,14 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         this.queryInsightsService = queryInsightsService;
     }
 
-    @Override
-    protected void doExecute(Task task, TopQueriesRequest request, ActionListener<TopQueriesResponse> finalListener) {
-        final String from = request.getFrom();
-        final String to = request.getTo();
-        final String id = request.getId();
-        final Boolean verbose = request.getVerbose();
-
-        ActionListener<TopQueriesResponse> liveDataCollectionListener = new ActionListener<TopQueriesResponse>() {
+    protected ActionListener<TopQueriesResponse> createInMemoryDataCollectionListener(
+        TopQueriesRequest request,
+        ActionListener<TopQueriesResponse> finalListener
+    ) {
+        return new ActionListener<TopQueriesResponse>() {
             @Override
             public void onResponse(TopQueriesResponse inMemoryQueriesResponse) {
-                // inMemoryQueriesResponse contains aggregated in-memory data from nodes and any node failures
-                List<TopQueries> liveTopQueries = inMemoryQueriesResponse.getNodes();
-                List<FailedNodeException> liveDataFailures = inMemoryQueriesResponse.failures();
-
-                if (from != null && to != null) {
-                    // Need to fetch historical data
-                    final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext();
-                    try {
-                        ActionListener<List<SearchQueryRecord>> historicalDataListener = new ActionListener<List<SearchQueryRecord>>() {
-                            @Override
-                            public void onResponse(List<SearchQueryRecord> historicalRecords) {
-                                storedContext.restore();
-                                List<TopQueries> combinedTopQueriesList = new ArrayList<>(liveTopQueries);
-                                if (historicalRecords != null && !historicalRecords.isEmpty()) {
-                                    combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), historicalRecords));
-                                }
-                                finalListener.onResponse(
-                                    new TopQueriesResponse(
-                                        clusterService.getClusterName(),
-                                        combinedTopQueriesList,
-                                        liveDataFailures,
-                                        request.getMetricType()
-                                    )
-                                );
-                            }
-
-                            @Override
-                            public void onFailure(Exception e) {
-                                storedContext.restore();
-                                logger.warn("Failed to fetch historical top queries, proceeding with in-memory data only.", e);
-                                finalListener.onResponse(
-                                    new TopQueriesResponse(
-                                        clusterService.getClusterName(),
-                                        liveTopQueries,
-                                        liveDataFailures,
-                                        request.getMetricType()
-                                    )
-                                );
-                            }
-                        };
-                        queryInsightsService.getTopQueriesService(request.getMetricType())
-                            .getTopQueriesRecordsFromIndex(from, to, id, verbose, historicalDataListener);
-                    } catch (Exception e) {
-                        storedContext.restore();
-                        logger.error("Synchronous failure while initiating historical top queries fetch", e);
-                        finalListener.onFailure(e);
-                    }
-                } else {
-                    finalListener.onResponse(inMemoryQueriesResponse);
-                }
+                handleInMemoryDataResponse(request, inMemoryQueriesResponse, finalListener);
             }
 
             @Override
@@ -140,8 +88,98 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 finalListener.onFailure(e);
             }
         };
+    }
 
-        super.doExecute(task, request, liveDataCollectionListener);
+    protected void handleInMemoryDataResponse(
+        TopQueriesRequest request,
+        TopQueriesResponse inMemoryQueriesResponse,
+        ActionListener<TopQueriesResponse> finalListener
+    ) {
+        List<TopQueries> inMemoryTopQueries = inMemoryQueriesResponse.getNodes();
+        List<FailedNodeException> inMemoryDataFailures = inMemoryQueriesResponse.failures();
+        String from = request.getFrom();
+        String to = request.getTo();
+        if (from != null && to != null) {
+            fetchHistoricalData(request, inMemoryTopQueries, inMemoryDataFailures, finalListener);
+        } else {
+            finalListener.onResponse(inMemoryQueriesResponse);
+        }
+    }
+
+    protected void fetchHistoricalData(
+        TopQueriesRequest request,
+        List<TopQueries> inMemoryTopQueries,
+        List<FailedNodeException> inMemoryDataFailures,
+        ActionListener<TopQueriesResponse> finalListener
+    ) {
+        String from = request.getFrom();
+        String to = request.getTo();
+        String id = request.getId();
+        Boolean verbose = request.getVerbose();
+        final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext();
+        try {
+            queryInsightsService.getTopQueriesService(request.getMetricType())
+                .getTopQueriesRecordsFromIndex(from, to, id, verbose, new ActionListener<List<SearchQueryRecord>>() {
+                    @Override
+                    public void onResponse(List<SearchQueryRecord> historicalRecords) {
+                        onHistoricalDataResponse(
+                            request,
+                            inMemoryTopQueries,
+                            inMemoryDataFailures,
+                            historicalRecords,
+                            finalListener,
+                            storedContext
+                        );
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        onHistoricalDataFailure(request, inMemoryTopQueries, inMemoryDataFailures, e, finalListener, storedContext);
+                    }
+                });
+        } catch (Exception e) {
+            storedContext.restore();
+            logger.error("Synchronous failure while initiating historical top queries fetch", e);
+            finalListener.onFailure(e);
+        }
+    }
+
+    protected void onHistoricalDataResponse(
+        TopQueriesRequest request,
+        List<TopQueries> inMemoryTopQueries,
+        List<FailedNodeException> inMemoryDataFailures,
+        List<SearchQueryRecord> historicalRecords,
+        ActionListener<TopQueriesResponse> finalListener,
+        ThreadContext.StoredContext storedContext
+    ) {
+        storedContext.restore();
+        List<TopQueries> combinedTopQueriesList = new ArrayList<>(inMemoryTopQueries);
+        if (historicalRecords != null && !historicalRecords.isEmpty()) {
+            combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), historicalRecords));
+        }
+        finalListener.onResponse(
+            new TopQueriesResponse(clusterService.getClusterName(), combinedTopQueriesList, inMemoryDataFailures, request.getMetricType())
+        );
+    }
+
+    protected void onHistoricalDataFailure(
+        TopQueriesRequest request,
+        List<TopQueries> inMemoryTopQueries,
+        List<FailedNodeException> inMemoryDataFailures,
+        Exception e,
+        ActionListener<TopQueriesResponse> finalListener,
+        ThreadContext.StoredContext storedContext
+    ) {
+        storedContext.restore();
+        logger.warn("Failed to fetch historical top queries, proceeding with in-memory data only.", e);
+        finalListener.onResponse(
+            new TopQueriesResponse(clusterService.getClusterName(), inMemoryTopQueries, inMemoryDataFailures, request.getMetricType())
+        );
+    }
+
+    @Override
+    protected void doExecute(Task task, TopQueriesRequest request, ActionListener<TopQueriesResponse> finalListener) {
+        super.doExecute(task, request, createInMemoryDataCollectionListener(request, finalListener));
     }
 
     @Override
@@ -150,12 +188,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         final List<TopQueries> collectedNodeResponses,
         final List<FailedNodeException> failures
     ) {
-        return new TopQueriesResponse(
-            clusterService.getClusterName(),
-            collectedNodeResponses,
-            failures,
-            topQueriesRequest.getMetricType()
-        );
+        return new TopQueriesResponse(clusterService.getClusterName(), collectedNodeResponses, failures, topQueriesRequest.getMetricType());
     }
 
     @Override

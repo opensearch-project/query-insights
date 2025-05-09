@@ -60,6 +60,15 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
         this.metricType = metricType;
     }
 
+    /**
+     * Get the metric type for this response.
+     *
+     * @return The {@link MetricType}.
+     */
+    public MetricType getMetricType() {
+        return metricType;
+    }
+
     @Override
     protected List<TopQueries> readNodesFrom(final StreamInput in) throws IOException {
         return in.readList(TopQueries::new);
