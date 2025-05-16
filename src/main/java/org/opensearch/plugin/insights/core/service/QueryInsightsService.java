@@ -197,7 +197,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.setTemplatePriority(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TEMPLATE_PRIORITY));
-
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
