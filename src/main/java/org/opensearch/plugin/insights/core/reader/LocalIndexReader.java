@@ -8,45 +8,25 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
-import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
-import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
-
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
-import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
-import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.common.xcontent.LoggingDeprecationHandler;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.core.common.Strings;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
-import org.opensearch.core.xcontent.XContentParser;
-import org.opensearch.index.query.BoolQueryBuilder;
-import org.opensearch.index.query.MatchQueryBuilder;
-import org.opensearch.index.query.QueryBuilders;
-import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
+import org.opensearch.plugin.insights.core.utils.QueryInsightsQueryBuilder;
+import org.opensearch.plugin.insights.core.utils.SearchResponseParser;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.search.SearchHit;
-import org.opensearch.search.builder.SearchSourceBuilder;
-import org.opensearch.search.sort.SortBuilders;
-import org.opensearch.search.sort.SortOrder;
 import org.opensearch.transport.client.Client;
 import reactor.util.annotation.NonNull;
 
@@ -126,11 +106,13 @@ public final class LocalIndexReader implements QueryInsightsReader {
         @NonNull final MetricType metricType,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
-        final List<SearchQueryRecord> records = new ArrayList<>();
+        // Validate input parameters
         if (from == null || to == null) {
-            listener.onResponse(records);
+            listener.onResponse(new ArrayList<>());
             return;
         }
+
+        // Parse and validate date range
         final ZonedDateTime start = ZonedDateTime.parse(from);
         ZonedDateTime end = ZonedDateTime.parse(to);
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
@@ -139,93 +121,50 @@ public final class LocalIndexReader implements QueryInsightsReader {
         }
         final ZonedDateTime finalEnd = end;
 
-        ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
-            .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
-            .metadata(true)
-            .local(true)
-            .indicesOptions(IndicesOptions.lenientExpandOpen()); // Allow no indices and ignore unavailable
-
-        client.admin().cluster().state(clusterStateRequest, new ActionListener<ClusterStateResponse>() {
+        // Discover indices in the date range
+        IndexDiscoveryHelper.discoverIndicesInDateRange(client, indexPattern, start, finalEnd, new ActionListener<List<String>>() {
             @Override
-            public void onResponse(ClusterStateResponse clusterStateResponse) {
-                Set<String> existingIndices = clusterStateResponse.getState().metadata().indices().keySet();
-                List<String> indexNames = new ArrayList<>();
-                ZonedDateTime currentDay = start;
-
-                // Iterate through each day in the range [start, finalEnd] and add only existing indices
-                while (!currentDay.isAfter(finalEnd)) {
-                    String potentialIndexName = buildLocalIndexName(currentDay);
-                    if (existingIndices.contains(potentialIndexName)) {
-                        indexNames.add(potentialIndexName);
-                    }
-                    currentDay = currentDay.plusDays(1);
-                }
-
+            public void onResponse(List<String> indexNames) {
                 if (indexNames.isEmpty()) {
                     listener.onResponse(Collections.emptyList());
                     return;
                 }
 
-                SearchRequest searchRequest = new SearchRequest(indexNames.toArray(new String[0]));
-                // Ignore unavailable indices and allow no indices, similar to previous behavior of skipping days
-                searchRequest.indicesOptions(IndicesOptions.fromOptions(true, true, true, false));
+                // Build and execute search request
+                executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, listener);
+            }
 
-                SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
-                MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
-                RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
-                    .from(start.toInstant().toEpochMilli())
-                    .to(finalEnd.toInstant().toEpochMilli());
-                BoolQueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
+            @Override
+            public void onFailure(Exception e) {
+                listener.onFailure(e);
+            }
+        });
+    }
 
-                if (id != null) {
-                    query.must(QueryBuilders.matchQuery("id", id));
-                } else {
-                    query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
-                }
-                searchSourceBuilder.query(query);
+    /**
+     * Executes the search request against the discovered indices.
+     */
+    private void executeSearchRequest(
+        final List<String> indexNames,
+        final ZonedDateTime start,
+        final ZonedDateTime end,
+        final String id,
+        final Boolean verbose,
+        final MetricType metricType,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
 
-                if (Boolean.FALSE.equals(verbose)) {
-                    searchSourceBuilder.fetchSource(
-                        Strings.EMPTY_ARRAY,
-                        Arrays.stream(VERBOSE_ONLY_FIELDS).map(Attribute::toString).toArray(String[]::new)
-                    );
-                }
-                searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
-                searchRequest.source(searchSourceBuilder);
-
-                client.search(searchRequest, new ActionListener<SearchResponse>() {
-                    @Override
-                    public void onResponse(SearchResponse searchResponse) {
-                        try {
-                            for (SearchHit hit : searchResponse.getHits()) {
-                                XContentParser parser = XContentType.JSON.xContent()
-                                    .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
-                                SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
-                                records.add(record);
-                            }
-                            listener.onResponse(records);
-                        } catch (Exception e) {
-                            OperationalMetricsCounter.getInstance()
-                                .incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
-                            logger.error("Unable to parse search hit during multi-index search: ", e);
-                            listener.onFailure(e); // Fail the entire operation if parsing fails
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(Exception e) {
-                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
-                        final List<String> finalIndexNames = new ArrayList<>(indexNames);
-                        logger.error("Failed to fetch historical top queries for indices " + String.join(",", finalIndexNames), e);
-                        listener.onFailure(e);
-                    }
-                });
+        client.search(searchRequest, new ActionListener<SearchResponse>() {
+            @Override
+            public void onResponse(SearchResponse searchResponse) {
+                SearchResponseParser.parseSearchResponse(searchResponse, namedXContentRegistry, listener);
             }
 
             @Override
             public void onFailure(Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
-                logger.error("Failed to get cluster state for indices matching {}: ", TOP_QUERIES_INDEX_PATTERN_GLOB, e);
+                logger.error("Failed to search indices {}: ", indexNames, e);
                 listener.onFailure(e);
             }
         });
@@ -240,6 +179,6 @@ public final class LocalIndexReader implements QueryInsightsReader {
     }
 
     private String buildLocalIndexName(ZonedDateTime current) {
-        return current.format(indexPattern) + "-" + generateLocalIndexDateHash(current.toLocalDate());
+        return IndexDiscoveryHelper.buildLocalIndexName(indexPattern, current);
     }
 }

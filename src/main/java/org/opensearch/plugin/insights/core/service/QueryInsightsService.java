@@ -19,7 +19,6 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUER
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -61,6 +60,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -674,11 +674,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
             final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
             threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
-                final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
-                    .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
-                    .metadata(true)
-                    .local(true)
-                    .indicesOptions(IndicesOptions.strictExpand());
+                final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(
+                    IndicesOptions.strictExpand()
+                );
 
                 client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
                     final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
@@ -708,11 +706,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param localIndexExporter the exporter to handle the local index operations
      */
     void deleteAllTopNIndices(final Client client, final LocalIndexExporter localIndexExporter) {
-        final ClusterStateRequest clusterStateRequest = new ClusterStateRequest().clear()
-            .indices(TOP_QUERIES_INDEX_PATTERN_GLOB)
-            .metadata(true)
-            .local(true)
-            .indicesOptions(IndicesOptions.strictExpand());
+        final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(IndicesOptions.strictExpand());
 
         client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
             clusterStateResponse.getState()

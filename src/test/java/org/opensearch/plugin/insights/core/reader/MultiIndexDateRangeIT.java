@@ -26,6 +26,7 @@ import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
@@ -241,15 +242,10 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     }
 
     private String buildLocalIndexName(ZonedDateTime current) {
-        return "top_queries-" + current.format(indexPattern) + "-" + generateLocalIndexDateHash(current.toLocalDate());
+        return "top_queries-" + IndexDiscoveryHelper.buildLocalIndexName(indexPattern, current);
     }
 
     private String buildbadLocalIndexName(ZonedDateTime current) {
         return "top_queries-" + current.format(indexPattern) + "-" + "10000";
-    }
-
-    public static String generateLocalIndexDateHash(LocalDate date) {
-        String dateString = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).format(date);
-        return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
     }
 }
