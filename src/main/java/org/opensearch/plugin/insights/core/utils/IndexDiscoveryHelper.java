@@ -65,16 +65,14 @@ public final class IndexDiscoveryHelper {
                     callback.onResponse(indexNames);
                 } catch (Exception e) {
                     logger.error("Error processing cluster state response for index discovery: ", e);
-                    OperationalMetricsCounter.getInstance()
-                        .incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
                     callback.onFailure(e);
                 }
             }
 
             @Override
             public void onFailure(Exception e) {
-                OperationalMetricsCounter.getInstance()
-                    .incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
                 logger.error("Failed to get cluster state for indices matching {}: ", TOP_QUERIES_INDEX_PATTERN_GLOB, e);
                 callback.onFailure(e);
             }
@@ -113,17 +111,20 @@ public final class IndexDiscoveryHelper {
      * @param end End date for the search range
      * @return List of index names that exist within the date range
      */
-    private static List<String> findIndicesInDateRange(
+    static List<String> findIndicesInDateRange(
         final Set<String> existingIndices,
         final DateTimeFormatter indexPattern,
         final ZonedDateTime start,
         final ZonedDateTime end
     ) {
         List<String> indexNames = new ArrayList<>();
-        ZonedDateTime currentDay = start;
+
+        // Normalize dates to start of day to ensure proper day-by-day iteration
+        ZonedDateTime currentDay = start.toLocalDate().atStartOfDay(start.getZone());
+        ZonedDateTime endDay = end.toLocalDate().atStartOfDay(end.getZone());
 
         // Iterate through each day in the range [start, end] and add only existing indices
-        while (!currentDay.isAfter(end)) {
+        while (!currentDay.isAfter(endDay)) {
             String potentialIndexName = buildLocalIndexName(indexPattern, currentDay);
             if (existingIndices.contains(potentialIndexName)) {
                 indexNames.add(potentialIndexName);
