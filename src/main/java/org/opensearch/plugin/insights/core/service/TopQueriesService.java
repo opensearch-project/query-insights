@@ -9,7 +9,9 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.INDEX_DATE_FORMAT_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -279,7 +281,7 @@ public class TopQueriesService {
             return Arrays.stream(indices).noneMatch(index -> {
                 if (index instanceof String) {
                     String indexString = (String) index;
-                    return indexString.contains("top_queries");
+                    return indexString.contains(TOP_QUERIES_INDEX_PREFIX);
                 }
                 return false;
             });
@@ -566,12 +568,12 @@ public class TopQueriesService {
             }
 
             // Validate the first part is "top_queries"
-            if (!"top_queries".equals(parts[0])) {
+            if (!TOP_QUERIES_INDEX_PREFIX.equals(parts[0])) {
                 return false;
             }
 
             // Validate the second part is a valid date in "YYYY.MM.dd" format
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
             LocalDate date;
             try {
                 date = LocalDate.parse(parts[1], formatter);

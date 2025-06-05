@@ -26,13 +26,15 @@ import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.INDEX_DATE_FORMAT_PATTERN;
+
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
-    private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+    private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
     void createLocalIndices() throws IOException, ParseException, InterruptedException {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
         List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
 
@@ -114,7 +116,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     }
 
     public void testInvalidMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
         List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
 

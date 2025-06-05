@@ -8,8 +8,15 @@
 
 package org.opensearch.plugin.insights.core.utils;
 
+import static org.opensearch.plugin.insights.rules.model.Measurement.NUMBER;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.ID;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.INDICES;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.MEASUREMENTS;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TIMESTAMP;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.time.ZonedDateTime;
 import java.util.Arrays;
@@ -35,6 +42,7 @@ import org.opensearch.search.sort.SortOrder;
 public final class QueryInsightsQueryBuilder {
 
     private static final int MAX_TOP_N_INDEX_READ_SIZE = 50;
+    private static final String MEASUREMENTS_LATENCY_NUMBER = MEASUREMENTS + "." + MetricType.LATENCY + "." + NUMBER;
 
     private QueryInsightsQueryBuilder() {
         // Utility class - prevent instantiation
@@ -43,13 +51,54 @@ public final class QueryInsightsQueryBuilder {
     /**
      * Builds a search request for TopN queries with the specified parameters.
      *
+     * <p>This method constructs a search request that queries query insights indices
+     * to retrieve the top N queries based on the specified metric type and time range.
+     * The request includes appropriate caching, timeout, and indices options for optimal performance.
+     *
+     * <p><strong>Example JSON representation of the generated search request:</strong>
+     * <pre>{@code
+     * {
+     *   "size": 50,
+     *   "timeout": "30s",
+     *   "query": {
+     *     "bool": {
+     *       "must": [
+     *         {
+     *           "range": {
+     *             "timestamp": {
+     *               "from": 1640995200000,
+     *               "to": 1641081600000
+     *             }
+     *           }
+     *         },
+     *         {
+     *           "term": {
+     *             "top_n_query.latency": true
+     *           }
+     *         }
+     *       ]
+     *     }
+     *   },
+     *   "sort": [
+     *     {
+     *       "measurements.latency.number": {
+     *         "order": "desc"
+     *       }
+     *     }
+     *   ],
+     *   "_source": {
+     *     "excludes": ["verbose_field1", "verbose_field2"]
+     *   }
+     * }
+     * }</pre>
+     *
      * @param indexNames List of index names to search
      * @param start Start timestamp for the query range
      * @param end End timestamp for the query range
      * @param id Optional query/group id to filter by
      * @param verbose Whether to return full output (if false, excludes verbose-only fields)
      * @param metricType Metric type to filter by
-     * @return Configured SearchRequest ready for execution
+     * @return Configured SearchRequest ready for execution with timeout, caching, and indices options
      */
     public static SearchRequest buildTopNSearchRequest(
         final List<String> indexNames,
@@ -61,11 +110,16 @@ public final class QueryInsightsQueryBuilder {
     ) {
         SearchRequest searchRequest = new SearchRequest(indexNames.toArray(new String[0]));
 
-        // Configure indices options to ignore unavailable indices and allow no indices
         searchRequest.indicesOptions(IndicesOptions.fromOptions(true, true, true, false));
 
-        // Build the search source
+        // Enable request caching for better performance on repeated queries
+        searchRequest.requestCache(true);
+
         SearchSourceBuilder searchSourceBuilder = buildSearchSourceBuilder(start, end, id, verbose, metricType);
+
+        // Set timeout to prevent long-running queries from blocking resources
+        searchSourceBuilder.timeout(DEFAULT_SEARCH_REQUEST_TIMEOUT);
+
         searchRequest.source(searchSourceBuilder);
 
         return searchRequest;
@@ -103,7 +157,7 @@ public final class QueryInsightsQueryBuilder {
         }
 
         // Add sorting by latency in descending order
-        searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
+        searchSourceBuilder.sort(SortBuilders.fieldSort(MEASUREMENTS_LATENCY_NUMBER).order(SortOrder.DESC));
 
         return searchSourceBuilder;
     }
@@ -123,20 +177,17 @@ public final class QueryInsightsQueryBuilder {
         final String id,
         final MetricType metricType
     ) {
-        // Build exclude query for top_queries* indices
-        MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
-
         // Build range query for timestamp
-        RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
+        RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery(TIMESTAMP)
             .from(start.toInstant().toEpochMilli())
             .to(end.toInstant().toEpochMilli());
 
         // Build the main boolean query
-        BoolQueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
+        BoolQueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery);
 
         // Add ID-specific or metric-type-specific filter
         if (id != null) {
-            query.must(QueryBuilders.matchQuery("id", id));
+            query.must(QueryBuilders.matchQuery(ID, id));
         } else {
             query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
         }

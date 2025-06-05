@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.utils;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
+import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.UTC_DATE_FORMAT_PATTERN;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -69,7 +70,7 @@ public class IndexDiscoveryHelperTests extends OpenSearchTestCase {
         ZonedDateTime testDate = ZonedDateTime.of(2023, 12, 25, 10, 30, 0, 0, ZoneOffset.UTC);
         // Test with the default pattern and some alternative patterns that might be used
         DateTimeFormatter defaultPattern = DateTimeFormatter.ofPattern(DEFAULT_TOP_N_QUERIES_INDEX_PATTERN, Locale.ROOT);
-        DateTimeFormatter alternativePattern1 = DateTimeFormatter.ofPattern("'top_queries-'yyyy-MM-dd", Locale.ROOT);
+        DateTimeFormatter alternativePattern1 = DateTimeFormatter.ofPattern("'top_queries-'" + UTC_DATE_FORMAT_PATTERN, Locale.ROOT);
         DateTimeFormatter alternativePattern2 = DateTimeFormatter.ofPattern("'insights-'yyyy.MM.dd", Locale.ROOT);
 
         String indexName1 = IndexDiscoveryHelper.buildLocalIndexName(defaultPattern, testDate);

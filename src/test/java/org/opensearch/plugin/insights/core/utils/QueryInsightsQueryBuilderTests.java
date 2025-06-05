@@ -20,6 +20,7 @@ import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -353,5 +354,62 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         }
 
         assertTrue("Should find range query for timestamp field", foundRangeQuery);
+    }
+
+    public void testBuildTopNSearchRequestWithCachingEnabled() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        String id = null;
+        Boolean verbose = true;
+        MetricType metricType = MetricType.LATENCY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+        assertNotNull(searchRequest);
+
+        // Verify request caching is enabled
+        assertTrue("Request caching should be enabled for better performance on repeated queries", searchRequest.requestCache());
+    }
+
+    public void testBuildTopNSearchRequestWithTimeout() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        String id = null;
+        Boolean verbose = true;
+        MetricType metricType = MetricType.CPU;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+        assertNotNull(searchRequest);
+        SearchSourceBuilder sourceBuilder = searchRequest.source();
+        assertNotNull(sourceBuilder);
+
+        // Verify timeout is set
+        assertNotNull("Timeout should be configured to prevent long-running queries", sourceBuilder.timeout());
+        assertEquals("Timeout should be set to the default value",
+                     QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT,
+                     sourceBuilder.timeout());
+    }
+
+    public void testBuildTopNSearchRequestIndicesOptions() {
+        List<String> indexNames = Arrays.asList("test-index", "non-existent-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        String id = null;
+        Boolean verbose = true;
+        MetricType metricType = MetricType.MEMORY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+        assertNotNull(searchRequest);
+
+        // Verify indices options are configured correctly
+        assertNotNull("Indices options should be configured", searchRequest.indicesOptions());
+        assertTrue("Should ignore unavailable indices", searchRequest.indicesOptions().ignoreUnavailable());
+        assertTrue("Should allow no indices", searchRequest.indicesOptions().allowNoIndices());
+        assertTrue("Should expand to open indices", searchRequest.indicesOptions().expandWildcardsOpen());
+        assertFalse("Should not expand to closed indices", searchRequest.indicesOptions().expandWildcardsClosed());
     }
 }
