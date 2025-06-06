@@ -155,7 +155,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             });
         }
         this.attributes = Attribute.readAttributeMap(in);
-        this.isCancelled = false;
+        if (in.getVersion().onOrAfter(Version.V_3_1_0)) {
+            this.isCancelled = in.readBoolean();
+        } else {
+            this.isCancelled = false;
+        }
     }
 
     /**
@@ -178,9 +182,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param id unique id for a search query record
      */
     public SearchQueryRecord(
-        long timestamp,
+        final long timestamp,
         Map<MetricType, Measurement> measurements,
-        Map<Attribute, Object> attributes,
+        final Map<Attribute, Object> attributes,
         String id,
         boolean isCancelled
     ) {
@@ -538,6 +542,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             (stream, attribute) -> Attribute.writeTo(out, attribute),
             (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
         );
+        if (out.getVersion().onOrAfter(Version.V_3_1_0)) {
+            out.writeBoolean(isCancelled);
+        }
     }
 
     /**
