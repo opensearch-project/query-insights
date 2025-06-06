@@ -49,7 +49,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final String id;
     private final boolean isCancelled;
 
-
     /**
      * Timestamp
      */
@@ -158,6 +157,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.attributes = Attribute.readAttributeMap(in);
         this.isCancelled = false;
     }
+
     /**
      * Constructor of SearchQueryRecord
      *
@@ -177,7 +177,13 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param attributes A list of Attributes associated with this query
      * @param id unique id for a search query record
      */
-    public SearchQueryRecord(long timestamp, Map<MetricType, Measurement> measurements, Map<Attribute, Object> attributes, String id, boolean isCancelled) {
+    public SearchQueryRecord(
+        long timestamp,
+        Map<MetricType, Measurement> measurements,
+        Map<Attribute, Object> attributes,
+        String id,
+        boolean isCancelled
+    ) {
         this.timestamp = timestamp;
         this.measurements = measurements;
         this.attributes = attributes;
