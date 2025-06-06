@@ -45,8 +45,7 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             if (randomBoolean()) {
                 attributes.put(Attribute.DESCRIPTION, "desc_" + baseLatency + "_" + i);
             }
-
-            return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "query_" + baseLatency + "_" + i);
+            return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "query_" + baseLatency + "_" + i, false);
         }).collect(Collectors.toList());
     }
 
@@ -71,9 +70,9 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             MetricType.MEMORY,
             new Measurement(30L)
         );
-        SearchQueryRecord rec1 = new SearchQueryRecord(1L, measurements, emptyMap(), "id1");
-        SearchQueryRecord rec2 = new SearchQueryRecord(2L, measurements, emptyMap(), "id2");
-        SearchQueryRecord rec3 = new SearchQueryRecord(3L, measurements, emptyMap(), "id3");
+        SearchQueryRecord rec1 = new SearchQueryRecord(1L, measurements, emptyMap(), "id1", false);
+        SearchQueryRecord rec2 = new SearchQueryRecord(2L, measurements, emptyMap(), "id2", false);
+        SearchQueryRecord rec3 = new SearchQueryRecord(3L, measurements, emptyMap(), "id3",false);
         List<SearchQueryRecord> records = List.of(rec2, rec1, rec3);
         LiveQueriesResponse response = new LiveQueriesResponse(records);
         XContentBuilder builder = XContentFactory.jsonBuilder();

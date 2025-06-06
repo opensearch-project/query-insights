@@ -178,7 +178,7 @@ final public class QueryInsightsTestUtils {
                 )
             );
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id));
+            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id, false));
             timestamp += interval;
         }
         return records;
@@ -275,7 +275,7 @@ final public class QueryInsightsTestUtils {
         );
         attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
 
-        return new SearchQueryRecord(timestamp, measurements, attributes, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, id, false);
     }
 
     public static void compareJson(ToXContent param1, ToXContent param2) throws IOException {

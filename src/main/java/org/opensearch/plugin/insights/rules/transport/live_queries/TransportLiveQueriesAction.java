@@ -104,7 +104,8 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             timestamp,
                             measurements,
                             attributes,
-                            taskInfo.getTaskId().toString()
+                            taskInfo.getTaskId().toString(),
+                            taskInfo.isCancelled()
                         );
                         allFilteredRecords.add(record);
                     }

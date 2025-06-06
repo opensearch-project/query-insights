@@ -47,6 +47,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
     private final String id;
+    private final boolean isCancelled;
+
 
     /**
      * Timestamp
@@ -154,8 +156,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             });
         }
         this.attributes = Attribute.readAttributeMap(in);
+        this.isCancelled = false;
     }
-
     /**
      * Constructor of SearchQueryRecord
      *
@@ -164,7 +166,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param attributes A list of Attributes associated with this query
      */
     public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
-        this(timestamp, measurements, attributes, UUID.randomUUID().toString());
+        this(timestamp, measurements, attributes, UUID.randomUUID().toString(), false);
     }
 
     /**
@@ -175,19 +177,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param attributes A list of Attributes associated with this query
      * @param id unique id for a search query record
      */
-    public SearchQueryRecord(
-        final long timestamp,
-        Map<MetricType, Measurement> measurements,
-        final Map<Attribute, Object> attributes,
-        String id
-    ) {
-        if (measurements == null) {
-            throw new IllegalArgumentException("Measurements cannot be null");
-        }
+    public SearchQueryRecord(long timestamp, Map<MetricType, Measurement> measurements, Map<Attribute, Object> attributes, String id, boolean isCancelled) {
+        this.timestamp = timestamp;
         this.measurements = measurements;
         this.attributes = attributes;
-        this.timestamp = timestamp;
         this.id = id;
+        this.isCancelled = isCancelled;
     }
 
     /**
@@ -207,6 +202,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.timestamp = other.timestamp;
         this.id = other.id;
         this.groupingId = other.groupingId;
+        this.isCancelled = other.isCancelled;
     }
 
     /**
@@ -221,6 +217,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
         String id = null;
+        boolean isCancelled = false;
 
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -342,7 +339,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, id, isCancelled);
     }
 
     /**
@@ -478,6 +475,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             builder.field(entry.getKey().toString());  // MetricType as field name
             entry.getValue().toXContent(builder, params);  // Serialize Measurement object
         }
+        builder.field("is_cancelled", isCancelled);
         builder.endObject();
         return builder.endObject();
     }
