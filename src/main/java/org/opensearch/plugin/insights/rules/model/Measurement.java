@@ -264,7 +264,7 @@ public class Measurement implements ToXContentObject, Writeable {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Measurement that = (Measurement) o;
-        return count == that.count && Objects.equals(number, that.number) && aggregationType == that.aggregationType;
+        return count == that.count && number.doubleValue() == that.number.doubleValue() && aggregationType == that.aggregationType;
     }
 
     @Override

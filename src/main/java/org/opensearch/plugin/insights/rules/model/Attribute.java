@@ -68,7 +68,11 @@ public enum Attribute {
     /**
      * The description of the search query, often used in live queries.
      */
-    DESCRIPTION;
+    DESCRIPTION,
+    /**
+     * A map indicating for which metric type(s) this record was in the Top N
+     */
+    TOP_N_QUERY;
 
     /**
      * Read an Attribute from a StreamInput

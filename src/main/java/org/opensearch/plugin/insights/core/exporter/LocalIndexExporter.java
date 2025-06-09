@@ -219,7 +219,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {

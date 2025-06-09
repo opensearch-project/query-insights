@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.reader;
 
 import java.io.Closeable;
 import java.util.List;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
@@ -19,13 +20,14 @@ public interface QueryInsightsReader extends Closeable {
     /**
      * Reader a list of SearchQueryRecord
      *
-     * @param from string
-     * @param to   string
-     * @param id query/group id
-     * @param verbose whether to return full output
+     * @param from       string
+     * @param to         string
+     * @param id         query/group id
+     * @param verbose    whether to return full output
+     * @param metricType metric type to read
      * @return List of SearchQueryRecord
      */
-    List<SearchQueryRecord> read(final String from, final String to, final String id, final Boolean verbose);
+    List<SearchQueryRecord> read(final String from, final String to, final String id, final Boolean verbose, final MetricType metricType);
 
     String getId();
 }
