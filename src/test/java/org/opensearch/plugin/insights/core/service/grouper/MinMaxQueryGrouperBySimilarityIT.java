@@ -74,21 +74,21 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
             // Invalid max_groups: below minimum (-1)
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : -1\n"
+                + "        \"search.insights.top_queries.max_groups_excluding_topn\" : -1\n"
                 + "    }\n"
                 + "}",
 
             // Invalid max_groups: above maximum (10001)
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 10001\n"
+                + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 10001\n"
                 + "    }\n"
                 + "}",
 
             // Invalid group_by: unsupported value
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.group_by\" : \"unsupported_value\"\n"
+                + "        \"search.insights.top_queries.group_by\" : \"unsupported_value\"\n"
                 + "    }\n"
                 + "}" };
     }
@@ -98,23 +98,19 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
             // Valid max_groups: minimum value (0)
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 0\n"
+                + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 0\n"
                 + "    }\n"
                 + "}",
 
             // Valid max_groups: maximum value (10000)
             "{\n"
                 + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 10000\n"
+                + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 10000\n"
                 + "    }\n"
                 + "}",
 
             // Valid group_by: supported value (SIMILARITY)
-            "{\n"
-                + "    \"persistent\" : {\n"
-                + "        \"search.insights.top_queries.grouping.group_by\" : \"SIMILARITY\"\n"
-                + "    }\n"
-                + "}" };
+            "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.group_by\" : \"SIMILARITY\"\n" + "    }\n" + "}" };
     }
 
     private String groupByNoneSettings() {
@@ -123,8 +119,8 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n"
-            + "        \"search.insights.top_queries.grouping.group_by\" : \"none\",\n"
-            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\",\n"
+            + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 5\n"
             + "    }\n"
             + "}";
     }

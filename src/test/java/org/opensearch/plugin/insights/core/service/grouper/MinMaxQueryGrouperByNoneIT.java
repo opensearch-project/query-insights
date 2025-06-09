@@ -40,8 +40,8 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 100,\n"
-            + "        \"search.insights.top_queries.grouping.group_by\" : \"none\",\n"
-            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5\n"
+            + "        \"search.insights.top_queries.group_by\" : \"none\",\n"
+            + "        \"search.insights.top_queries.max_groups_excluding_topn\" : 5\n"
             + "    }\n"
             + "}";
     }
