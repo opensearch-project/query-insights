@@ -388,9 +388,11 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
 
         // Verify timeout is set
         assertNotNull("Timeout should be configured to prevent long-running queries", sourceBuilder.timeout());
-        assertEquals("Timeout should be set to the default value",
-                     QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT,
-                     sourceBuilder.timeout());
+        assertEquals(
+            "Timeout should be set to the default value",
+            QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT,
+            sourceBuilder.timeout()
+        );
     }
 
     public void testBuildTopNSearchRequestIndicesOptions() {

@@ -8,8 +8,8 @@
 
 package org.opensearch.plugin.insights.core.utils;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.UTC_DATE_FORMAT_PATTERN;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;

@@ -577,12 +577,8 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(10).getMillis()), ZoneOffset.UTC)
             .toString();
 
-        // These 5 records should pass the time filter.
+        // Generate 5 records that the reader would return (time filtering is done at query level)
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
-        // Add one record outside the time filter to test filtering
-        mockRecords.add(
-            QueryInsightsTestUtils.generateQueryInsightRecords(1, 1, currentTime - TimeValue.timeValueMinutes(20).getMillis(), 0).get(0)
-        );
 
         doAnswer(invocation -> {
             ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
@@ -615,7 +611,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             .toString();
         String targetId = "target-id-123";
 
-        // Generate 5 records that pass the time filter
+        // Generate 5 records that the reader would return (time filtering is done at query level)
         List<SearchQueryRecord> mockRecords = new ArrayList<>();
         List<SearchQueryRecord> generatedForTargetId = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
         for (SearchQueryRecord rec : generatedForTargetId) {

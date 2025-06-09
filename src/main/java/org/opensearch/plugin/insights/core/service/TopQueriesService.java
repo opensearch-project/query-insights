@@ -374,17 +374,12 @@ public class TopQueriesService {
         }
 
         try {
-            final ZonedDateTime start = ZonedDateTime.parse(from);
-            final ZonedDateTime end = ZonedDateTime.parse(to);
-
             reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
                 @Override
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {
-                        Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
-                            && element.getTimestamp() <= end.toInstant().toEpochMilli();
                         List<SearchQueryRecord> filteredRecords = records.stream()
-                            .filter(checkIfInternal.and(timeFilter))
+                            .filter(checkIfInternal)
                             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
                             .collect(Collectors.toList());
                         listener.onResponse(filteredRecords);

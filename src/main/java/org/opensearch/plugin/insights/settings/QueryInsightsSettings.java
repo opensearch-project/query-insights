@@ -244,14 +244,14 @@ public class QueryInsightsSettings {
     public static final String TOP_QUERIES_INDEX_PREFIX = "top_queries";
 
     /**
-     * Date format pattern for index date validation (yyyy.MM.dd format)
+     * Date format pattern for top queries indices
      */
     public static final String INDEX_DATE_FORMAT_PATTERN = "yyyy.MM.dd";
 
     /**
      * Default index pattern of top n queries
      */
-    public static final String DEFAULT_TOP_N_QUERIES_INDEX_PATTERN = "'" + TOP_QUERIES_INDEX_PREFIX + "-'YYYY.MM.dd";
+    public static final String DEFAULT_TOP_N_QUERIES_INDEX_PATTERN = "'" + TOP_QUERIES_INDEX_PREFIX + "-'" + INDEX_DATE_FORMAT_PATTERN;
     /**
      * Default exporter type of top queries
      */

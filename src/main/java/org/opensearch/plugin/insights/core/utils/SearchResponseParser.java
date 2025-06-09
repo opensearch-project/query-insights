@@ -32,9 +32,7 @@ public final class SearchResponseParser {
 
     private static final Logger logger = LogManager.getLogger(SearchResponseParser.class);
 
-    private SearchResponseParser() {
-        // Utility class - prevent instantiation
-    }
+    private SearchResponseParser() {}
 
     /**
      * Parses a SearchResponse into a list of SearchQueryRecord objects and invokes

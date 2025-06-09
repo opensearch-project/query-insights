@@ -10,13 +10,11 @@ package org.opensearch.plugin.insights.core.utils;
 
 import static org.opensearch.plugin.insights.rules.model.Measurement.NUMBER;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.ID;
-import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.INDICES;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.MEASUREMENTS;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TIMESTAMP;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
 
 import java.time.ZonedDateTime;
 import java.util.Arrays;
@@ -25,7 +23,6 @@ import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.core.common.Strings;
 import org.opensearch.index.query.BoolQueryBuilder;
-import org.opensearch.index.query.MatchQueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -44,9 +41,7 @@ public final class QueryInsightsQueryBuilder {
     private static final int MAX_TOP_N_INDEX_READ_SIZE = 50;
     private static final String MEASUREMENTS_LATENCY_NUMBER = MEASUREMENTS + "." + MetricType.LATENCY + "." + NUMBER;
 
-    private QueryInsightsQueryBuilder() {
-        // Utility class - prevent instantiation
-    }
+    private QueryInsightsQueryBuilder() {}
 
     /**
      * Builds a search request for TopN queries with the specified parameters.

@@ -32,7 +32,6 @@ import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -210,9 +209,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             )
         );
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
-        ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext();
 
-        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener, storedContext);
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
 
         ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
         verify(finalListener).onResponse(responseCaptor.capture());
@@ -239,9 +237,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         List<FailedNodeException> failures = Collections.singletonList(new FailedNodeException(node1.getId(), "fail", null));
         Exception error = new RuntimeException("error");
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
-        ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext();
 
-        actionToTest.onHistoricalDataFailure(request, inMemoryTopQueries, failures, error, finalListener, storedContext);
+        actionToTest.onHistoricalDataFailure(request, inMemoryTopQueries, failures, error, finalListener);
 
         ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
         verify(finalListener).onResponse(responseCaptor.capture());
@@ -250,5 +247,71 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         assertEquals(1, response.getNodes().size());
         assertEquals(inMemoryRecords, response.getNodes().get(0).getTopQueriesRecord());
         assertEquals(failures, response.failures());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnHistoricalDataResponse_removesDuplicates() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true);
+
+        // in-memory record that's unique
+        SearchQueryRecord uniqueInMemoryRecord = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(3.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            "unique_in_memory"
+        );
+
+        // in-memory record with ID that will also appear in historical data
+        SearchQueryRecord inMemoryDuplicateRecord = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            "duplicate_entry"
+        );
+
+        // historical record with same ID but different content (should be filtered out)
+        SearchQueryRecord historicalDuplicateRecord = new SearchQueryRecord(
+            3L, // Different timestamp
+            Map.of(MetricType.LATENCY, new Measurement(8.0D, AggregationType.AVERAGE)), // Different measurement
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            "duplicate_entry" // Same ID - this is what matters for deduplication
+        );
+
+        // historical record that's unique
+        SearchQueryRecord uniqueHistoricalRecord = new SearchQueryRecord(
+            4L,
+            Map.of(MetricType.LATENCY, new Measurement(7.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            "unique_historical"
+        );
+
+        List<SearchQueryRecord> inMemoryRecords = List.of(uniqueInMemoryRecord, inMemoryDuplicateRecord);
+        TopQueries inMemoryTq = new TopQueries(node1, inMemoryRecords);
+        List<TopQueries> inMemoryTopQueries = Collections.singletonList(inMemoryTq);
+
+        List<SearchQueryRecord> histRecords = List.of(historicalDuplicateRecord, uniqueHistoricalRecord);
+
+        List<FailedNodeException> failures = Collections.emptyList();
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse response = responseCaptor.getValue();
+        assertEquals(2, response.getNodes().size());
+
+        // First node should have the original in-memory records
+        assertEquals(inMemoryRecords, response.getNodes().get(0).getTopQueriesRecord());
+
+        // Second node should have only the unique historical record (duplicate should be removed)
+        List<SearchQueryRecord> deduplicatedHistoricalRecords = response.getNodes().get(1).getTopQueriesRecord();
+        assertEquals(1, deduplicatedHistoricalRecords.size());
+        assertEquals(uniqueHistoricalRecord, deduplicatedHistoricalRecords.get(0));
+
+        // Verify the duplicate record (by ID) is not in the historical results
+        boolean containsDuplicateId = deduplicatedHistoricalRecords.stream().anyMatch(record -> record.getId().equals("duplicate_entry"));
+        assertFalse(containsDuplicateId);
     }
 }

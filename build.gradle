@@ -297,7 +297,6 @@ testClusters.all {
     testDistribution = "INTEG_TEST"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
-    numberOfNodes = 2
 }
 
 run {

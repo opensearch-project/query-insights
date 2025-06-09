@@ -177,8 +177,4 @@ public final class LocalIndexReader implements QueryInsightsReader {
     public void close() {
         logger.debug("Closing the LocalIndexReader..");
     }
-
-    private String buildLocalIndexName(ZonedDateTime current) {
-        return IndexDiscoveryHelper.buildLocalIndexName(indexPattern, current);
-    }
 }

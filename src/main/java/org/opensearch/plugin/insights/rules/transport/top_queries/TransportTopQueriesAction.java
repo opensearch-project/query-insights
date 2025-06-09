@@ -10,7 +10,9 @@ package org.opensearch.plugin.insights.rules.transport.top_queries;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
@@ -73,7 +75,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         this.queryInsightsService = queryInsightsService;
     }
 
-    protected ActionListener<TopQueriesResponse> createInMemoryDataCollectionListener(
+    ActionListener<TopQueriesResponse> createInMemoryDataCollectionListener(
         TopQueriesRequest request,
         ActionListener<TopQueriesResponse> finalListener
     ) {
@@ -90,7 +92,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         };
     }
 
-    protected void handleInMemoryDataResponse(
+    void handleInMemoryDataResponse(
         TopQueriesRequest request,
         TopQueriesResponse inMemoryQueriesResponse,
         ActionListener<TopQueriesResponse> finalListener
@@ -106,7 +108,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         }
     }
 
-    protected void fetchHistoricalData(
+    void fetchHistoricalData(
         TopQueriesRequest request,
         List<TopQueries> inMemoryTopQueries,
         List<FailedNodeException> inMemoryDataFailures,
@@ -116,65 +118,86 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         String to = request.getTo();
         String id = request.getId();
         Boolean verbose = request.getVerbose();
-        final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext();
-        try {
+        try (final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext()) {
             queryInsightsService.getTopQueriesService(request.getMetricType())
                 .getTopQueriesRecordsFromIndex(from, to, id, verbose, new ActionListener<List<SearchQueryRecord>>() {
                     @Override
                     public void onResponse(List<SearchQueryRecord> historicalRecords) {
-                        onHistoricalDataResponse(
-                            request,
-                            inMemoryTopQueries,
-                            inMemoryDataFailures,
-                            historicalRecords,
-                            finalListener,
-                            storedContext
-                        );
+                        onHistoricalDataResponse(request, inMemoryTopQueries, inMemoryDataFailures, historicalRecords, finalListener);
                     }
 
                     @Override
                     public void onFailure(Exception e) {
-                        onHistoricalDataFailure(request, inMemoryTopQueries, inMemoryDataFailures, e, finalListener, storedContext);
+                        onHistoricalDataFailure(request, inMemoryTopQueries, inMemoryDataFailures, e, finalListener);
                     }
                 });
         } catch (Exception e) {
-            storedContext.restore();
             logger.error("Synchronous failure while initiating historical top queries fetch", e);
             finalListener.onFailure(e);
         }
     }
 
-    protected void onHistoricalDataResponse(
+    void onHistoricalDataResponse(
         TopQueriesRequest request,
         List<TopQueries> inMemoryTopQueries,
         List<FailedNodeException> inMemoryDataFailures,
         List<SearchQueryRecord> historicalRecords,
-        ActionListener<TopQueriesResponse> finalListener,
-        ThreadContext.StoredContext storedContext
+        ActionListener<TopQueriesResponse> finalListener
     ) {
-        storedContext.restore();
         List<TopQueries> combinedTopQueriesList = new ArrayList<>(inMemoryTopQueries);
         if (historicalRecords != null && !historicalRecords.isEmpty()) {
-            combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), historicalRecords));
+            // Remove duplicates between in-memory and historical records
+            List<SearchQueryRecord> deduplicatedHistoricalRecords = removeDuplicates(inMemoryTopQueries, historicalRecords);
+            if (!deduplicatedHistoricalRecords.isEmpty()) {
+                combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), deduplicatedHistoricalRecords));
+            }
         }
         finalListener.onResponse(
             new TopQueriesResponse(clusterService.getClusterName(), combinedTopQueriesList, inMemoryDataFailures, request.getMetricType())
         );
     }
 
-    protected void onHistoricalDataFailure(
+    void onHistoricalDataFailure(
         TopQueriesRequest request,
         List<TopQueries> inMemoryTopQueries,
         List<FailedNodeException> inMemoryDataFailures,
         Exception e,
-        ActionListener<TopQueriesResponse> finalListener,
-        ThreadContext.StoredContext storedContext
+        ActionListener<TopQueriesResponse> finalListener
     ) {
-        storedContext.restore();
         logger.warn("Failed to fetch historical top queries, proceeding with in-memory data only.", e);
         finalListener.onResponse(
             new TopQueriesResponse(clusterService.getClusterName(), inMemoryTopQueries, inMemoryDataFailures, request.getMetricType())
         );
+    }
+
+    /**
+     * Remove duplicate records from historical data that already exist in in-memory data.
+     * Uses a Set to maintain unique record IDs for efficient lookup and comparison.
+     *
+     * @param inMemoryTopQueries List of TopQueries containing in-memory records
+     * @param historicalRecords List of historical SearchQueryRecord objects
+     * @return List of deduplicated historical records
+     */
+    private List<SearchQueryRecord> removeDuplicates(List<TopQueries> inMemoryTopQueries, List<SearchQueryRecord> historicalRecords) {
+        // Collect all in-memory record IDs into a set for efficient lookup
+        Set<String> inMemoryRecordIds = new LinkedHashSet<>();
+        for (TopQueries topQueries : inMemoryTopQueries) {
+            if (topQueries.getTopQueriesRecord() != null) {
+                for (SearchQueryRecord record : topQueries.getTopQueriesRecord()) {
+                    inMemoryRecordIds.add(record.getId());
+                }
+            }
+        }
+
+        // Filter out historical records that have IDs already present in in-memory data
+        List<SearchQueryRecord> deduplicatedRecords = new ArrayList<>();
+        for (SearchQueryRecord historicalRecord : historicalRecords) {
+            if (!inMemoryRecordIds.contains(historicalRecord.getId())) {
+                deduplicatedRecords.add(historicalRecord);
+            }
+        }
+
+        return deduplicatedRecords;
     }
 
     @Override
@@ -207,7 +230,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         return new TopQueries(
             clusterService.localNode(),
             queryInsightsService.getTopQueriesService(request.getMetricType())
-                .getTopQueriesRecords(true, null, null, request.getId(), request.getVerbose())
+                .getTopQueriesRecords(true, request.getFrom(), request.getTo(), request.getId(), request.getVerbose())
         );
     }
 

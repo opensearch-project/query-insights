@@ -7,6 +7,8 @@
  */
 package org.opensearch.plugin.insights.core.reader;
 
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.INDEX_DATE_FORMAT_PATTERN;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -26,8 +28,6 @@ import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.INDEX_DATE_FORMAT_PATTERN;
-
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
