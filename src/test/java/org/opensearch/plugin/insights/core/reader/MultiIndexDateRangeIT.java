@@ -77,123 +77,121 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     }
 
     private void createTopQueriesIndex(String indexName, long timestamp) throws IOException, ParseException, InterruptedException {
-        String mapping = """
-            {
-              "mappings": {
-                "dynamic": true,
-                "_meta": {
-                  "schema_version": 1,
-                  "query_insights_feature_space": "top_n_queries"
-                },
-                "properties": {
-                  "id": {
-                    "type": "text",
-                    "fields": {
-                      "keyword": {
-                        "type": "keyword",
-                        "ignore_above": 256
-                      }
-                    }
-                  },
-                  "node_id": {
-                    "type": "text",
-                    "fields": {
-                      "keyword": {
-                        "type": "keyword",
-                        "ignore_above": 256
-                      }
-                    }
-                  },
-                  "timestamp": { "type": "long" },
-                  "total_shards": { "type": "long" },
-                  "group_by": {
-                    "type": "text",
-                    "fields": {
-                      "keyword": {
-                        "type": "keyword",
-                        "ignore_above": 256
-                      }
-                    }
-                  },
-                  "phase_latency_map": {
-                    "properties": {
-                      "expand": { "type": "long" },
-                      "fetch": { "type": "long" },
-                      "query": { "type": "long" }
-                    }
-                  },
-                  "search_type": {
-                    "type": "text",
-                    "fields": {
-                      "keyword": {
-                        "type": "keyword",
-                        "ignore_above": 256
-                      }
-                    }
-                  },
-                  "task_resource_usages": {
-                    "properties": {
-                      "action": {
-                        "type": "text",
-                        "fields": {
-                          "keyword": {
-                            "type": "keyword",
-                            "ignore_above": 256
-                          }
-                        }
-                      },
-                      "nodeId": {
-                        "type": "text",
-                        "fields": {
-                          "keyword": {
-                            "type": "keyword",
-                            "ignore_above": 256
-                          }
-                        }
-                      },
-                      "parentTaskId": { "type": "long" },
-                      "taskId": { "type": "long" },
-                      "taskResourceUsage": {
-                        "properties": {
-                          "cpu_time_in_nanos": { "type": "long" },
-                          "memory_in_bytes": { "type": "long" }
-                        }
-                      }
-                    }
-                  },
-                  "measurements": {
-                    "properties": {
-                      "latency": {
-                        "properties": {
-                          "number": { "type": "double" },
-                          "count": { "type": "integer" },
-                          "aggregationType": { "type": "keyword" }
-                        }
-                      },
-                      "cpu": {
-                        "properties": {
-                          "number": { "type": "double" },
-                          "count": { "type": "integer" },
-                          "aggregationType": { "type": "keyword" }
-                        }
-                      },
-                      "memory": {
-                        "properties": {
-                          "number": { "type": "double" },
-                          "count": { "type": "integer" },
-                          "aggregationType": { "type": "keyword" }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "settings": {
-                "index.number_of_shards": 1,
-                "index.auto_expand_replicas": "0-2"
-              }
-            }
-            """;
+        String mapping = "{\n"
+            + "  \"mappings\": {\n"
+            + "    \"dynamic\": true,\n"
+            + "    \"_meta\": {\n"
+            + "      \"schema_version\": 1,\n"
+            + "      \"query_insights_feature_space\": \"top_n_queries\"\n"
+            + "    },\n"
+            + "    \"properties\": {\n"
+            + "      \"id\": {\n"
+            + "        \"type\": \"text\",\n"
+            + "        \"fields\": {\n"
+            + "          \"keyword\": {\n"
+            + "            \"type\": \"keyword\",\n"
+            + "            \"ignore_above\": 256\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"node_id\": {\n"
+            + "        \"type\": \"text\",\n"
+            + "        \"fields\": {\n"
+            + "          \"keyword\": {\n"
+            + "            \"type\": \"keyword\",\n"
+            + "            \"ignore_above\": 256\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"timestamp\": { \"type\": \"long\" },\n"
+            + "      \"total_shards\": { \"type\": \"long\" },\n"
+            + "      \"group_by\": {\n"
+            + "        \"type\": \"text\",\n"
+            + "        \"fields\": {\n"
+            + "          \"keyword\": {\n"
+            + "            \"type\": \"keyword\",\n"
+            + "            \"ignore_above\": 256\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"phase_latency_map\": {\n"
+            + "        \"properties\": {\n"
+            + "          \"expand\": { \"type\": \"long\" },\n"
+            + "          \"fetch\": { \"type\": \"long\" },\n"
+            + "          \"query\": { \"type\": \"long\" }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"search_type\": {\n"
+            + "        \"type\": \"text\",\n"
+            + "        \"fields\": {\n"
+            + "          \"keyword\": {\n"
+            + "            \"type\": \"keyword\",\n"
+            + "            \"ignore_above\": 256\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"task_resource_usages\": {\n"
+            + "        \"properties\": {\n"
+            + "          \"action\": {\n"
+            + "            \"type\": \"text\",\n"
+            + "            \"fields\": {\n"
+            + "              \"keyword\": {\n"
+            + "                \"type\": \"keyword\",\n"
+            + "                \"ignore_above\": 256\n"
+            + "              }\n"
+            + "            }\n"
+            + "          },\n"
+            + "          \"nodeId\": {\n"
+            + "            \"type\": \"text\",\n"
+            + "            \"fields\": {\n"
+            + "              \"keyword\": {\n"
+            + "                \"type\": \"keyword\",\n"
+            + "                \"ignore_above\": 256\n"
+            + "              }\n"
+            + "            }\n"
+            + "          },\n"
+            + "          \"parentTaskId\": { \"type\": \"long\" },\n"
+            + "          \"taskId\": { \"type\": \"long\" },\n"
+            + "          \"taskResourceUsage\": {\n"
+            + "            \"properties\": {\n"
+            + "              \"cpu_time_in_nanos\": { \"type\": \"long\" },\n"
+            + "              \"memory_in_bytes\": { \"type\": \"long\" }\n"
+            + "            }\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"measurements\": {\n"
+            + "        \"properties\": {\n"
+            + "          \"latency\": {\n"
+            + "            \"properties\": {\n"
+            + "              \"number\": { \"type\": \"double\" },\n"
+            + "              \"count\": { \"type\": \"integer\" },\n"
+            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
+            + "            }\n"
+            + "          },\n"
+            + "          \"cpu\": {\n"
+            + "            \"properties\": {\n"
+            + "              \"number\": { \"type\": \"double\" },\n"
+            + "              \"count\": { \"type\": \"integer\" },\n"
+            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
+            + "            }\n"
+            + "          },\n"
+            + "          \"memory\": {\n"
+            + "            \"properties\": {\n"
+            + "              \"number\": { \"type\": \"double\" },\n"
+            + "              \"count\": { \"type\": \"integer\" },\n"
+            + "              \"aggregationType\": { \"type\": \"keyword\" }\n"
+            + "            }\n"
+            + "          }\n"
+            + "        }\n"
+            + "      }\n"
+            + "    }\n"
+            + "  },\n"
+            + "  \"settings\": {\n"
+            + "    \"index.number_of_shards\": 1,\n"
+            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
+            + "  }\n"
+            + "}";
         Request request = new Request("PUT", "/" + indexName);
         request.setJsonEntity(mapping);
 
@@ -218,60 +216,63 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     }
 
     protected String createDocumentsBody(long timestamp) {
-        return String.format(Locale.ROOT, """
-            {
-              "timestamp": %d,
-              "id": "6ac36175-e48e-4b90-9dbb-ee711a7ec629",
-              "node_id": "TL1FYh4DR36PmFp9JRCtaA",
-              "total_shards": 1,
-              "group_by": "NONE",
-              "search_type": "query_then_fetch",
-              "phase_latency_map": {
-                "expand": 0,
-                "query": 37,
-                "fetch": 1
-              },
-              "task_resource_usages": [
-                {
-                  "action": "indices:data/read/search[phase/query]",
-                  "taskId": 41,
-                  "parentTaskId": 40,
-                  "nodeId": "TL1FYh4DR36PmFp9JRCtaA",
-                  "taskResourceUsage": {
-                    "cpu_time_in_nanos": 29965000,
-                    "memory_in_bytes": 3723960
-                  }
-                },
-                {
-                  "action": "indices:data/read/search",
-                  "taskId": 40,
-                  "parentTaskId": -1,
-                  "nodeId": "TL1FYh4DR36PmFp9JRCtaA",
-                  "taskResourceUsage": {
-                    "cpu_time_in_nanos": 1104000,
-                    "memory_in_bytes": 106176
-                  }
-                }
-              ],
-              "measurements": {
-                "latency": {
-                  "number": 48,
-                  "count": 1,
-                  "aggregationType": "NONE"
-                },
-                "memory": {
-                  "number": 3830136,
-                  "count": 1,
-                  "aggregationType": "NONE"
-                },
-                "cpu": {
-                  "number": 31069000,
-                  "count": 1,
-                  "aggregationType": "NONE"
-                }
-              }
-            }
-            """, timestamp);
+        return String.format(
+            Locale.ROOT,
+            "{\n"
+                + "  \"timestamp\": %d,\n"
+                + "  \"id\": \"6ac36175-e48e-4b90-9dbb-ee711a7ec629\",\n"
+                + "  \"node_id\": \"TL1FYh4DR36PmFp9JRCtaA\",\n"
+                + "  \"total_shards\": 1,\n"
+                + "  \"group_by\": \"NONE\",\n"
+                + "  \"search_type\": \"query_then_fetch\",\n"
+                + "  \"phase_latency_map\": {\n"
+                + "    \"expand\": 0,\n"
+                + "    \"query\": 37,\n"
+                + "    \"fetch\": 1\n"
+                + "  },\n"
+                + "  \"task_resource_usages\": [\n"
+                + "    {\n"
+                + "      \"action\": \"indices:data/read/search[phase/query]\",\n"
+                + "      \"taskId\": 41,\n"
+                + "      \"parentTaskId\": 40,\n"
+                + "      \"nodeId\": \"TL1FYh4DR36PmFp9JRCtaA\",\n"
+                + "      \"taskResourceUsage\": {\n"
+                + "        \"cpu_time_in_nanos\": 29965000,\n"
+                + "        \"memory_in_bytes\": 3723960\n"
+                + "      }\n"
+                + "    },\n"
+                + "    {\n"
+                + "      \"action\": \"indices:data/read/search\",\n"
+                + "      \"taskId\": 40,\n"
+                + "      \"parentTaskId\": -1,\n"
+                + "      \"nodeId\": \"TL1FYh4DR36PmFp9JRCtaA\",\n"
+                + "      \"taskResourceUsage\": {\n"
+                + "        \"cpu_time_in_nanos\": 1104000,\n"
+                + "        \"memory_in_bytes\": 106176\n"
+                + "      }\n"
+                + "    }\n"
+                + "  ],\n"
+                + "  \"measurements\": {\n"
+                + "    \"latency\": {\n"
+                + "      \"number\": 48,\n"
+                + "      \"count\": 1,\n"
+                + "      \"aggregationType\": \"NONE\"\n"
+                + "    },\n"
+                + "    \"memory\": {\n"
+                + "      \"number\": 3830136,\n"
+                + "      \"count\": 1,\n"
+                + "      \"aggregationType\": \"NONE\"\n"
+                + "    },\n"
+                + "    \"cpu\": {\n"
+                + "      \"number\": 31069000,\n"
+                + "      \"count\": 1,\n"
+                + "      \"aggregationType\": \"NONE\"\n"
+                + "    }\n"
+                + "  }\n"
+                + "}",
+            timestamp
+        );
+
     }
 
     private String buildLocalIndexName(ZonedDateTime current) {
