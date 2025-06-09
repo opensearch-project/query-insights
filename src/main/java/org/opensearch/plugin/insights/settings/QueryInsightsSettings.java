@@ -94,6 +94,11 @@ public class QueryInsightsSettings {
      */
     public static final int DEFAULT_LIVE_QUERIES_SIZE = 100;
 
+    /**
+     * Default timeout for search requests in query insights operations
+     */
+    public static final TimeValue DEFAULT_SEARCH_REQUEST_TIMEOUT = new TimeValue(10, TimeUnit.SECONDS);
+
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
     /** Default prefix for top N queries grouping feature */
@@ -237,9 +242,19 @@ public class QueryInsightsSettings {
      */
     private static final String TOP_N_QUERIES_EXPORTER_PREFIX = TOP_N_QUERIES_SETTING_PREFIX + ".exporter";
     /**
+     * Index name prefix for top queries indices
+     */
+    public static final String TOP_QUERIES_INDEX_PREFIX = "top_queries";
+
+    /**
+     * Date format pattern for top queries indices
+     */
+    public static final String INDEX_DATE_FORMAT_PATTERN = "yyyy.MM.dd";
+
+    /**
      * Default index pattern of top n queries
      */
-    public static final String DEFAULT_TOP_N_QUERIES_INDEX_PATTERN = "'top_queries-'YYYY.MM.dd";
+    public static final String DEFAULT_TOP_N_QUERIES_INDEX_PATTERN = "'" + TOP_QUERIES_INDEX_PREFIX + "-'" + INDEX_DATE_FORMAT_PATTERN;
     /**
      * Default exporter type of top queries
      */
@@ -298,7 +313,7 @@ public class QueryInsightsSettings {
     /**
      * Index pattern glob for matching top query indices
      */
-    public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = "top_queries-*";
+    public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = TOP_QUERIES_INDEX_PREFIX + "-*";
 
     /**
      * Setting for Top N local indices template priority

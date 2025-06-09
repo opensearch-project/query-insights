@@ -54,7 +54,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -100,9 +100,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         }).when(indicesAdminClient).exists(any(IndicesExistsRequest.class), any());
 
         // Setup cluster service with default values
-        indexName = format.format(ZonedDateTime.now(ZoneOffset.UTC))
-            + "-"
-            + ExporterReaderUtils.generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
+        indexName = IndexDiscoveryHelper.buildLocalIndexName(format, ZonedDateTime.now(ZoneOffset.UTC));
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
