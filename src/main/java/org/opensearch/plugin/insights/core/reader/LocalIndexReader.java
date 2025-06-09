@@ -8,40 +8,26 @@
 
 package org.opensearch.plugin.insights.core.reader;
 
-import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
-import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
-import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
-
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
-import org.opensearch.common.xcontent.LoggingDeprecationHandler;
-import org.opensearch.common.xcontent.XContentType;
-import org.opensearch.core.common.Strings;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
-import org.opensearch.core.xcontent.XContentParser;
-import org.opensearch.index.IndexNotFoundException;
-import org.opensearch.index.query.BoolQueryBuilder;
-import org.opensearch.index.query.MatchQueryBuilder;
-import org.opensearch.index.query.QueryBuilders;
-import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
+import org.opensearch.plugin.insights.core.utils.QueryInsightsQueryBuilder;
+import org.opensearch.plugin.insights.core.utils.SearchResponseParser;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.search.SearchHit;
-import org.opensearch.search.builder.SearchSourceBuilder;
-import org.opensearch.search.sort.SortBuilders;
-import org.opensearch.search.sort.SortOrder;
 import reactor.util.annotation.NonNull;
 
 /**
@@ -110,69 +96,78 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * @param id         query/group id
      * @param verbose    whether to return full output
      * @param metricType metric type to read
-     * @return list of SearchQueryRecords whose timestamps fall between from and to
      */
     @Override
-    public List<SearchQueryRecord> read(
+    public void read(
         final String from,
         final String to,
         final String id,
         final Boolean verbose,
-        @NonNull final MetricType metricType
+        @NonNull final MetricType metricType,
+        final ActionListener<List<SearchQueryRecord>> listener
     ) {
-        List<SearchQueryRecord> records = new ArrayList<>();
+        // Validate input parameters
         if (from == null || to == null) {
-            return records;
+            listener.onResponse(new ArrayList<>());
+            return;
         }
+
+        // Parse and validate date range
         final ZonedDateTime start = ZonedDateTime.parse(from);
         ZonedDateTime end = ZonedDateTime.parse(to);
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
         if (end.isAfter(now)) {
             end = now;
         }
-        ZonedDateTime curr = start;
-        // TODO: send single search request instead of one per index
-        while (curr.isBefore(end.plusDays(1).toLocalDate().atStartOfDay(end.getZone()))) {
-            String indexName = buildLocalIndexName(curr);
-            SearchRequest searchRequest = new SearchRequest(indexName);
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
-            MatchQueryBuilder excludeQuery = QueryBuilders.matchQuery("indices", "top_queries*");
-            RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("timestamp")
-                .from(start.toInstant().toEpochMilli())
-                .to(end.toInstant().toEpochMilli());
-            BoolQueryBuilder query = QueryBuilders.boolQuery().must(rangeQuery).mustNot(excludeQuery);
+        final ZonedDateTime finalEnd = end;
 
-            if (id != null) {
-                query.must(QueryBuilders.matchQuery("id", id));
-            } else {
-                // Add metric type filter only when (id == null)
-                query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
-            }
-            searchSourceBuilder.query(query);
-            if (Boolean.FALSE.equals(verbose)) {
-                // Exclude these fields
-                searchSourceBuilder.fetchSource(
-                    Strings.EMPTY_ARRAY,
-                    Arrays.stream(VERBOSE_ONLY_FIELDS).map(Attribute::toString).toArray(String[]::new)
-                );
-            }
-            searchSourceBuilder.sort(SortBuilders.fieldSort("measurements.latency.number").order(SortOrder.DESC));
-            searchRequest.source(searchSourceBuilder);
-            try {
-                SearchResponse searchResponse = client.search(searchRequest).actionGet();
-                for (SearchHit hit : searchResponse.getHits()) {
-                    XContentParser parser = XContentType.JSON.xContent()
-                        .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, hit.getSourceAsString());
-                    SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
-                    records.add(record);
+        // Discover indices in the date range
+        IndexDiscoveryHelper.discoverIndicesInDateRange(client, indexPattern, start, finalEnd, new ActionListener<List<String>>() {
+            @Override
+            public void onResponse(List<String> indexNames) {
+                if (indexNames.isEmpty()) {
+                    listener.onResponse(Collections.emptyList());
+                    return;
                 }
-            } catch (IndexNotFoundException ignored) {} catch (Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
-                logger.error("Unable to parse search hit: ", e);
+
+                // Build and execute search request
+                executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, listener);
             }
-            curr = curr.plusDays(1);
-        }
-        return records;
+
+            @Override
+            public void onFailure(Exception e) {
+                listener.onFailure(e);
+            }
+        });
+    }
+
+    /**
+     * Executes the search request against the discovered indices.
+     */
+    private void executeSearchRequest(
+        final List<String> indexNames,
+        final ZonedDateTime start,
+        final ZonedDateTime end,
+        final String id,
+        final Boolean verbose,
+        final MetricType metricType,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+        client.search(searchRequest, new ActionListener<SearchResponse>() {
+            @Override
+            public void onResponse(SearchResponse searchResponse) {
+                SearchResponseParser.parseSearchResponse(searchResponse, namedXContentRegistry, listener);
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
+                logger.error("Failed to search indices {}: ", indexNames, e);
+                listener.onFailure(e);
+            }
+        });
     }
 
     /**
@@ -181,9 +176,5 @@ public final class LocalIndexReader implements QueryInsightsReader {
     @Override
     public void close() {
         logger.debug("Closing the LocalIndexReader..");
-    }
-
-    private String buildLocalIndexName(ZonedDateTime current) {
-        return current.format(indexPattern) + "-" + generateLocalIndexDateHash(current.toLocalDate());
     }
 }

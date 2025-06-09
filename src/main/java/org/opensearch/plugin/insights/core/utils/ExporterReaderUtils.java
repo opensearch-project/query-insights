@@ -17,6 +17,15 @@ import java.util.Locale;
  *
  */
 public class ExporterReaderUtils {
+    /**
+     * Format string for 5-digit numeric hash generation
+     */
+    private static final String HASH_FORMAT_PATTERN = "%05d";
+
+    /**
+     * Date format pattern for UTC date string generation (yyyy-MM-dd format)
+     */
+    public static final String UTC_DATE_FORMAT_PATTERN = "yyyy-MM-dd";
 
     private ExporterReaderUtils() {}
 
@@ -28,9 +37,9 @@ public class ExporterReaderUtils {
      */
     public static String generateLocalIndexDateHash(LocalDate date) {
         // Get the date string in UTC (yyyy-MM-dd format)
-        String dateString = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT).format(date);
+        String dateString = DateTimeFormatter.ofPattern(UTC_DATE_FORMAT_PATTERN, Locale.ROOT).format(date);
 
         // Generate a 5-digit numeric hash from the date's hashCode
-        return String.format(Locale.ROOT, "%05d", (dateString.hashCode() % 100000 + 100000) % 100000);
+        return String.format(Locale.ROOT, HASH_FORMAT_PATTERN, (dateString.hashCode() % 100000 + 100000) % 100000);
     }
 }

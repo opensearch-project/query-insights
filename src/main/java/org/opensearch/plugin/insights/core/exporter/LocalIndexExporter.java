@@ -8,7 +8,6 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
@@ -47,6 +46,7 @@ import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
@@ -248,7 +248,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
      */
     String buildLocalIndexName() {
         ZonedDateTime currentTime = ZonedDateTime.now(ZoneOffset.UTC);
-        return indexPattern.format(currentTime) + "-" + generateLocalIndexDateHash(currentTime.toLocalDate());
+        return IndexDiscoveryHelper.buildLocalIndexName(indexPattern, currentTime);
     }
 
     /**
