@@ -9,9 +9,12 @@
 package org.opensearch.plugin.insights.settings;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
@@ -277,6 +280,17 @@ public class QueryInsightsSettings {
     public static final Setting<String> TOP_N_EXPORTER_TYPE = Setting.simpleString(
         TOP_N_QUERIES_EXPORTER_PREFIX + ".type",
         DEFAULT_TOP_QUERIES_EXPORTER_TYPE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Settings for the list of indices that excluded from top queries.
+     */
+    public static final Setting<List<String>> TOP_N_QUERIES_EXCLUDED_INDICES = Setting.listSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".excluded_indices",
+        Collections.emptyList(),
+        Function.identity(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
