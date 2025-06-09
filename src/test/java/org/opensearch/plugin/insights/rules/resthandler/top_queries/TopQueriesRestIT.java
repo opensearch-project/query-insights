@@ -90,7 +90,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
             + "        \"search.insights.top_queries.cpu.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.cpu.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.cpu.top_n_size\" : 5,\n"
-            + "        \"search.insights.top_queries.group_by\" : \"none\"\n"
+            + "        \"search.insights.top_queries.grouping.group_by\" : \"none\"\n"
             + "    }\n"
             + "}";
     }
