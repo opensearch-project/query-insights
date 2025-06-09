@@ -59,6 +59,7 @@ import org.opensearch.test.rest.OpenSearchRestTestCase;
 
 public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     protected static final String QUERY_INSIGHTS_INDICES_PREFIX = "top_queries";
+    private static final String DEFAULT_KEYWORD = "timestamp";
     private static final Logger logger = Logger.getLogger(QueryInsightsRestTestCase.class.getName());
     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).withZone(ZoneOffset.UTC);
 
@@ -254,6 +255,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
+    protected void doSearch(int times, String indices) throws IOException {
+        for (int i = 0; i < times; i++) {
+            Request request = new Request("GET", "/" + indices + "/_search?size=20&pretty");
+            request.setJsonEntity(searchBody());
+            Response response = client().performRequest(request);
+            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        }
+    }
+
     protected void doSearch(String queryType, int times) throws IOException {
         for (int i = 0; i < times; i++) {
             // Do Search
@@ -303,9 +313,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
-    protected int countTopQueries(String json) {
+    protected int countTopQueries(String json, String keyword) {
         // Basic pattern to match JSON array elements in `top_queries`
-        Pattern pattern = Pattern.compile("\\{\\s*\"timestamp\"");
+        Pattern pattern = Pattern.compile("\\{\\s*\"" + keyword + "\"");
         Matcher matcher = pattern.matcher(json);
 
         int count = 0;
@@ -332,7 +342,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
-            if (countTopQueries(responseBody) == 0) {
+            if (countTopQueries(responseBody, DEFAULT_KEYWORD) == 0) {
                 isEmpty = true;
             } else {
                 Thread.sleep(1000); // Sleep before retrying
@@ -345,6 +355,10 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
+        assertTopQueriesCount(expectedTopQueriesCount, type, DEFAULT_KEYWORD);
+    }
+
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type, String index) throws IOException, InterruptedException {
         // Ensure records are drained to the top queries service
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
 
@@ -352,7 +366,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         for (int i = 0; i < 5; i++) {
             String responseBody = getTopQueries(type);
 
-            int topNArraySize = countTopQueries(responseBody);
+            int topNArraySize = countTopQueries(responseBody, index);
 
             if (topNArraySize < expectedTopQueriesCount) {
                 // Ensure records are drained to the top queries service

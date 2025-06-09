@@ -105,4 +105,55 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
                 + "}",
             "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.latency.top_n_size\" : -1\n" + "    }\n" + "}" };
     }
+
+    public void testExcludedIndices() throws IOException, InterruptedException {
+        prepareExcludedIndices();
+
+        // Exclude the first index
+        updateClusterSettings(() -> excludedIndicesSettings("exclude-me-index-01"));
+        doSearch(2, "exclude-me-index-01");
+        assertTopQueriesCount(0, "latency", "exclude-me-index-01");
+
+        doSearch(2, "dont-exclude-me-index-02");
+        assertTopQueriesCount(2, "latency", "exclude-me-index-01");
+
+        // Exclude indices using wildcard
+        updateClusterSettings(() -> excludedIndicesSettings("exclude-me*"));
+        doSearch(2, "exclude-me-index-01");
+        doSearch(2, "exclude-me-index-02");
+        assertTopQueriesCount(2, "latency", "exclude-me-index-01");
+
+        // Reset excluded indices
+        updateClusterSettings(() -> excludedIndicesSettings(null));
+        doSearch(2, "exclude-me-index-01");
+        assertTopQueriesCount(4, "latency", "exclude-me-index-01");
+    }
+
+    private void prepareExcludedIndices() throws IOException {
+        Request firstExcludedIndex = new Request("POST", "/exclude-me-index-01/_doc");
+        firstExcludedIndex.setJsonEntity(createDocumentsBody());
+        Response firstResponse = client().performRequest(firstExcludedIndex);
+        Assert.assertEquals(201, firstResponse.getStatusLine().getStatusCode());
+
+        Request secondExcludedIndex = new Request("POST", "/exclude-me-index-02/_doc");
+        secondExcludedIndex.setJsonEntity(createDocumentsBody());
+        Response secondResponse = client().performRequest(secondExcludedIndex);
+        Assert.assertEquals(201, secondResponse.getStatusLine().getStatusCode());
+
+        Request thirdIndex = new Request("POST", "/dont-exclude-me-index-02/_doc");
+        thirdIndex.setJsonEntity(createDocumentsBody());
+        Response thirdResponse = client().performRequest(thirdIndex);
+        Assert.assertEquals(201, thirdResponse.getStatusLine().getStatusCode());
+    }
+
+    private String excludedIndicesSettings(String excludedIndices) {
+        excludedIndices = excludedIndices == null ? "null" : "\" " + excludedIndices + " \" ";
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.excluded_indices\" : "
+            + excludedIndices
+            + "    }\n"
+            + "}";
+    }
+
 }
