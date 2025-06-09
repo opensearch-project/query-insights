@@ -13,6 +13,7 @@ import static java.util.Collections.emptySet;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP;
 import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
 import static org.opensearch.test.OpenSearchTestCase.random;
 import static org.opensearch.test.OpenSearchTestCase.randomAlphaOfLengthBetween;
@@ -156,6 +157,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.QUERY_GROUP_HASHCODE, Objects.hashCode(i));
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(Attribute.NODE_ID, "node_for_top_queries_test");
+            attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -271,6 +273,7 @@ final public class QueryInsightsTestUtils {
                 new TaskResourceInfo("action2", 3L, 1L, "id2", new TaskResourceUsage(2000L, 1000L))
             )
         );
+        attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
 
         return new SearchQueryRecord(timestamp, measurements, attributes, id);
     }

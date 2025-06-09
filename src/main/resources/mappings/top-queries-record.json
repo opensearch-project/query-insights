@@ -122,6 +122,19 @@
           }
         }
       }
+    },
+    "top_n_query" : {
+      "properties" : {
+        "cpu" : {
+          "type" : "boolean"
+        },
+        "latency" : {
+          "type" : "boolean"
+        },
+        "memory" : {
+          "type" : "boolean"
+        }
+      }
     }
   }
 }
