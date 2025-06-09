@@ -143,7 +143,7 @@ public class QueryInsightsSettings {
      * Define the group_by option for Top N queries to group queries.
      */
     public static final Setting<String> TOP_N_QUERIES_GROUP_BY = Setting.simpleString(
-        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".group_by",
+        TOP_N_QUERIES_SETTING_PREFIX + ".group_by",
         DEFAULT_GROUPING_TYPE.getValue(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
@@ -153,7 +153,7 @@ public class QueryInsightsSettings {
      * Define the max_groups_excluding_topn option for Top N queries to group queries.
      */
     public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N = Setting.intSetting(
-        TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".max_groups_excluding_topn",
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_groups_excluding_topn",
         DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
