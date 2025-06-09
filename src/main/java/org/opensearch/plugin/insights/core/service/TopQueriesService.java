@@ -9,7 +9,9 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.INDEX_DATE_FORMAT_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -38,6 +40,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -278,7 +281,7 @@ public class TopQueriesService {
             return Arrays.stream(indices).noneMatch(index -> {
                 if (index instanceof String) {
                     String indexString = (String) index;
-                    return indexString.contains("top_queries");
+                    return indexString.contains(TOP_QUERIES_INDEX_PREFIX);
                 }
                 return false;
             });
@@ -355,36 +358,47 @@ public class TopQueriesService {
      * @param to   end timestamp
      * @param id search query record id
      * @param verbose whether to return full output
-     * @return List of the records that are in local index (if enabled) with timestamps between from and to
      * @throws IllegalArgumentException if query insights is disabled in the cluster
      */
-    public List<SearchQueryRecord> getTopQueriesRecordsFromIndex(
+    public void getTopQueriesRecordsFromIndex(
         final String from,
         final String to,
         final String id,
-        final Boolean verbose
+        final Boolean verbose,
+        final ActionListener<List<SearchQueryRecord>> listener
     ) {
-        final List<SearchQueryRecord> queries = new ArrayList<>();
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
-        if (reader != null) {
-            try {
-                final ZonedDateTime start = ZonedDateTime.parse(from);
-                final ZonedDateTime end = ZonedDateTime.parse(to);
-                List<SearchQueryRecord> records = reader.read(from, to, id, verbose, metricType);
-                Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
-                    && element.getTimestamp() <= end.toInstant().toEpochMilli();
-                List<SearchQueryRecord> filteredRecords = records.stream()
-                    .filter(checkIfInternal.and(timeFilter))
-                    .collect(Collectors.toList());
-                queries.addAll(filteredRecords);
-            } catch (Exception e) {
-                logger.error("Failed to read from index: ", e);
-            }
+        if (reader == null) {
+            listener.onResponse(new ArrayList<>());
+            return;
         }
-        return Stream.of(queries)
-            .flatMap(Collection::stream)
-            .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
-            .collect(Collectors.toList());
+
+        try {
+            reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
+                @Override
+                public void onResponse(List<SearchQueryRecord> records) {
+                    try {
+                        List<SearchQueryRecord> filteredRecords = records.stream()
+                            .filter(checkIfInternal)
+                            .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
+                            .collect(Collectors.toList());
+                        listener.onResponse(filteredRecords);
+                    } catch (Exception e) {
+                        logger.error("Failed to process records from index: ", e);
+                        listener.onFailure(e);
+                    }
+                }
+
+                @Override
+                public void onFailure(Exception e) {
+                    logger.error("Failed to read from index: ", e);
+                    listener.onFailure(e);
+                }
+            });
+        } catch (Exception e) {
+            logger.error("Failed to initiate read from index: ", e);
+            listener.onFailure(e);
+        }
     }
 
     /**
@@ -549,12 +563,12 @@ public class TopQueriesService {
             }
 
             // Validate the first part is "top_queries"
-            if (!"top_queries".equals(parts[0])) {
+            if (!TOP_QUERIES_INDEX_PREFIX.equals(parts[0])) {
                 return false;
             }
 
             // Validate the second part is a valid date in "YYYY.MM.dd" format
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
             LocalDate date;
             try {
                 date = LocalDate.parse(parts[1], formatter);

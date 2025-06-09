@@ -25,9 +25,9 @@ import org.opensearch.core.xcontent.XContentParser;
 public class Measurement implements ToXContentObject, Writeable {
     private static int DEFAULT_COUNT = 1;
 
-    private static final String NUMBER = "number";
-    private static final String COUNT = "count";
-    private static final String AGGREGATION_TYPE = "aggregationType";
+    public static final String NUMBER = "number";
+    public static final String COUNT = "count";
+    public static final String AGGREGATION_TYPE = "aggregationType";
 
     private AggregationType aggregationType;
     private Number number;
