@@ -28,6 +28,13 @@ buildscript {
     mavenCentral()
     maven { url "https://plugins.gradle.org/m2/" }
   }
+  configurations.all {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+      if (details.requested.group == 'org.apache.httpcomponents.client5' && details.requested.name == 'httpclient5') {
+        details.useVersion '5.4.3'
+      }
+    }
+  }
 
   dependencies {
     classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
