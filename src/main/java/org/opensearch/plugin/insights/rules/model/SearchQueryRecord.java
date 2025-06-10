@@ -105,6 +105,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String ID = "id";
     /**
+     * is_cancelled
+     */
+    public static final String IS_CANCELLED = "is_cancelled";
+    /**
      * A map indicating for which metric type(s) this record was in the Top N
      */
     public static final String TOP_N_QUERY = "top_n_query";
@@ -277,6 +281,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case NODE_ID:
                         attributes.put(Attribute.NODE_ID, parser.text());
+                        break;
+                    case IS_CANCELLED:
+                        attributes.put(Attribute.IS_CANCELLED, parser.booleanValue());
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
@@ -588,6 +595,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         return this.groupingId;
     }
 
+    public boolean isCancelled() {
+        return (Boolean) attributes.getOrDefault(Attribute.IS_CANCELLED, false);
+    }
+
     /**
      * Creates a new {@link SearchQueryRecord} by removing specific attributes
      * from the attributes map. The original record remains unchanged.
@@ -604,5 +615,4 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         }
         return simplifiedRecord;
     }
-
 }

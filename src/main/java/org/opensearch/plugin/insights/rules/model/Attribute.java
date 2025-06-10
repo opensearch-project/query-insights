@@ -72,7 +72,12 @@ public enum Attribute {
     /**
      * A map indicating for which metric type(s) this record was in the Top N
      */
-    TOP_N_QUERY;
+    TOP_N_QUERY,
+
+    /**
+     * The cancelled of the search query, often used in live queries.
+     */
+    IS_CANCELLED;
 
     /**
      * Read an Attribute from a StreamInput

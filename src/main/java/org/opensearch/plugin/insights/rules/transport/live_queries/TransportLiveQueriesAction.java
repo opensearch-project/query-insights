@@ -98,6 +98,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         attributes.put(Attribute.NODE_ID, nodeId);
                         if (request.isVerbose()) {
                             attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
+                            attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
                         }
 
                         SearchQueryRecord record = new SearchQueryRecord(

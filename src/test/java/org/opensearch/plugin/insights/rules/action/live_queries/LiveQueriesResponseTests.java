@@ -45,7 +45,6 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             if (randomBoolean()) {
                 attributes.put(Attribute.DESCRIPTION, "desc_" + baseLatency + "_" + i);
             }
-
             return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "query_" + baseLatency + "_" + i);
         }).collect(Collectors.toList());
     }
