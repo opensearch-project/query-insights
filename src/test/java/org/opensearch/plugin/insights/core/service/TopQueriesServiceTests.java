@@ -501,7 +501,12 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testTimeFilterIncludesSomeRecords() {
+        // Set a reasonable window size instead of Long.MAX_VALUE to avoid window calculation issues
+        topQueriesService.setWindowSize(TimeValue.timeValueHours(1));
+
+        // Use current time to ensure records are in the current window
         long currentTime = System.currentTimeMillis();
+
         List<SearchQueryRecord> records = new ArrayList<>();
         // Records that should be included by the filter
         records.addAll(
@@ -542,7 +547,12 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testTimeFilterIncludesNoRecords() {
+        // Set a reasonable window size instead of Long.MAX_VALUE to avoid window calculation issues
+        topQueriesService.setWindowSize(TimeValue.timeValueHours(1));
+
+        // Use current time to ensure records are in the current window
         long currentTime = System.currentTimeMillis();
+
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(
             5,
             5,

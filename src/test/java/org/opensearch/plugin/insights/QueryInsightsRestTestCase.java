@@ -158,28 +158,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     @Before
     public void runBeforeEachTest() throws IOException {
-        // First create the index with explicit settings to ensure consistent shard count
-        String indexSettings = "{\n"
-            + "  \"settings\": {\n"
-            + "    \"index.number_of_shards\": 1,\n"
-            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
-            + "  }\n"
-            + "}";
-        Request createIndexReq = new Request("PUT", "/my-index-0");
-        createIndexReq.setJsonEntity(indexSettings);
-        try {
-            Response createIndexResponse = client().performRequest(createIndexReq);
-            // Index creation can return 200 (if already exists) or 201 (if newly created)
-            Assert.assertTrue(
-                "Index creation should succeed",
-                createIndexResponse.getStatusLine().getStatusCode() == 200 || createIndexResponse.getStatusLine().getStatusCode() == 201
-            );
-        } catch (ResponseException e) {
-            // If index already exists, that's fine - continue with document creation
-            if (e.getResponse().getStatusLine().getStatusCode() != 400) {
-                throw e;
-            }
-        }
+        // Create the index with default settings
+        createIndexWithSettings("my-index-0");
 
         // Create documents for search
         Request request = new Request("POST", "/my-index-0/_doc");
@@ -252,6 +232,51 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5\n"
             + "    }\n"
             + "}";
+    }
+
+    /**
+     * Creates an index with default settings to ensure consistent shard count
+     * @param indexName the name of the index to create
+     * @throws IOException if the request fails
+     */
+    protected void createIndexWithSettings(String indexName) throws IOException {
+        Request createIndexReq = new Request("PUT", "/" + indexName);
+        createIndexReq.setJsonEntity(getDefaultIndexSettings());
+
+        try {
+            Response createIndexResponse = client().performRequest(createIndexReq);
+            handleIndexCreationResponse(createIndexResponse);
+        } catch (ResponseException e) {
+            // If index already exists, that's fine - continue
+            if (e.getResponse().getStatusLine().getStatusCode() != 400) {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * Returns the default index settings JSON for consistent test setup
+     * @return JSON string with default index settings
+     */
+    protected String getDefaultIndexSettings() {
+        return "{\n"
+            + "  \"settings\": {\n"
+            + "    \"index.number_of_shards\": 1,\n"
+            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
+            + "  }\n"
+            + "}";
+    }
+
+    /**
+     * Validates the response from index creation
+     * @param response the response from index creation request
+     */
+    protected void handleIndexCreationResponse(Response response) {
+        // Index creation can return 200 (if already exists) or 201 (if newly created)
+        Assert.assertTrue(
+            "Index creation should succeed",
+            response.getStatusLine().getStatusCode() == 200 || response.getStatusLine().getStatusCode() == 201
+        );
     }
 
     protected String createDocumentsBody() {
@@ -439,35 +464,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void createDocument() throws IOException {
-        // First create the index with explicit settings to ensure consistent shard count
-        String indexSettings = "{\n"
-            + "  \"settings\": {\n"
-            + "    \"index.number_of_shards\": 1,\n"
-            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
-            + "  }\n"
-            + "}";
-        Request createIndexReq = new Request("PUT", "/my-index-0");
-        createIndexReq.setJsonEntity(indexSettings);
-        try {
-            Response createIndexResponse = client().performRequest(createIndexReq);
-            // Index creation can return 200 (if already exists) or 201 (if newly created)
-            assertTrue(
-                "Index creation should succeed",
-                createIndexResponse.getStatusLine().getStatusCode() == 200 || createIndexResponse.getStatusLine().getStatusCode() == 201
-            );
-        } catch (ResponseException e) {
-            // If index already exists, that's fine - continue with document creation
-            if (e.getResponse().getStatusLine().getStatusCode() != 400) {
-                throw e;
-            }
-        }
+        // Create the index with default settings
+        createIndexWithSettings("my-index-0");
 
         // Now create the document
         String json = "{ \"title\": \"Test Document\", \"content\": \"This is a test document for OpenSearch\" }";
         Request req = new Request("POST", "/my-index-0/_doc/");
         req.setJsonEntity(json);
         Response response = client().performRequest(req);
-        assertEquals(201, response.getStatusLine().getStatusCode());
+        Assert.assertEquals(201, response.getStatusLine().getStatusCode());
     }
 
     protected void performSearch() throws IOException, InterruptedException {
@@ -477,9 +482,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Request req = new Request("POST", "/my-index-0/_search?size=20");
         req.setJsonEntity(searchJson);
         Response response = client().performRequest(req);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
         String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue("Expected search result for title", content.contains("\"Test Document\""));
+        Assert.assertTrue("Expected search result for title", content.contains("\"Test Document\""));
     }
 
     protected void setLatencyWindowSize(String size) throws IOException {
@@ -541,7 +546,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         for (int attempt = 0; attempt < 5; attempt++) {
             Request indicesRequest = new Request("GET", "/_cat/indices?v");
             Response response = client().performRequest(indicesRequest);
-            assertEquals(200, response.getStatusLine().getStatusCode());
+            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
 
             responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
@@ -566,15 +571,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
 
         if (fullIndexName == null) {
-            fail("Failed to extract top_queries index suffix after 5 attempts. Available indices: " + responseContent);
+            Assert.fail("Failed to extract top_queries index suffix after 5 attempts. Available indices: " + responseContent);
         }
 
-        assertTrue("Expected top_queries index to be green", responseContent.contains("green"));
-        assertTrue("Expected top_queries index to be present", responseContent.contains(fullIndexName));
+        Assert.assertTrue("Expected top_queries index to be green", responseContent.contains("green"));
+        Assert.assertTrue("Expected top_queries index to be present", responseContent.contains(fullIndexName));
 
         Request fetchRequest = new Request("GET", "/" + fullIndexName + "/_search?size=10");
         Response fetchResponse = client().performRequest(fetchRequest);
-        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
+        Assert.assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
 
         byte[] bytes = fetchResponse.getEntity().getContent().readAllBytes();
 
@@ -593,9 +598,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             Map<String, Object> firstHit = hits.get(0);
             Map<String, Object> source = (Map<String, Object>) firstHit.get("_source");
 
-            assertEquals("query_then_fetch", source.get("search_type"));
-            assertEquals("NONE", source.get("group_by"));
-            assertEquals(1, ((Number) source.get("total_shards")).intValue());
+            Assert.assertEquals("query_then_fetch", source.get("search_type"));
+            Assert.assertEquals("NONE", source.get("group_by"));
+            Assert.assertEquals(1, ((Number) source.get("total_shards")).intValue());
 
             Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
 
@@ -604,19 +609,19 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 if (match != null && match.containsKey("title")) {
                     Map<String, Object> title = (Map<String, Object>) match.get("title");
                     if (title != null) {
-                        assertEquals("Test Document", title.get("query"));
+                        Assert.assertEquals("Test Document", title.get("query"));
                     }
                 }
             }
 
             Map<String, Object> measurements = (Map<String, Object>) source.get("measurements");
-            assertNotNull("Expected measurements", measurements);
-            assertTrue(measurements.containsKey("cpu"));
-            assertTrue(measurements.containsKey("latency"));
-            assertTrue(measurements.containsKey("memory"));
+            Assert.assertNotNull("Expected measurements", measurements);
+            Assert.assertTrue(measurements.containsKey("cpu"));
+            Assert.assertTrue(measurements.containsKey("latency"));
+            Assert.assertTrue(measurements.containsKey("memory"));
 
             List<Map<String, Object>> taskResourceUsages = (List<Map<String, Object>>) source.get("task_resource_usages");
-            assertTrue("Expected non-empty task_resource_usages", taskResourceUsages.size() > 0);
+            Assert.assertTrue("Expected non-empty task_resource_usages", taskResourceUsages.size() > 0);
         }
     }
 
@@ -635,33 +640,33 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             Map<String, Object> parsed = parser.map();
 
             List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
-            assertNotNull("Expected index_templates to exist", templates);
-            assertFalse("Expected at least one index_template", templates.isEmpty());
+            Assert.assertNotNull("Expected index_templates to exist", templates);
+            Assert.assertFalse("Expected at least one index_template", templates.isEmpty());
 
             Map<String, Object> firstTemplate = templates.get(0);
-            assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
+            Assert.assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
 
             Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
 
             List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
-            assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
+            Assert.assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
 
             Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
             Map<String, Object> settings = (Map<String, Object>) template.get("settings");
             Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
-            assertEquals("1", indexSettings.get("number_of_shards"));
-            assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
+            Assert.assertEquals("1", indexSettings.get("number_of_shards"));
+            Assert.assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
 
             Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
             Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
-            assertEquals(1, ((Number) meta.get("schema_version")).intValue());
-            assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
+            Assert.assertEquals(1, ((Number) meta.get("schema_version")).intValue());
+            Assert.assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
 
             Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
-            assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
-            assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
-            assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
-            assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
+            Assert.assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
+            Assert.assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
+            Assert.assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
+            Assert.assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
         }
     }
 
@@ -708,7 +713,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Request fetchRequest = new Request("GET", endpoint);
         Response fetchResponse = client().performRequest(fetchRequest);
 
-        assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
+        Assert.assertEquals(200, fetchResponse.getStatusLine().getStatusCode());
         byte[] content = fetchResponse.getEntity().getContent().readAllBytes();
 
         try (
@@ -731,10 +736,10 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             List<String[]> idNodePairs = new ArrayList<>();
 
             for (Map<String, Object> query : topQueries) {
-                assertTrue(query.containsKey("timestamp"));
+                Assert.assertTrue(query.containsKey("timestamp"));
 
                 List<?> indices = (List<?>) query.get("indices");
-                assertNotNull("Expected 'indices' field", indices);
+                Assert.assertNotNull("Expected 'indices' field", indices);
                 String id = (String) query.get("id");
                 String nodeId = (String) query.get("node_id");
 
@@ -751,23 +756,23 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
                 Map<String, Object> title = (Map<String, Object>) match.get("title");
                 List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
-                assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
+                Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
                 for (Map<String, Object> task : taskUsages) {
-                    assertTrue("Missing action", task.containsKey("action"));
+                    Assert.assertTrue("Missing action", task.containsKey("action"));
                     Map<String, Object> usage = (Map<String, Object>) task.get("taskResourceUsage");
-                    assertNotNull("Missing cpu_time_in_nanos", usage.get("cpu_time_in_nanos"));
-                    assertNotNull("Missing memory_in_bytes", usage.get("memory_in_bytes"));
+                    Assert.assertNotNull("Missing cpu_time_in_nanos", usage.get("cpu_time_in_nanos"));
+                    Assert.assertNotNull("Missing memory_in_bytes", usage.get("memory_in_bytes"));
                 }
 
                 Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
-                assertNotNull("Expected measurements", measurements);
-                assertTrue(measurements.containsKey("cpu"));
-                assertTrue(measurements.containsKey("memory"));
-                assertTrue(measurements.containsKey("latency"));
+                Assert.assertNotNull("Expected measurements", measurements);
+                Assert.assertTrue(measurements.containsKey("cpu"));
+                Assert.assertTrue(measurements.containsKey("memory"));
+                Assert.assertTrue(measurements.containsKey("latency"));
             }
 
             if (filterId != null && !filterId.equals("null")) {
-                assertFalse("One or more IDs did not match the filterId", idMismatchFound);
+                Assert.assertFalse("One or more IDs did not match the filterId", idMismatchFound);
             }
             if (filterNodeID != null && !filterNodeID.equals("null")) {
                 assertFalse("One or more node IDs did not match the filterNodeID", nodeIdMismatchFound);
