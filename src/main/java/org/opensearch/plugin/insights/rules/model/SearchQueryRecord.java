@@ -185,9 +185,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         final Map<Attribute, Object> attributes,
         String id
     ) {
-        this.timestamp = timestamp;
+        if (measurements == null) {
+            throw new IllegalArgumentException("Measurements cannot be null");
+        }
         this.measurements = measurements;
         this.attributes = attributes;
+        this.timestamp = timestamp;
         this.id = id;
     }
 
