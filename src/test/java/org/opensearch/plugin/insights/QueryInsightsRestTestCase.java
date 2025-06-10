@@ -158,6 +158,29 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     @Before
     public void runBeforeEachTest() throws IOException {
+        // First create the index with explicit settings to ensure consistent shard count
+        String indexSettings = "{\n"
+            + "  \"settings\": {\n"
+            + "    \"index.number_of_shards\": 1,\n"
+            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
+            + "  }\n"
+            + "}";
+        Request createIndexReq = new Request("PUT", "/my-index-0");
+        createIndexReq.setJsonEntity(indexSettings);
+        try {
+            Response createIndexResponse = client().performRequest(createIndexReq);
+            // Index creation can return 200 (if already exists) or 201 (if newly created)
+            Assert.assertTrue(
+                "Index creation should succeed",
+                createIndexResponse.getStatusLine().getStatusCode() == 200 || createIndexResponse.getStatusLine().getStatusCode() == 201
+            );
+        } catch (ResponseException e) {
+            // If index already exists, that's fine - continue with document creation
+            if (e.getResponse().getStatusLine().getStatusCode() != 400) {
+                throw e;
+            }
+        }
+
         // Create documents for search
         Request request = new Request("POST", "/my-index-0/_doc");
         request.setJsonEntity(createDocumentsBody());
