@@ -534,25 +534,43 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void checkLocalIndices() throws IOException {
-        Request indicesRequest = new Request("GET", "/_cat/indices?v");
-        Response response = client().performRequest(indicesRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        // Retry logic to handle timing issues
+        String fullIndexName = null;
+        String responseContent = null;
 
-        String responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        assertTrue("Expected top_queries-* index to be green", responseContent.contains("green"));
+        for (int attempt = 0; attempt < 5; attempt++) {
+            Request indicesRequest = new Request("GET", "/_cat/indices?v");
+            Response response = client().performRequest(indicesRequest);
+            assertEquals(200, response.getStatusLine().getStatusCode());
 
-        String suffix = null;
-        Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d+)");
-        Matcher matcher = pattern.matcher(responseContent);
-        if (matcher.find()) {
-            suffix = matcher.group(1);
-        } else {
-            fail("Failed to extract top_queries index suffix");
+            responseContent = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
+            // Look for top_queries index with the correct pattern: top_queries-YYYY.MM.dd-{5-digit-hash}
+            Pattern pattern = Pattern.compile("top_queries-(\\d{4}\\.\\d{2}\\.\\d{2}-\\d{5})");
+            Matcher matcher = pattern.matcher(responseContent);
+            if (matcher.find()) {
+                String suffix = matcher.group(1);
+                fullIndexName = "top_queries-" + suffix;
+                break;
+            }
+
+            // If not found, wait and retry
+            if (attempt < 4) {
+                try {
+                    Thread.sleep(5000); // Wait 5 seconds before retry
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while waiting for index creation", e);
+                }
+            }
         }
 
-        assertNotNull("Failed to extract suffix from top_queries-* index", suffix);
-        String fullIndexName = "top_queries-" + suffix;
-        assertTrue("Expected top_queries-{" + fullIndexName + "} index to be present", responseContent.contains(fullIndexName));
+        if (fullIndexName == null) {
+            fail("Failed to extract top_queries index suffix after 5 attempts. Available indices: " + responseContent);
+        }
+
+        assertTrue("Expected top_queries index to be green", responseContent.contains("green"));
+        assertTrue("Expected top_queries index to be present", responseContent.contains(fullIndexName));
 
         Request fetchRequest = new Request("GET", "/" + fullIndexName + "/_search?size=10");
         Response fetchResponse = client().performRequest(fetchRequest);
