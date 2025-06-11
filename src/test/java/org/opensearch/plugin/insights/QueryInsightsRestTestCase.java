@@ -293,35 +293,64 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{}";
     }
 
+    /**
+     * Get a client that targets only the first node to avoid query insights being captured on multiple nodes
+     */
+    protected RestClient getFirstNodeClient() throws IOException {
+        // Get the first host from the cluster hosts
+        List<HttpHost> hosts = getClusterHosts();
+        if (hosts.isEmpty()) {
+            throw new IllegalStateException("No cluster hosts available");
+        }
+        HttpHost firstHost = hosts.get(0);
+
+        // Create a client that only targets the first node
+        RestClientBuilder builder = RestClient.builder(firstHost);
+        if (isHttps()) {
+            configureHttpsClient(builder, Settings.EMPTY);
+        } else {
+            configureClient(builder, Settings.EMPTY);
+        }
+        builder.setStrictDeprecationMode(false);
+        return builder.build();
+    }
+
     protected void doSearch(int times) throws IOException {
-        for (int i = 0; i < times; i++) {
-            // Do Search
-            Request request = new Request("GET", "/my-index-0/_search?size=20&pretty");
-            request.setJsonEntity(searchBody());
-            Response response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        try (RestClient firstNodeClient = getFirstNodeClient()) {
+            for (int i = 0; i < times; i++) {
+                // Do Search - target first node to avoid double counting in multi-node setup
+                Request request = new Request("GET", "/my-index-0/_search?size=20&pretty");
+                request.setJsonEntity(searchBody());
+                Response response = firstNodeClient.performRequest(request);
+                Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            }
         }
     }
 
     protected void doSearch(int times, String indices) throws IOException {
-        for (int i = 0; i < times; i++) {
-            Request request = new Request("GET", "/" + indices + "/_search?size=20&pretty");
-            request.setJsonEntity(searchBody());
-            Response response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+        try (RestClient firstNodeClient = getFirstNodeClient()) {
+            for (int i = 0; i < times; i++) {
+                // Target first node to avoid double counting in multi-node setup
+                Request request = new Request("GET", "/" + indices + "/_search?size=20&pretty");
+                request.setJsonEntity(searchBody());
+                Response response = firstNodeClient.performRequest(request);
+                Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            }
         }
     }
 
     protected void doSearch(String queryType, int times) throws IOException {
-        for (int i = 0; i < times; i++) {
-            // Do Search
-            Request request = new Request("GET", "/my-index-0/_search?size=20&pretty");
+        try (RestClient firstNodeClient = getFirstNodeClient()) {
+            for (int i = 0; i < times; i++) {
+                // Do Search - target first node to avoid double counting in multi-node setup
+                Request request = new Request("GET", "/my-index-0/_search?size=20&pretty");
 
-            // Set query based on the query type
-            request.setJsonEntity(searchBody(queryType));
+                // Set query based on the query type
+                request.setJsonEntity(searchBody(queryType));
 
-            Response response = client().performRequest(request);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+                Response response = firstNodeClient.performRequest(request);
+                Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            }
         }
     }
 

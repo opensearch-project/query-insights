@@ -34,10 +34,10 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     public TopQueriesRequest(final StreamInput in) throws IOException {
         super(in);
         this.metricType = MetricType.readFromStream(in);
-        this.from = null;
-        this.to = null;
-        this.verbose = null;
-        this.id = null;
+        this.from = in.readOptionalString();
+        this.to = in.readOptionalString();
+        this.id = in.readOptionalString();
+        this.verbose = in.readOptionalBoolean();
     }
 
     /**
@@ -111,5 +111,9 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeString(metricType.toString());
+        out.writeOptionalString(from);
+        out.writeOptionalString(to);
+        out.writeOptionalString(id);
+        out.writeOptionalBoolean(verbose);
     }
 }
