@@ -299,6 +299,10 @@ testClusters.all {
     plugin(project.tasks.bundlePlugin.archiveFile)
 }
 
+testClusters.integTest {
+    numberOfNodes = 2
+}
+
 run {
     useCluster testClusters.integTest
 }
