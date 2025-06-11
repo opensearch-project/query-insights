@@ -282,11 +282,11 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
      * Create a test index with the specified number of documents
      */
     private void createIndexWithData(int numDocs) throws IOException {
-        // Create test index
-        createDocument();
+        // Create test index with proper mapping to support aggregations
+        createTestIndexWithMapping();
 
-        // Add more documents
-        for (int i = 1; i < numDocs; i++) {
+        // Add documents
+        for (int i = 0; i < numDocs; i++) {
             Request indexRequest = new Request("POST", "/" + TEST_INDEX + "/_doc");
             String docJson = String.format(
                 Locale.ROOT,
@@ -311,6 +311,52 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         Request refreshRequest = new Request("POST", "/" + TEST_INDEX + "/_refresh");
         client().performRequest(refreshRequest);
         logger.info("Created index with {} documents", numDocs);
+    }
+
+    /**
+     * Create test index with proper mapping to support aggregations and sorting
+     */
+    private void createTestIndexWithMapping() throws IOException {
+        String mappingJson = "{\n"
+            + "  \"settings\": {\n"
+            + "    \"index.number_of_shards\": 1,\n"
+            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
+            + "  },\n"
+            + "  \"mappings\": {\n"
+            + "    \"properties\": {\n"
+            + "      \"title\": {\n"
+            + "        \"type\": \"text\",\n"
+            + "        \"fields\": {\n"
+            + "          \"keyword\": {\n"
+            + "            \"type\": \"keyword\"\n"
+            + "          }\n"
+            + "        }\n"
+            + "      },\n"
+            + "      \"value\": {\n"
+            + "        \"type\": \"integer\"\n"
+            + "      },\n"
+            + "      \"tags\": {\n"
+            + "        \"type\": \"keyword\"\n"
+            + "      },\n"
+            + "      \"nested\": {\n"
+            + "        \"properties\": {\n"
+            + "          \"field1\": {\n"
+            + "            \"type\": \"keyword\"\n"
+            + "          },\n"
+            + "          \"field2\": {\n"
+            + "            \"type\": \"integer\"\n"
+            + "          }\n"
+            + "        }\n"
+            + "      }\n"
+            + "    }\n"
+            + "  }\n"
+            + "}";
+
+        Request createIndexRequest = new Request("PUT", "/" + TEST_INDEX);
+        createIndexRequest.setJsonEntity(mappingJson);
+        Response response = client().performRequest(createIndexRequest);
+        assertEquals(200, response.getStatusLine().getStatusCode());
+        logger.info("Created test index with proper mapping");
     }
 
     /**

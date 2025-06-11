@@ -28,8 +28,14 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
             }
         }
         defaultExporterSettings();// Enabling Local index Setting
-        performSearch();
         setLatencyWindowSize("1m");
+
+        // Perform multiple searches to ensure query insights data is collected
+        for (int i = 0; i < 5; i++) {
+            performSearch();
+            Thread.sleep(2000); // Small delay between searches
+        }
+
         Thread.sleep(70000); // Allow time for export to local index
         checkLocalIndices();
         checkQueryInsightsIndexTemplate();
