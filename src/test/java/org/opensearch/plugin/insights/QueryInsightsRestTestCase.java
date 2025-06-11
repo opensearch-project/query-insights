@@ -510,10 +510,14 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         String searchJson = "{ \"query\": { \"match\": { \"title\": \"Test Document\" } } }";
         Request req = new Request("POST", "/my-index-0/_search?size=20");
         req.setJsonEntity(searchJson);
-        Response response = client().performRequest(req);
-        Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-        String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-        Assert.assertTrue("Expected search result for title", content.contains("\"Test Document\""));
+
+        // Use first node client to ensure consistent node targeting in multi-node setup
+        try (RestClient firstNodeClient = getFirstNodeClient()) {
+            Response response = firstNodeClient.performRequest(req);
+            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+            String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            Assert.assertTrue("Expected search result for title", content.contains("\"Test Document\""));
+        }
     }
 
     protected void setLatencyWindowSize(String size) throws IOException {

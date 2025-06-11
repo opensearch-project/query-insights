@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.action.top_queries;
 
 import java.io.IOException;
+import org.opensearch.Version;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -34,10 +35,17 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     public TopQueriesRequest(final StreamInput in) throws IOException {
         super(in);
         this.metricType = MetricType.readFromStream(in);
-        this.from = in.readOptionalString();
-        this.to = in.readOptionalString();
-        this.id = in.readOptionalString();
-        this.verbose = in.readOptionalBoolean();
+        if (in.getVersion().onOrAfter(Version.V_3_1_0)) {
+            this.from = in.readOptionalString();
+            this.to = in.readOptionalString();
+            this.id = in.readOptionalString();
+            this.verbose = in.readOptionalBoolean();
+        } else {
+            this.from = null;
+            this.to = null;
+            this.id = null;
+            this.verbose = null;
+        }
     }
 
     /**
@@ -111,9 +119,11 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeString(metricType.toString());
-        out.writeOptionalString(from);
-        out.writeOptionalString(to);
-        out.writeOptionalString(id);
-        out.writeOptionalBoolean(verbose);
+        if (out.getVersion().onOrAfter(Version.V_3_1_0)) {
+            out.writeOptionalString(from);
+            out.writeOptionalString(to);
+            out.writeOptionalString(id);
+            out.writeOptionalBoolean(verbose);
+        }
     }
 }
