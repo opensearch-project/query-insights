@@ -15,8 +15,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class IndexedPriorityQueue<K, V> {
+
+    private static final Logger logger = LogManager.getLogger(IndexedPriorityQueue.class);
 
     public static class Entry<K, V> {
         public final K key;
@@ -45,11 +49,15 @@ public class IndexedPriorityQueue<K, V> {
     public boolean insert(K key, V value) {
         write.lock();
         try {
-            if (indexMap.containsKey(key)) return false;
+            if (indexMap.containsKey(key)) {
+                logger.debug("Key {} already exists in queue, skipping insert", key);
+                return false;
+            }
             heap.add(new Entry<>(key, value));
             int idx = heap.size() - 1;
             indexMap.put(key, idx);
             siftUp(idx);
+            logger.debug("Successfully inserted key {} at index {}", key, idx);
             return true;
         } finally {
             write.unlock();
@@ -60,17 +68,44 @@ public class IndexedPriorityQueue<K, V> {
         write.lock();
         try {
             Integer idx = indexMap.remove(key);
-            if (idx == null) return false;
+            if (idx == null) {
+                logger.debug("Key {} not found in queue, nothing to remove", key);
+                return false;
+            }
 
             int lastIdx = heap.size() - 1;
             if (idx != lastIdx) {
                 Entry<K, V> lastItem = heap.get(lastIdx);
                 heap.set(idx, lastItem);
                 indexMap.put(lastItem.key, idx);
-                siftDown(idx);
-                siftUp(idx);
+
+                boolean needSiftUp = false;
+                boolean needSiftDown = false;
+
+                if (idx > 0) {
+                    int parentIdx = (idx - 1) >>> 1;
+                    if (comparator.compare(lastItem.value, heap.get(parentIdx).value) < 0) {
+                        needSiftUp = true;
+                    }
+                }
+
+                if (!needSiftUp && idx < heap.size() >>> 1) {
+                    int left = (idx << 1) + 1;
+                    if (comparator.compare(lastItem.value, heap.get(left).value) > 0) {
+                        needSiftDown = true;
+                    } else if (left + 1 < heap.size() && comparator.compare(lastItem.value, heap.get(left + 1).value) > 0) {
+                        needSiftDown = true;
+                    }
+                }
+
+                if (needSiftUp) {
+                    siftUp(idx);
+                } else if (needSiftDown) {
+                    siftDown(idx);
+                }
             }
             heap.remove(lastIdx);
+            logger.debug("Successfully removed key {} from index {}", key, idx);
             return true;
         } finally {
             write.unlock();
