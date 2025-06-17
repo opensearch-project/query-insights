@@ -31,7 +31,7 @@ buildscript {
   configurations.all {
     resolutionStrategy.eachDependency { DependencyResolveDetails details ->
       if (details.requested.group == 'org.apache.httpcomponents.client5' && details.requested.name == 'httpclient5') {
-        details.useVersion '5.4.3'
+        details.useVersion '5.4.4'
       }
     }
   }
