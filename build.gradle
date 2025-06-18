@@ -31,6 +31,7 @@ buildscript {
   }
   configurations.all {
     resolutionStrategy {
+
       // Force known safe versions
       force("org.apache.httpcomponents.client5:httpclient5:5.4.4")
       force("org.apache.httpcomponents:httpcore:5.3.4")
@@ -316,6 +317,10 @@ testClusters.all {
     testDistribution = "INTEG_TEST"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
+}
+
+testClusters.integTest {
+    numberOfNodes = 2
 }
 
 run {

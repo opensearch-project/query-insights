@@ -175,6 +175,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         Request searchTest = new Request("GET", "/" + indexName + "/_search");
         searchTest.setJsonEntity("{ \"query\": { \"match_all\": {} } }");
         Response searchResp = client().performRequest(searchTest);
+        Assert.assertEquals(200, searchResp.getStatusLine().getStatusCode());
 
     }
 
