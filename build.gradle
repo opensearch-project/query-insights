@@ -6,6 +6,7 @@ import java.nio.file.Paths
 import java.util.concurrent.Callable
 import java.util.stream.Collectors
 
+
 buildscript {
   ext {
     opensearch_version = System.getProperty("opensearch.version", "3.1.0-SNAPSHOT")
@@ -29,12 +30,22 @@ buildscript {
     maven { url "https://plugins.gradle.org/m2/" }
   }
   configurations.all {
+    resolutionStrategy {
+      force 'org.apache.httpcomponents.client5:httpclient5:5.4.3'
+    }
+  }
+
+  configurations.all {
     resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-      if (details.requested.group == 'org.apache.httpcomponents.client5' && details.requested.name == 'httpclient5') {
-        details.useVersion '5.4.4'
+      if (details.requested.group == 'commons-beanutils') {
+        details.useVersion '1.11.0'
+      }
+      if (details.requested.group == 'org.apache.commons' && details.requested.name == 'commons-beanutils2') {
+        details.useVersion '2.0.0-M2'
       }
     }
   }
+
 
   dependencies {
     classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
