@@ -73,6 +73,7 @@ configurations.all {
       }
     }
   }
+}
 
 apply plugin: 'java'
 apply plugin: 'idea'
