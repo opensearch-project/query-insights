@@ -45,12 +45,6 @@ plugins {
 
 configurations.all {
   resolutionStrategy {
-    force("org.apache.httpcomponents.client5:httpclient5:5.4.4")
-    force("org.apache.httpcomponents:httpcore:5.3.4")
-    force("org.apache.httpcomponents.core5:httpcore5-h2:5.3.4")
-    force("commons-beanutils:commons-beanutils:1.11.0")
-    force("org.apache.commons:commons-beanutils2:2.0.0-M2")
-
     eachDependency { DependencyResolveDetails details ->
       if (details.requested.group == 'org.apache.httpcomponents.client5' &&
         details.requested.name == 'httpclient5') {
