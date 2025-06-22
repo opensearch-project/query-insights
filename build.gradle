@@ -318,14 +318,13 @@ testClusters.all {
     testDistribution = "INTEG_TEST"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
-//    def ruleFrameworkFile = file("plugins/rule-framework-${opensearch_version}.zip")
-    def ruleFrameworkFile = file("plugins/rule-framework-3.2.0-SNAPSHOT.zip")
+    def ruleFrameworkFile = file("plugins/rule-framework-${opensearch_version}.zip")
     if (ruleFrameworkFile.exists()) {
       println "Using rule-framework plugin from: ${ruleFrameworkFile}"
       plugin(objects.fileProperty().fileValue(ruleFrameworkFile))
     }
 
-    def wlmPluginFile = file("plugins/workload-management-3.2.0-SNAPSHOT.zip")
+    def wlmPluginFile = file("plugins/workload-management-${opensearch_version}.zip")
     if (wlmPluginFile.exists()) {
       println "Using WLM plugin from: ${wlmPluginFile}"
       plugin(objects.fileProperty().fileValue(wlmPluginFile))
