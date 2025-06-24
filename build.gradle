@@ -318,6 +318,21 @@ testClusters.all {
     testDistribution = "INTEG_TEST"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
+
+    // This installs plugins needed for WLM cypress tests into the testClusters
+    def ruleFrameworkFile = file("plugins/rule-framework-${opensearch_version}.zip")
+    if (ruleFrameworkFile.exists()) {
+      logger.lifecycle("Using rule-framework plugin from: ${ruleFrameworkFile}")
+      plugin(objects.fileProperty().fileValue(ruleFrameworkFile))
+    }
+
+    def wlmPluginFile = file("plugins/workload-management-${opensearch_version}.zip")
+    if (wlmPluginFile.exists()) {
+      logger.lifecycle("Using WLM plugin from: ${wlmPluginFile}")
+      plugin(objects.fileProperty().fileValue(wlmPluginFile))
+    } else {
+      logger.warn("WLM plugin not found at ${wlmPluginFile}")
+    }
 }
 
 testClusters.integTest {
