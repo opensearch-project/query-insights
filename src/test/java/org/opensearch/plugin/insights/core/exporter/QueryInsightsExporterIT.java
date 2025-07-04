@@ -32,7 +32,7 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
         // Perform multiple searches to ensure query insights data is collected
         for (int i = 0; i < 5; i++) {
-            performSearch();
+            performSearch(5);
             Thread.sleep(2000); // Small delay between searches
         }
 

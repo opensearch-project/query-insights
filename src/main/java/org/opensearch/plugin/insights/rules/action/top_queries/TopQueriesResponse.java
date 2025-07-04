@@ -114,6 +114,7 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
         final List<SearchQueryRecord> all_records = results.stream()
             .map(TopQueries::getTopQueriesRecord)
             .flatMap(Collection::stream)
+            // sort again to combine historical + in memory records
             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
             .collect(Collectors.toList());
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
