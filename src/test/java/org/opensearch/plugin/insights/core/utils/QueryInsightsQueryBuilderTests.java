@@ -8,6 +8,8 @@
 
 package org.opensearch.plugin.insights.core.utils;
 
+import static org.opensearch.plugin.insights.rules.model.Measurement.NUMBER;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.MEASUREMENTS;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
 
 import java.time.ZoneOffset;
@@ -22,6 +24,8 @@ import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.search.sort.SortBuilders;
+import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -255,6 +259,9 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
 
         // Verify sorting is configured
         assertNotNull(sourceBuilder.sorts());
+        assertTrue(
+            sourceBuilder.sorts().contains(SortBuilders.fieldSort(MEASUREMENTS + "." + metricType + "." + NUMBER).order(SortOrder.DESC))
+        );
         assertFalse(sourceBuilder.sorts().isEmpty());
     }
 
@@ -309,6 +316,9 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         }
 
         assertTrue("Should find range query for timestamp field", foundRangeQuery);
+        assertTrue(
+            sourceBuilder.sorts().contains(SortBuilders.fieldSort(MEASUREMENTS + "." + metricType + "." + NUMBER).order(SortOrder.DESC))
+        );
     }
 
     public void testBuildTopNSearchRequestWithSameStartAndEndTime() {
@@ -354,6 +364,9 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         }
 
         assertTrue("Should find range query for timestamp field", foundRangeQuery);
+        assertTrue(
+            sourceBuilder.sorts().contains(SortBuilders.fieldSort(MEASUREMENTS + "." + metricType + "." + NUMBER).order(SortOrder.DESC))
+        );
     }
 
     public void testBuildTopNSearchRequestWithCachingEnabled() {

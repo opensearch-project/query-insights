@@ -7,31 +7,55 @@
  */
 package org.opensearch.plugin.insights.core.reader;
 
+import static org.opensearch.plugin.insights.rules.model.Measurement.NUMBER;
+
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.ResponseException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 
 public class QueryInsightsReaderIT extends QueryInsightsRestTestCase {
 
-    public void testQueryInsightsHistoricalTopQueriesRead() throws IOException, InterruptedException {
+    public void testHistoricalTopQueriesRead() throws IOException, InterruptedException {
         try {
             createDocument();
             defaultExporterSettings();
             setLatencyWindowSize("1m");
-            performSearch();
+            performSearch(5);
             Thread.sleep(80000);
             checkLocalIndices();
-            List<String[]> allPairs = fetchHistoricalTopQueries("null", "null", "null");
-            assertFalse("Expected at least one top query", allPairs.isEmpty());
+            List<String[]> allPairs = fetchHistoricalTopQueriesIds("null", "null", "null");
+            assertTrue("Expected at least one top query", allPairs.size() >= 2);
             String selectedId = allPairs.get(0)[0];
             String selectedNodeId = allPairs.get(0)[1];
-            List<String[]> filteredPairs = fetchHistoricalTopQueries(selectedId, "null", "null");
-            List<String[]> filteredPairs1 = fetchHistoricalTopQueries("null", selectedNodeId, "null");
-            List<String[]> filteredPairs2 = fetchHistoricalTopQueries(selectedId, selectedNodeId, "null");
-            List<String[]> filteredPairs3 = fetchHistoricalTopQueries(selectedId, selectedNodeId, "latency");
+            fetchHistoricalTopQueriesIds(selectedId, "null", "null");
+            fetchHistoricalTopQueriesIds("null", selectedNodeId, "null");
+            fetchHistoricalTopQueriesIds(selectedId, selectedNodeId, "null");
+            fetchHistoricalTopQueriesIds(selectedId, selectedNodeId, "latency");
 
+            // Test sort by each metric type
+            for (MetricType metricType : MetricType.allMetricTypes()) {
+                List<Map<String, Object>> topQueries = fetchHistoricalTopQueries(null, null, metricType.toString());
+                assertTrue("Expected at least two top queries", topQueries.size() >= 2);
+                int prevValue = Integer.MAX_VALUE;
+                for (Map<String, Object> query : topQueries) {
+                    Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
+                    Assert.assertNotNull("Expected non-null measurements", measurements);
+                    Map<String, Object> singleMeasurement = (Map<String, Object>) measurements.get(
+                        metricType.toString().toLowerCase(Locale.ROOT)
+                    );
+                    Assert.assertNotNull("Expected non-null singleMeasurement", singleMeasurement);
+                    int value = (int) singleMeasurement.get(NUMBER);
+                    Assert.assertNotNull("Expected non-null measurement number", value);
+                    assertTrue(value <= prevValue);
+                    prevValue = value; // verify records are in descending order
+                }
+            }
         } catch (Exception e) {
             fail("Test failed with exception: " + e.getMessage());
         } finally {

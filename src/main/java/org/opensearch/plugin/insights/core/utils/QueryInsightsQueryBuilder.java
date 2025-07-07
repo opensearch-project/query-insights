@@ -30,6 +30,7 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.SortBuilders;
 import org.opensearch.search.sort.SortOrder;
+import reactor.util.annotation.NonNull;
 
 /**
  * Utility class for building search queries for Query Insights operations.
@@ -38,8 +39,7 @@ import org.opensearch.search.sort.SortOrder;
  */
 public final class QueryInsightsQueryBuilder {
 
-    private static final int MAX_TOP_N_INDEX_READ_SIZE = 50;
-    private static final String MEASUREMENTS_LATENCY_NUMBER = MEASUREMENTS + "." + MetricType.LATENCY + "." + NUMBER;
+    private static final int MAX_TOP_N_INDEX_READ_SIZE = 500;
 
     private QueryInsightsQueryBuilder() {}
 
@@ -135,7 +135,7 @@ public final class QueryInsightsQueryBuilder {
         final ZonedDateTime end,
         final String id,
         final Boolean verbose,
-        final MetricType metricType
+        @NonNull final MetricType metricType
     ) {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
 
@@ -151,8 +151,8 @@ public final class QueryInsightsQueryBuilder {
             );
         }
 
-        // Add sorting by latency in descending order
-        searchSourceBuilder.sort(SortBuilders.fieldSort(MEASUREMENTS_LATENCY_NUMBER).order(SortOrder.DESC));
+        // Add sorting by requested metric type in descending order
+        searchSourceBuilder.sort(SortBuilders.fieldSort(MEASUREMENTS + "." + metricType + "." + NUMBER).order(SortOrder.DESC));
 
         return searchSourceBuilder;
     }
