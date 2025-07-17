@@ -6,6 +6,7 @@ import java.nio.file.Paths
 import java.util.concurrent.Callable
 import java.util.stream.Collectors
 
+
 buildscript {
   ext {
     opensearch_version = System.getProperty("opensearch.version", "2.19.3-SNAPSHOT")
@@ -39,6 +40,32 @@ plugins {
   id "de.undercouch.download" version "5.3.0"
   id 'com.diffplug.spotless' version '6.25.0'
   id 'checkstyle'
+}
+
+configurations.all {
+  resolutionStrategy {
+    eachDependency { DependencyResolveDetails details ->
+      if (details.requested.group == 'org.apache.httpcomponents.client5' &&
+        details.requested.name == 'httpclient5') {
+        details.useVersion '5.4.4'
+      }
+      if (details.requested.group == 'org.apache.httpcomponents.core5' &&
+        details.requested.name == 'httpcore5-h2') {
+        details.useVersion '5.3.4'
+      }
+      if (details.requested.group == 'org.apache.httpcomponents.core5' &&
+        details.requested.name == 'httpcore5') {
+        details.useVersion '5.3.4'
+      }
+      if (details.requested.group == 'commons-beanutils') {
+        details.useVersion '1.11.0'
+      }
+      if (details.requested.group == 'org.apache.commons' &&
+        details.requested.name == 'commons-beanutils2') {
+        details.useVersion '2.0.0-M2'
+      }
+    }
+  }
 }
 
 apply plugin: 'java'
