@@ -11,10 +11,10 @@ package org.opensearch.plugin.insights.core.service.grouper;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
 
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.plugin.insights.core.utils.IndexedPriorityQueue;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -58,14 +58,14 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     /**
      * Min heap to keep track of the Top N query groups and is passed from TopQueriesService as the topQueriesStore
      */
-    private final PriorityBlockingQueue<SearchQueryRecord> minHeapTopQueriesStore;
+    private final IndexedPriorityQueue<String, SearchQueryRecord> minHeapTopQueriesStore;
     /**
      * The Max heap is an overflow data structure used to manage records that exceed the capacity of the Min heap.
      * It stores all records not included in the Top N query results. When the aggregate measurement for one of these
      * records is updated and it now qualifies as part of the Top N, the record is moved from the Max heap to the Min heap,
      * and the records are rearranged accordingly.
      */
-    private final PriorityBlockingQueue<SearchQueryRecord> maxHeapQueryStore;
+    private final IndexedPriorityQueue<String, SearchQueryRecord> maxHeapQueryStore;
 
     /**
      * Top N size based on the configuration set
@@ -84,7 +84,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         final MetricType metricType,
         final GroupingType groupingType,
         final AggregationType aggregationType,
-        final PriorityBlockingQueue<SearchQueryRecord> topQueriesStore,
+        final IndexedPriorityQueue<String, SearchQueryRecord> topQueriesStore,
         final int topNSize
     ) {
         this.groupingType = groupingType;
@@ -94,7 +94,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         this.minHeapTopQueriesStore = topQueriesStore;
         this.topNSize = topNSize;
         this.maxGroups = QueryInsightsSettings.DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT;
-        this.maxHeapQueryStore = new PriorityBlockingQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
+        this.maxHeapQueryStore = new IndexedPriorityQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
     }
 
     /**
@@ -137,9 +137,9 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();
             boolean isPresentInMinPQ = groupIdToAggSearchQueryRecord.get(groupId).v2();
             if (isPresentInMinPQ) {
-                minHeapTopQueriesStore.remove(aggregateSearchQueryRecord);
+                minHeapTopQueriesStore.remove(groupId);
             } else {
-                maxHeapQueryStore.remove(aggregateSearchQueryRecord);
+                maxHeapQueryStore.remove(groupId);
             }
             addAndPromote(searchQueryRecord, aggregateSearchQueryRecord, groupId);
         }
@@ -207,7 +207,7 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     }
 
     private void addToMinPQ(final SearchQueryRecord searchQueryRecord, final String groupId) {
-        minHeapTopQueriesStore.add(searchQueryRecord);
+        minHeapTopQueriesStore.insert(searchQueryRecord.getGroupingId(), searchQueryRecord);
         groupIdToAggSearchQueryRecord.put(groupId, new Tuple<>(searchQueryRecord, true));
         overflow();
     }
@@ -223,17 +223,21 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         if (maxHeapQueryStore.isEmpty()) {
             return;
         }
-        if (SearchQueryRecord.compare(maxHeapQueryStore.peek(), minHeapTopQueriesStore.peek(), metricType) > 0) {
-            SearchQueryRecord recordMovedFromMaxToMin = maxHeapQueryStore.poll();
-            addToMinPQ(recordMovedFromMaxToMin, recordMovedFromMaxToMin.getGroupingId());
+        IndexedPriorityQueue.Entry<String, SearchQueryRecord> maxPeek = maxHeapQueryStore.peek();
+        IndexedPriorityQueue.Entry<String, SearchQueryRecord> minPeek = minHeapTopQueriesStore.peek();
+        if (maxPeek != null && minPeek != null && SearchQueryRecord.compare(maxPeek.value, minPeek.value, metricType) > 0) {
+            IndexedPriorityQueue.Entry<String, SearchQueryRecord> entryMovedFromMaxToMin = maxHeapQueryStore.pollEntry();
+            addToMinPQ(entryMovedFromMaxToMin.value, entryMovedFromMaxToMin.key);
         }
     }
 
     private void overflow() {
         if (minHeapTopQueriesStore.size() > topNSize) {
-            SearchQueryRecord recordMovedFromMinToMax = minHeapTopQueriesStore.poll();
-            maxHeapQueryStore.add(recordMovedFromMinToMax);
-            groupIdToAggSearchQueryRecord.put(recordMovedFromMinToMax.getGroupingId(), new Tuple<>(recordMovedFromMinToMax, false));
+            IndexedPriorityQueue.Entry<String, SearchQueryRecord> movedEntry = minHeapTopQueriesStore.pollEntry();
+            if (movedEntry != null) {
+                maxHeapQueryStore.insert(movedEntry.key, movedEntry.value);
+                groupIdToAggSearchQueryRecord.put(movedEntry.key, new Tuple<>(movedEntry.value, false));
+            }
         }
     }
 
