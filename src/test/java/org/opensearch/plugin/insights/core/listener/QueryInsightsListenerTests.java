@@ -310,7 +310,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         boolean shouldEnable = latencyValues.get(0) || cpuValues.get(0) || memoryValues.get(0) || metricsEnabledValues.get(0);
 
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, shouldEnable);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, null, shouldEnable);
 
         // Configure the mock to return multiple values in sequence for the various metrics
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(

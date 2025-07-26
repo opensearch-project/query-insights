@@ -109,6 +109,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String TOP_N_QUERY = "top_n_query";
     /**
+     * Query structure features for ML model training
+     */
+    public static final String QUERY_FEATURES = "query_features";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -334,6 +338,40 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             metricTypeMap.put(metricName, parser.booleanValue());
                         }
                         attributes.put(Attribute.TOP_N_QUERY, metricTypeMap);
+                        break;
+                    case QUERY_FEATURES:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        Map<String, Object> queryFeatures = new HashMap<>();
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String featureName = parser.currentName();
+                            parser.nextToken();
+                            switch (parser.currentToken()) {
+                                case VALUE_NULL:
+                                    queryFeatures.put(featureName, null);
+                                    break;
+                                case VALUE_STRING:
+                                    queryFeatures.put(featureName, parser.text());
+                                    break;
+                                case VALUE_NUMBER:
+                                    queryFeatures.put(featureName, parser.numberValue());
+                                    break;
+                                case VALUE_BOOLEAN:
+                                    queryFeatures.put(featureName, parser.booleanValue());
+                                    break;
+                                case START_OBJECT:
+                                    // Skip nested objects for now
+                                    parser.skipChildren();
+                                    break;
+                                case START_ARRAY:
+                                    // Skip arrays for now
+                                    parser.skipChildren();
+                                    break;
+                                default:
+                                    // Skip other types
+                                    break;
+                            }
+                        }
+                        attributes.put(Attribute.QUERY_FEATURES, queryFeatures);
                         break;
                     default:
                         break;

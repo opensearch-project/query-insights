@@ -92,7 +92,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsExporterFactory(client, clusterService),
             new QueryInsightsReaderFactory(client)
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, false));
+        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, client, false));
     }
 
     @Override
