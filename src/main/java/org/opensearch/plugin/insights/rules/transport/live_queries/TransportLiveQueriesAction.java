@@ -34,7 +34,7 @@ import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
-
+import static org.opensearch.plugin.insights.core.listener.QueryInsightsListener.DEFAULT_QUERY_GROUP_ID_SUPPLIER;
 /**
  * Transport action for fetching ongoing live queries
  */
@@ -99,14 +99,22 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         if (request.isVerbose()) {
                             attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
                             attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
+                            String queryGroupId=taskInfo.getHeaders().get("queryGroupId");
+                            if (queryGroupId == null) {
+                                queryGroupId = DEFAULT_QUERY_GROUP_ID_SUPPLIER.get();
+                            }
+                            attributes.put(Attribute.QUERY_GROUP_ID, queryGroupId);
                         }
-
                         SearchQueryRecord record = new SearchQueryRecord(
                             timestamp,
                             measurements,
                             attributes,
                             taskInfo.getTaskId().toString()
                         );
+
+                        if (request.getWlmGroup() != null && !request.getWlmGroup().equals(attributes.get(Attribute.QUERY_GROUP_ID))) {
+                            continue;
+                        }
                         allFilteredRecords.add(record);
                     }
 

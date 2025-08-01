@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -67,6 +68,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
+    public static final Supplier<String> DEFAULT_QUERY_GROUP_ID_SUPPLIER = () -> "DEFAULT_WORKLOAD_GROUP";
 
     /**
      * Constructor for QueryInsightsListener
@@ -291,6 +293,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         );
 
         final SearchRequest request = context.getRequest();
+
         try {
             Map<MetricType, Measurement> measurements = new HashMap<>();
             measurements.put(
@@ -320,6 +323,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
+            String queryGroupId = searchTask.getWorkloadGroupId();
+            attributes.put(Attribute.QUERY_GROUP_ID, queryGroupId);
 
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
