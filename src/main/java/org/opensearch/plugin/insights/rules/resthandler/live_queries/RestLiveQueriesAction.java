@@ -1,3 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+
 package org.opensearch.plugin.insights.rules.resthandler.live_queries;
 
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.LIVE_QUERIES_BASE_URI;
@@ -24,10 +32,14 @@ import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestResponseListener;
 import org.opensearch.transport.client.node.NodeClient;
 
+/**
+    * Rest action to get ongoing live queries
+ */
 public class RestLiveQueriesAction extends BaseRestHandler {
-    static final Set<String> ALLOWED_METRICS =
-        MetricType.allMetricTypes().stream().map(MetricType::toString).collect(Collectors.toSet());
-
+    static final Set<String> ALLOWED_METRICS = MetricType.allMetricTypes().stream().map(MetricType::toString).collect(Collectors.toSet());
+    /**
+     * Constructor for RestLiveQueriesAction
+     */
     public RestLiveQueriesAction() {}
 
     @Override

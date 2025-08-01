@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -68,7 +67,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
-    public static final Supplier<String> DEFAULT_QUERY_GROUP_ID_SUPPLIER = () -> "DEFAULT_WORKLOAD_GROUP";
 
     /**
      * Constructor for QueryInsightsListener
@@ -293,7 +291,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         );
 
         final SearchRequest request = context.getRequest();
-
         try {
             Map<MetricType, Measurement> measurements = new HashMap<>();
             measurements.put(

@@ -26,7 +26,8 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         int size = 5;
         String[] nodeIds = new String[] { "nodeA", "nodeB", "nodeC" };
 
-        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds);
+
+        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
 
         BytesStreamOutput out = new BytesStreamOutput();
         originalRequest.writeTo(out);
@@ -65,7 +66,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         int size = 50;
         String[] nodeIds = { "node1", "node2" };
 
-        LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeId, wlmGroup);
+        LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
 
         assertTrue(request.isVerbose());
         assertEquals(MetricType.CPU, request.getSortBy());
