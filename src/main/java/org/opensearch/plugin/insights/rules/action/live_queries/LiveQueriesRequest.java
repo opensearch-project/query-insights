@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.action.live_queries;
 
 import java.io.IOException;
+import org.opensearch.Version;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -27,6 +28,7 @@ public class LiveQueriesRequest extends ActionRequest {
     private final int size;
     // Node IDs to filter queries by
     private final String[] nodeIds;
+    private String wlmGroupId;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -40,6 +42,9 @@ public class LiveQueriesRequest extends ActionRequest {
         this.sortBy = MetricType.readFromStream(in);
         this.size = in.readInt();
         this.nodeIds = in.readStringArray();
+        if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
+            this.wlmGroupId = in.readOptionalString();
+        }
     }
 
     /**
@@ -51,11 +56,12 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param size maximum number of results
      * @param nodeIds The node IDs specified in the request
      */
-    public LiveQueriesRequest(final boolean verbose, final MetricType sortBy, final int size, final String... nodeIds) {
+    public LiveQueriesRequest(final boolean verbose, final MetricType sortBy, final int size, final String[] nodeIds, String wlmGroupId) {
         this.verbose = verbose;
         this.sortBy = sortBy;
         this.size = size;
         this.nodeIds = nodeIds;
+        this.wlmGroupId = wlmGroupId;
     }
 
     /**
@@ -64,7 +70,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds the node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final String... nodeIds) {
-        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds);
+        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null);
     }
 
     /**
@@ -97,6 +103,14 @@ public class LiveQueriesRequest extends ActionRequest {
         return nodeIds;
     }
 
+    /**
+     * Get Wlm Group to filter by
+     * @return array of node IDs
+     */
+    public String getWlmGroupId() {
+        return wlmGroupId;
+    }
+
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -104,6 +118,9 @@ public class LiveQueriesRequest extends ActionRequest {
         MetricType.writeTo(out, sortBy);
         out.writeInt(size);
         out.writeStringArray(nodeIds);
+        if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
+            out.writeOptionalString(wlmGroupId);
+        }
     }
 
     @Override

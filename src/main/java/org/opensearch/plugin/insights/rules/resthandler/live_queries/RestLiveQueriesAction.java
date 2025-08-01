@@ -33,7 +33,7 @@ import org.opensearch.rest.action.RestResponseListener;
 import org.opensearch.transport.client.node.NodeClient;
 
 /**
- * Rest action to get ongoing live queries
+    * Rest action to get ongoing live queries
  */
 public class RestLiveQueriesAction extends BaseRestHandler {
     static final Set<String> ALLOWED_METRICS = MetricType.allMetricTypes().stream().map(MetricType::toString).collect(Collectors.toSet());
@@ -64,6 +64,8 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final boolean verbose = request.paramAsBoolean("verbose", true);
         final String sortParam = request.param("sort", MetricType.LATENCY.toString());
+        final String wlmGroupId = request.param("wlmGroupId", null);
+
         if (!ALLOWED_METRICS.contains(sortParam)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid sort metric type [%s]", request.path(), sortParam)
@@ -76,7 +78,7 @@ public class RestLiveQueriesAction extends BaseRestHandler {
                 String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
             );
         }
-        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds);
+        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId);
     }
 
     @Override

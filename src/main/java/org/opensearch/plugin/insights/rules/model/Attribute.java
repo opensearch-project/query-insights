@@ -75,6 +75,11 @@ public enum Attribute {
     TOP_N_QUERY,
 
     /**
+     * The WLM query group ID associated with the query.
+     */
+    WLM_GROUP_ID,
+
+    /**
      * The cancelled of the search query, often used in live queries.
      */
     IS_CANCELLED;
