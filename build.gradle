@@ -48,6 +48,7 @@ apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.rest-test'
 apply plugin: 'opensearch.repositories'
+apply plugin: 'jacoco'
 
 def pluginName = 'query-insights'
 def pluginDescription = 'OpenSearch Query Insights plugin'
@@ -309,6 +310,14 @@ testClusters.all {
 
 run {
   useCluster testClusters.integTest
+}
+
+jacocoTestReport {
+  dependsOn integTest, test
+  reports {
+    xml.required = true
+    html.required = true
+  }
 }
 
 check.dependsOn spotlessCheck
