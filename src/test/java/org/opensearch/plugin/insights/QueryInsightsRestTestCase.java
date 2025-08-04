@@ -504,7 +504,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Assert.assertEquals(201, response.getStatusLine().getStatusCode());
     }
 
-    protected void performSearch() throws IOException, InterruptedException {
+    protected void performSearch(int n) throws IOException, InterruptedException {
         Thread.sleep(5000);
 
         String searchJson = "{ \"query\": { \"match\": { \"title\": \"Test Document\" } } }";
@@ -513,10 +513,12 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
         // Use first node client to ensure consistent node targeting in multi-node setup
         try (RestClient firstNodeClient = getFirstNodeClient()) {
-            Response response = firstNodeClient.performRequest(req);
-            Assert.assertEquals(200, response.getStatusLine().getStatusCode());
-            String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-            Assert.assertTrue("Expected search result for title", content.contains("\"Test Document\""));
+            for (int i = 0; i < n; i++) {
+                Response response = firstNodeClient.performRequest(req);
+                Assert.assertEquals(200, response.getStatusLine().getStatusCode());
+                String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                Assert.assertTrue("Expected search result for title", content.contains("\"Test Document\""));
+            }
         }
     }
 
@@ -723,14 +725,11 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             "{ \"persistent\" : { \"search.insights.top_queries.exporter.type\" : local_index, \"search.insights.top_queries.exporter.config.index\" : \"1a2b\" } }" };
     }
 
-    protected List<String[]> fetchHistoricalTopQueries(String ID, String NODEID, String Type) throws IOException {
+    protected List<Map<String, Object>> fetchHistoricalTopQueries(String filterId, String filterNodeID, String type) throws IOException {
+
         String to = formatter.format(Instant.now());
         String from = formatter.format(Instant.now().minusSeconds(9600)); // Default 160 minutes
-        return fetchHistoricalTopQueries(from, to, ID, NODEID, Type);
-    }
 
-    protected List<String[]> fetchHistoricalTopQueries(String from, String to, String filterId, String filterNodeID, String type)
-        throws IOException {
         String endpoint = "/_insights/top_queries?from=" + from + "&to=" + to;
 
         if (filterId != null && !filterId.equals("null")) {
@@ -759,66 +758,64 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             Map<String, Object> root = parser.map();
             List<Map<String, Object>> topQueries = (List<Map<String, Object>>) root.get("top_queries");
             assertNotNull("Expected 'top_queries' field", topQueries);
-            assertFalse("Expected at least one top query", topQueries.isEmpty());
 
-            boolean matchFound = false;
+            return topQueries;
+        }
+    }
 
-            boolean idMismatchFound = false;
-            boolean nodeIdMismatchFound = false;
+    protected List<String[]> fetchHistoricalTopQueriesIds(String filterId, String filterNodeID, String type) throws IOException {
 
-            List<String[]> idNodePairs = new ArrayList<>();
+        List<Map<String, Object>> topQueries = fetchHistoricalTopQueries(filterId, filterNodeID, type);
+        assertFalse("Expected at least one top query", topQueries.isEmpty());
 
-            for (Map<String, Object> query : topQueries) {
-                Assert.assertTrue(query.containsKey("timestamp"));
+        boolean idMismatchFound = false;
+        boolean nodeIdMismatchFound = false;
 
-                List<?> indices = (List<?>) query.get("indices");
-                Assert.assertNotNull("Expected 'indices' field", indices);
-                String id = (String) query.get("id");
-                String nodeId = (String) query.get("node_id");
+        List<String[]> idNodePairs = new ArrayList<>();
 
-                if (filterId != null && !filterId.equals("null") && !filterId.equals(id)) {
-                    idMismatchFound = true;
-                }
-                if (filterNodeID != null && !filterNodeID.equals("null") && !filterNodeID.equals(nodeId)) {
-                    nodeIdMismatchFound = true;
-                }
-                idNodePairs.add(new String[] { id, nodeId });
+        for (Map<String, Object> query : topQueries) {
+            Assert.assertTrue(query.containsKey("timestamp"));
 
-                Map<String, Object> source = (Map<String, Object>) query.get("source");
-                Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
-                Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
-                Map<String, Object> title = (Map<String, Object>) match.get("title");
-                List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
-                Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
-                for (Map<String, Object> task : taskUsages) {
-                    Assert.assertTrue("Missing action", task.containsKey("action"));
-                    Map<String, Object> usage = (Map<String, Object>) task.get("taskResourceUsage");
-                    Assert.assertNotNull("Missing cpu_time_in_nanos", usage.get("cpu_time_in_nanos"));
-                    Assert.assertNotNull("Missing memory_in_bytes", usage.get("memory_in_bytes"));
-                }
+            List<?> indices = (List<?>) query.get("indices");
+            Assert.assertNotNull("Expected 'indices' field", indices);
+            String id = (String) query.get("id");
+            String nodeId = (String) query.get("node_id");
 
-                Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
-                Assert.assertNotNull("Expected measurements", measurements);
-                Assert.assertTrue(measurements.containsKey("cpu"));
-                Assert.assertTrue(measurements.containsKey("memory"));
-                Assert.assertTrue(measurements.containsKey("latency"));
+            if (filterId != null && !filterId.equals("null") && !filterId.equals(id)) {
+                idMismatchFound = true;
+            }
+            if (filterNodeID != null && !filterNodeID.equals("null") && !filterNodeID.equals(nodeId)) {
+                nodeIdMismatchFound = true;
+            }
+            idNodePairs.add(new String[] { id, nodeId });
+
+            Map<String, Object> source = (Map<String, Object>) query.get("source");
+            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+            Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+            Map<String, Object> title = (Map<String, Object>) match.get("title");
+            List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
+            Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
+            for (Map<String, Object> task : taskUsages) {
+                Assert.assertTrue("Missing action", task.containsKey("action"));
+                Map<String, Object> usage = (Map<String, Object>) task.get("taskResourceUsage");
+                Assert.assertNotNull("Missing cpu_time_in_nanos", usage.get("cpu_time_in_nanos"));
+                Assert.assertNotNull("Missing memory_in_bytes", usage.get("memory_in_bytes"));
             }
 
-            if (filterId != null && !filterId.equals("null")) {
-                Assert.assertFalse("One or more IDs did not match the filterId", idMismatchFound);
-            }
-            if (filterNodeID != null && !filterNodeID.equals("null")) {
-                assertFalse("One or more node IDs did not match the filterNodeID", nodeIdMismatchFound);
-            }
-
-            return idNodePairs;
-
+            Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
+            Assert.assertNotNull("Expected measurements", measurements);
+            Assert.assertTrue(measurements.containsKey("cpu"));
+            Assert.assertTrue(measurements.containsKey("memory"));
+            Assert.assertTrue(measurements.containsKey("latency"));
         }
 
-    }
+        if (filterId != null && !filterId.equals("null")) {
+            Assert.assertFalse("One or more IDs did not match the filterId", idMismatchFound);
+        }
+        if (filterNodeID != null && !filterNodeID.equals("null")) {
+            assertFalse("One or more node IDs did not match the filterNodeID", nodeIdMismatchFound);
+        }
 
-    protected List<String[]> fetchHistoricalTopQueries(Instant from, Instant to, String ID, String NODEID, String Type) throws IOException {
-        return fetchHistoricalTopQueries(formatter.format(from), formatter.format(to), ID, NODEID, Type);
+        return idNodePairs;
     }
-
 }

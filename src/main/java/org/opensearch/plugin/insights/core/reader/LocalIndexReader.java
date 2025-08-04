@@ -34,7 +34,6 @@ import reactor.util.annotation.NonNull;
  * Local index reader for reading query insights data from local OpenSearch indices.
  */
 public final class LocalIndexReader implements QueryInsightsReader {
-    private final static int MAX_TOP_N_INDEX_READ_SIZE = 50;
     /**
      * Logger of the local index reader
      */
