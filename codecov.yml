@@ -1,0 +1,9 @@
+codecov:
+  require_ci_to_pass: yes
+coverage:
+  status:
+    project:
+      default:
+        # Only check coverage in these paths
+        paths:
+          - "src/main/**"
