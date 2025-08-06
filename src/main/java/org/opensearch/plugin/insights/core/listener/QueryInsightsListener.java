@@ -67,7 +67,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
-
     /**
      * Constructor for QueryInsightsListener
      *
@@ -291,6 +290,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         );
 
         final SearchRequest request = context.getRequest();
+
         try {
             Map<MetricType, Measurement> measurements = new HashMap<>();
             measurements.put(
@@ -320,9 +320,9 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
-            String queryGroupId = searchTask.getWorkloadGroupId();
-            attributes.put(Attribute.QUERY_GROUP_ID, queryGroupId);
-
+            String WLmGroupid = searchTask.getWorkloadGroupId();
+            log.info("WLmGroupId via getWorkloadGroupId(): {}", WLmGroupid);
+            attributes.put(Attribute.QUERY_GROUP_ID, WLmGroupid);
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(

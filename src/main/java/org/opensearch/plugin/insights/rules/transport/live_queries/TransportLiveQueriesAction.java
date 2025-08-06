@@ -34,7 +34,6 @@ import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
-import static org.opensearch.plugin.insights.core.listener.QueryInsightsListener.DEFAULT_QUERY_GROUP_ID_SUPPLIER;
 /**
  * Transport action for fetching ongoing live queries
  */
@@ -44,12 +43,19 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     private static final String TOTAL = "total";
 
     private final Client client;
+    private final TransportService transportService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
+        this.transportService = transportService;
         this.client = client;
     }
+
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
@@ -99,11 +105,21 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         if (request.isVerbose()) {
                             attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
                             attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
-                            String queryGroupId=taskInfo.getHeaders().get("queryGroupId");
-                            if (queryGroupId == null) {
-                                queryGroupId = DEFAULT_QUERY_GROUP_ID_SUPPLIER.get();
+                            logger.info("LiveQueries - Task ID: {}, WorkloadGroupId: {}", taskInfo.getTaskId());
+                            Task runningTask = null;
+                            if (transportService.getLocalNode().getId().equals(taskInfo.getTaskId().getNodeId())) {
+                                runningTask = transportService.getTaskManager().getTask(taskInfo.getTaskId().getId());
                             }
-                            attributes.put(Attribute.QUERY_GROUP_ID, queryGroupId);
+
+                            String workloadGroupId = null;
+                            if (runningTask instanceof org.opensearch.action.search.SearchTask searchTask) {
+                                workloadGroupId = searchTask.getWorkloadGroupId();
+                                logger.info("LiveQueries - Task ID: {}, WorkloadGroupId: {}", taskInfo.getTaskId(), workloadGroupId);
+                            } else {
+                                logger.warn("LiveQueries - Task ID: {} is not a SearchTask or not on this node", taskInfo.getTaskId());
+                            }
+
+                            attributes.put(Attribute.QUERY_GROUP_ID, workloadGroupId);
                         }
                         SearchQueryRecord record = new SearchQueryRecord(
                             timestamp,

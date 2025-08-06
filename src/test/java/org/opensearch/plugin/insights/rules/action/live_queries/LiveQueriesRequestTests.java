@@ -25,6 +25,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         MetricType sortBy = MetricType.CPU;
         int size = 5;
         String[] nodeIds = new String[] { "nodeA", "nodeB", "nodeC" };
+        String wlmGroup = "DEFAULT_WORKLOAD_GROUP";
 
 
         LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
@@ -38,6 +39,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         assertEquals(originalRequest.getSortBy(), deserializedRequest.getSortBy());
         assertEquals(originalRequest.getSize(), deserializedRequest.getSize());
         assertArrayEquals(originalRequest.nodesIds(), deserializedRequest.nodesIds());
+        assertEquals(originalRequest.getWlmGroup(), deserializedRequest.getWlmGroup());
     }
 
     public void testSerializationWithEmptyNodes() throws IOException {
@@ -45,6 +47,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         MetricType sortBy = MetricType.MEMORY;
         int size = 3;
         String[] nodeIds = new String[0];
+        String wlmGroup = "DEFAULT_WORKLOAD_GROUP";
 
         LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
 
@@ -58,6 +61,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         assertEquals(originalRequest.getSize(), deserializedRequest.getSize());
         assertArrayEquals(originalRequest.nodesIds(), deserializedRequest.nodesIds());
         assertEquals(0, deserializedRequest.nodesIds().length);
+        assertEquals(originalRequest.getWlmGroup(), deserializedRequest.getWlmGroup());
     }
 
     public void testMainConstructor() {
@@ -65,6 +69,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         MetricType sortBy = MetricType.CPU;
         int size = 50;
         String[] nodeIds = { "node1", "node2" };
+        String wlmGroup = "DEFAULT_WORKLOAD_GROUP";
 
         LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
 
@@ -72,6 +77,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         assertEquals(MetricType.CPU, request.getSortBy());
         assertEquals(50, request.getSize());
         assertArrayEquals(new String[] { "node1", "node2" }, request.nodesIds());
+        assertEquals("DEFAULT_WORKLOAD_GROUP", request.getWlmGroup());
     }
 
     public void testConvenienceConstructor() {
@@ -98,10 +104,11 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
     }
 
     public void testGetters() {
-        LiveQueriesRequest request = new LiveQueriesRequest(false, MetricType.MEMORY, 10, "nodeA");
+        LiveQueriesRequest request = new LiveQueriesRequest(false, MetricType.MEMORY, 10, new String[] {"nodeA"}, "DEFAULT_WORKLOAD_GROUP");
         assertFalse(request.isVerbose());
         assertEquals(MetricType.MEMORY, request.getSortBy());
         assertEquals(10, request.getSize());
         assertArrayEquals(new String[] { "nodeA" }, request.nodesIds());
+        assertEquals("DEFAULT_WORKLOAD_GROUP", request.getWlmGroup());
     }
 }
