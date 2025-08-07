@@ -262,7 +262,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "  \"settings\": {\n"
             + "    \"index.number_of_shards\": 1,\n"
-            + "    \"index.auto_expand_replicas\": \"0-2\"\n"
+            + "    \"index.number_of_replicas\": 0\n"
             + "  }\n"
             + "}";
     }
