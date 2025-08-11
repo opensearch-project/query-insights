@@ -20,7 +20,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY;
 
 import java.io.IOException;
@@ -58,7 +57,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
+import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -82,9 +81,6 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
-        indexName = format.format(ZonedDateTime.now(ZoneOffset.UTC))
-            + "-"
-            + ExporterReaderUtils.generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
         // Setup metrics registry and counter
         MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
@@ -96,9 +92,6 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);
 
-        // Create index name
-        indexName = "top_queries-" + generateLocalIndexDateHash(ZonedDateTime.now(ZoneOffset.UTC).toLocalDate());
-
         // Setup exists response
         doAnswer(invocation -> {
             org.opensearch.core.action.ActionListener<Boolean> listener = invocation.getArgument(1);
@@ -107,6 +100,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         }).when(indicesAdminClient).exists(any(IndicesExistsRequest.class), any());
 
         // Setup cluster service with default values
+        indexName = IndexDiscoveryHelper.buildLocalIndexName(format, ZonedDateTime.now(ZoneOffset.UTC));
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);

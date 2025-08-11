@@ -35,7 +35,7 @@ public class OperationalMetricsCounterTests extends OpenSearchTestCase {
         OperationalMetricsCounter.initialize(CLUSTER_NAME, metricsRegistry);
         OperationalMetricsCounter instance = OperationalMetricsCounter.getInstance();
         ArgumentCaptor<String> nameCaptor = ArgumentCaptor.forClass(String.class);
-        verify(metricsRegistry, times(10)).createCounter(nameCaptor.capture(), any(), eq("1"));
+        verify(metricsRegistry, times(11)).createCounter(nameCaptor.capture(), any(), eq("1"));
         assertNotNull(instance);
         instance.incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);
         instance.incrementCounter(OperationalMetric.LOCAL_INDEX_READER_PARSING_EXCEPTIONS);

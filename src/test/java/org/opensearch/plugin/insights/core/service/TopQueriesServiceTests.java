@@ -9,7 +9,12 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.QUERY_INSIGHTS_INDEX_TAG_NAME;
@@ -18,13 +23,17 @@ import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTo
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
+import org.mockito.ArgumentCaptor;
 import org.opensearch.Version;
 import org.opensearch.client.AdminClient;
 import org.opensearch.client.Client;
@@ -34,9 +43,11 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -465,5 +476,276 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             assertNull(record.getAttributes().get(Attribute.SOURCE));
             assertNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
         }
+    }
+
+    public void testUpdateTopNMap() {
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(
+            5,
+            5,
+            System.currentTimeMillis() - 1000 * 60 * 10,
+            0
+        );
+        // Update window size to simulate start of new window in consumeRecords
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+        topQueriesService.consumeRecords(records);
+
+        List<SearchQueryRecord> results = topQueriesService.getTopQueriesRecords(false, null, null, null, null);
+        for (SearchQueryRecord record : results) {
+            @SuppressWarnings("unchecked")
+            Map<String, Boolean> topNMap = (Map<String, Boolean>) record.getAttributes().get(Attribute.TOP_N_QUERY);
+
+            assertTrue(topNMap.get(MetricType.LATENCY.toString()));
+            assertFalse(topNMap.get(MetricType.CPU.toString()));
+            assertFalse(topNMap.get(MetricType.MEMORY.toString()));
+        }
+    }
+
+    public void testTimeFilterIncludesSomeRecords() {
+        long currentTime = System.currentTimeMillis();
+        List<SearchQueryRecord> records = new ArrayList<>();
+        // Records that should be included by the filter
+        records.addAll(
+            QueryInsightsTestUtils.generateQueryInsightRecords(
+                3,
+                3,
+                currentTime - TimeValue.timeValueMinutes(2).getMillis(),
+                0 // 2 minutes ago
+            )
+        );
+        records.addAll(
+            QueryInsightsTestUtils.generateQueryInsightRecords(
+                2,
+                2,
+                currentTime + TimeValue.timeValueMinutes(1).getMillis(),
+                0 // 1 minute in the future
+            )
+        );
+        // Records older than the filter window
+        records.addAll(
+            QueryInsightsTestUtils.generateQueryInsightRecords(
+                2,
+                2,
+                currentTime - TimeValue.timeValueMinutes(15).getMillis(),
+                0 // 15 minutes ago
+            )
+        );
+
+        topQueriesService.consumeRecords(records);
+
+        String from = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(5).getMillis()), ZoneOffset.UTC)
+            .toString();
+        String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(5).getMillis()), ZoneOffset.UTC)
+            .toString();
+
+        List<SearchQueryRecord> filteredResults = topQueriesService.getTopQueriesRecords(false, from, to, null, null);
+        assertEquals(5, filteredResults.size());
+    }
+
+    public void testTimeFilterIncludesNoRecords() {
+        long currentTime = System.currentTimeMillis();
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(
+            5,
+            5,
+            currentTime - TimeValue.timeValueMinutes(20).getMillis(), // 20 minutes ago
+            0
+        );
+        topQueriesService.consumeRecords(records);
+
+        // From 10 minutes ago
+        String from = ZonedDateTime.ofInstant(
+            Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(10).getMillis()),
+            ZoneOffset.UTC
+        ).toString();
+        // To 5 minutes ago
+        String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(5).getMillis()), ZoneOffset.UTC)
+            .toString();
+
+        List<SearchQueryRecord> result = topQueriesService.getTopQueriesRecords(false, from, to, null, null);
+        assertEquals(0, result.size());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndexSuccess() {
+        QueryInsightsReader mockReader = mock(QueryInsightsReader.class);
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
+        long currentTime = System.currentTimeMillis();
+        String from = ZonedDateTime.ofInstant(
+            Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(10).getMillis()),
+            ZoneOffset.UTC
+        ).toString();
+        String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(10).getMillis()), ZoneOffset.UTC)
+            .toString();
+
+        // Generate 5 records that the reader would return (time filtering is done at query level)
+        List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
+
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            listener.onResponse(new ArrayList<>(mockRecords));
+            return null;
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(ActionListener.class));
+
+        ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, null, true, mockListener);
+
+        verify(mockListener).onResponse(listCaptor.capture());
+        List<SearchQueryRecord> capturedList = listCaptor.getValue();
+
+        assertEquals(5, capturedList.size());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndexSuccessWithIdFilter() {
+        QueryInsightsReader mockReader = mock(QueryInsightsReader.class);
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
+        long currentTime = System.currentTimeMillis();
+        String from = ZonedDateTime.ofInstant(
+            Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(10).getMillis()),
+            ZoneOffset.UTC
+        ).toString();
+        String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(10).getMillis()), ZoneOffset.UTC)
+            .toString();
+        String targetId = "target-id-123";
+
+        // Generate 5 records that the reader would return (time filtering is done at query level)
+        List<SearchQueryRecord> mockRecords = new ArrayList<>();
+        List<SearchQueryRecord> generatedForTargetId = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
+        for (SearchQueryRecord rec : generatedForTargetId) {
+            SearchQueryRecord spyRec = spy(rec);
+            when(spyRec.getId()).thenReturn(targetId);
+            mockRecords.add(spyRec);
+        }
+        List<SearchQueryRecord> generatedForOtherId = QueryInsightsTestUtils.generateQueryInsightRecords(3, 3, currentTime, 0);
+        for (int i = 0; i < generatedForOtherId.size(); i++) {
+            SearchQueryRecord spyRec = spy(generatedForOtherId.get(i));
+            when(spyRec.getId()).thenReturn("other-id-" + i);
+            mockRecords.add(spyRec);
+        }
+
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            String readerIdFilter = invocation.getArgument(2);
+            List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
+                .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
+                .collect(Collectors.toList());
+            listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
+            return null;
+        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
+
+        ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, targetId, null, mockListener);
+
+        verify(mockListener).onResponse(listCaptor.capture());
+        List<SearchQueryRecord> capturedList = listCaptor.getValue();
+        assertEquals(2, capturedList.size());
+        for (SearchQueryRecord record : capturedList) {
+            assertEquals(targetId, record.getId());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndexVerboseFalse() {
+        QueryInsightsReader mockReader = mock(QueryInsightsReader.class);
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
+        long currentTime = System.currentTimeMillis();
+        String from = ZonedDateTime.ofInstant(
+            Instant.ofEpochMilli(currentTime - TimeValue.timeValueMinutes(10).getMillis()),
+            ZoneOffset.UTC
+        ).toString();
+        String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(10).getMillis()), ZoneOffset.UTC)
+            .toString();
+
+        List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
+
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            // Simulate reader returning simplified records if verbose is false
+            listener.onResponse(mockRecords.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList()));
+            return null;
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(ActionListener.class));
+
+        ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, null, false, mockListener);
+
+        verify(mockListener).onResponse(listCaptor.capture());
+        List<SearchQueryRecord> capturedList = listCaptor.getValue();
+        assertEquals(2, capturedList.size());
+        for (SearchQueryRecord record : capturedList) {
+            assertNull(record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES));
+            assertNull(record.getAttributes().get(Attribute.SOURCE));
+            assertNull(record.getAttributes().get(Attribute.PHASE_LATENCY_MAP));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndex_readerReturnsEmpty() {
+        QueryInsightsReader mockReader = mock(QueryInsightsReader.class);
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
+        String from = ZonedDateTime.now().minusHours(1).toString();
+        String to = ZonedDateTime.now().toString();
+
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            listener.onResponse(new java.util.ArrayList<>());
+            return null;
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+
+        ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, null, true, mockListener);
+
+        verify(mockListener).onResponse(listCaptor.capture());
+        assertTrue(listCaptor.getValue().isEmpty());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndexReaderFails() {
+        QueryInsightsReader mockReader = mock(QueryInsightsReader.class);
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
+        String from = ZonedDateTime.now().minusHours(1).toString();
+        String to = ZonedDateTime.now().toString();
+        Exception testException = new RuntimeException("Reader failed");
+
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            listener.onFailure(testException);
+            return null;
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+
+        ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, null, true, mockListener);
+
+        verify(mockListener).onFailure(exceptionCaptor.capture());
+        assertEquals(testException, exceptionCaptor.getValue());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testGetTopQueriesRecordsFromIndexNoReaderAvailable() {
+        when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(null);
+
+        String from = ZonedDateTime.now().minusHours(1).toString();
+        String to = ZonedDateTime.now().toString();
+
+        ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
+        ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
+
+        topQueriesService.getTopQueriesRecordsFromIndex(from, to, null, true, mockListener);
+
+        verify(mockListener).onResponse(listCaptor.capture());
+        assertTrue(listCaptor.getValue().isEmpty());
     }
 }
