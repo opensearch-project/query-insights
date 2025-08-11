@@ -64,7 +64,11 @@ public enum Attribute {
     /**
      * Grouping type of the query record (none, similarity)
      */
-    GROUP_BY;
+    GROUP_BY,
+    /**
+     * A map indicating for which metric type(s) this record was in the Top N
+     */
+    TOP_N_QUERY;
 
     /**
      * Read an Attribute from a StreamInput
