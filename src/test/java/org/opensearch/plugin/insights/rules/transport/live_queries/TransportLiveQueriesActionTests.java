@@ -93,6 +93,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         ClusterState clusterState = ClusterState.builder(clusterService.getClusterName()).nodes(discoveryNodes).build();
         when(clusterService.state()).thenReturn(clusterState);
 
+        // Mock the transport service to return the local node
+        when(transportService.getLocalNode()).thenReturn(node1);
+
         // Mock the client administrative calls
         adminClient = mock(AdminClient.class);
         clusterAdminClient = mock(ClusterAdminClient.class);
@@ -290,7 +293,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null);
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo highCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000L, "high", 200L, 200L);
