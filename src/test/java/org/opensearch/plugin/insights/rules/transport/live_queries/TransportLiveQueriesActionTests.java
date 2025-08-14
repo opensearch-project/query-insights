@@ -88,7 +88,6 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
         when(clusterService.localNode()).thenReturn(node1); // Assume node1 is local for simplicity
         when(clusterService.getClusterName()).thenReturn(new ClusterName("test-cluster"));
-        when(transportService.getLocalNode()).thenReturn(node1);
         // Stub cluster state to include the nodes
         DiscoveryNodes discoveryNodes = DiscoveryNodes.builder().add(node1).add(node2).localNodeId(node1.getId()).build();
         ClusterState clusterState = ClusterState.builder(clusterService.getClusterName()).nodes(discoveryNodes).build();
@@ -291,7 +290,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[] {"node1"}, "DEFAULT_WORKLOAD_GROUP");
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[] { "node1" }, "DEFAULT_WORKLOAD_GROUP");
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo highCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000L, "high", 200L, 200L);

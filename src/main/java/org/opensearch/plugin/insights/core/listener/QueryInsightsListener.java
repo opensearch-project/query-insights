@@ -67,6 +67,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
+
     /**
      * Constructor for QueryInsightsListener
      *

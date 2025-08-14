@@ -79,7 +79,6 @@ public enum Attribute {
      */
     QUERY_GROUP_ID,
 
-
     /**
      * The cancelled of the search query, often used in live queries.
      */

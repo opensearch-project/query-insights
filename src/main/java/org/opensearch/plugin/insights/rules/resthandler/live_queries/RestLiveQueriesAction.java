@@ -37,6 +37,7 @@ import org.opensearch.transport.client.node.NodeClient;
  */
 public class RestLiveQueriesAction extends BaseRestHandler {
     static final Set<String> ALLOWED_METRICS = MetricType.allMetricTypes().stream().map(MetricType::toString).collect(Collectors.toSet());
+
     /**
      * Constructor for RestLiveQueriesAction
      */

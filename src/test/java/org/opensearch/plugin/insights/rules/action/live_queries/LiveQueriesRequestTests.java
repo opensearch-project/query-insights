@@ -27,7 +27,6 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         String[] nodeIds = new String[] { "nodeA", "nodeB", "nodeC" };
         String wlmGroup = "DEFAULT_WORKLOAD_GROUP";
 
-
         LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroup);
 
         BytesStreamOutput out = new BytesStreamOutput();
@@ -104,7 +103,13 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
     }
 
     public void testGetters() {
-        LiveQueriesRequest request = new LiveQueriesRequest(false, MetricType.MEMORY, 10, new String[] {"nodeA"}, "DEFAULT_WORKLOAD_GROUP");
+        LiveQueriesRequest request = new LiveQueriesRequest(
+            false,
+            MetricType.MEMORY,
+            10,
+            new String[] { "nodeA" },
+            "DEFAULT_WORKLOAD_GROUP"
+        );
         assertFalse(request.isVerbose());
         assertEquals(MetricType.MEMORY, request.getSortBy());
         assertEquals(10, request.getSize());
