@@ -90,6 +90,27 @@ public class RestTopQueriesActionTests extends OpenSearchTestCase {
         );
     }
 
+    public void testFromAfterTo() {
+        Map<String, String> params = new HashMap<>();
+        ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        String from = now.plusHours(1).format(DateTimeFormatter.ISO_DATE_TIME);
+        String to = now.format(DateTimeFormatter.ISO_DATE_TIME);
+        params.put("from", from);
+        params.put("to", to);
+        RestRequest restRequest = buildRestRequest(params);
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> { RestTopQueriesAction.prepareRequest(restRequest); });
+        assertEquals(
+            String.format(
+                Locale.ROOT,
+                "request [%s] contains invalid time range. 'from' date [%s] must be before 'to' date [%s]",
+                restRequest.path(),
+                from,
+                to
+            ),
+            exception.getMessage()
+        );
+    }
+
     public void testMissingOneTimeParam() {
         Map<String, String> params = new HashMap<>();
         params.put("from", ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_DATE_TIME));
