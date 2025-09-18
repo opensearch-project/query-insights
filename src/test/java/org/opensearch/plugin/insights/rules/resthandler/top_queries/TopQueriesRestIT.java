@@ -47,6 +47,9 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
+        // Clear any existing queries first
+        waitForEmptyTopQueriesResponse();
+        
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
 
@@ -54,6 +57,9 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         assertTopQueriesCount(5, "latency");
 
+        // Clear queries before next test phase
+        waitForEmptyTopQueriesResponse();
+        
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
 
@@ -84,6 +90,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     private String topQueriesByResourceUsagesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.memory.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.memory.top_n_size\" : \"5\",\n"
@@ -107,6 +114,9 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     }
 
     public void testExcludedIndices() throws IOException, InterruptedException {
+        // Clear any existing queries first
+        waitForEmptyTopQueriesResponse();
+        
         prepareExcludedIndices();
 
         // Exclude the first index
