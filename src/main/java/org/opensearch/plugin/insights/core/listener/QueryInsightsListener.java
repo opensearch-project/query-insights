@@ -291,6 +291,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         );
 
         final SearchRequest request = context.getRequest();
+
         try {
             Map<MetricType, Measurement> measurements = new HashMap<>();
             measurements.put(
@@ -320,7 +321,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
-
+            attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(

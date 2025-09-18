@@ -44,10 +44,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     private static final String TOTAL = "total";
 
     private final Client client;
+    private final TransportService transportService;
 
     @Inject
     public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
+        this.transportService = transportService;
         this.client = client;
     }
 
@@ -100,13 +102,28 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
                             attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
                         }
+                        Task runningTask = null;
+                        if (transportService.getLocalNode().getId().equals(taskInfo.getTaskId().getNodeId())) {
+                            runningTask = transportService.getTaskManager().getTask(taskInfo.getTaskId().getId());
+                        }
 
+                        String wlmGroupId = null;
+                        if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
+                            wlmGroupId = workloadTask.getWorkloadGroupId();
+                        }
+                        attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
+                        String targetWlmGroupId = request.getWlmGroupId();
+                        if (targetWlmGroupId != null && !targetWlmGroupId.equals(wlmGroupId)) {
+                            // skip if this task's wlm group does not match user requested wlm group
+                            continue;
+                        }
                         SearchQueryRecord record = new SearchQueryRecord(
                             timestamp,
                             measurements,
                             attributes,
                             taskInfo.getTaskId().toString()
                         );
+
                         allFilteredRecords.add(record);
                     }
 

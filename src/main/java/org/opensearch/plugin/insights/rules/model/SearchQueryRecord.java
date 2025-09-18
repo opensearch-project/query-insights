@@ -113,6 +113,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String TOP_N_QUERY = "top_n_query";
     /**
+     * The WLM query group id
+     */
+    public static final String WLM_GROUP_ID = "wlm_group_id";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -284,6 +288,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case IS_CANCELLED:
                         attributes.put(Attribute.IS_CANCELLED, parser.booleanValue());
+                        break;
+                    case WLM_GROUP_ID:
+                        attributes.put(Attribute.WLM_GROUP_ID, parser.text());
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);

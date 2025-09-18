@@ -47,18 +47,26 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      * @throws IOException IOException
      */
     public void testTopQueriesResponses() throws IOException, InterruptedException {
+        // Disable all features first to clear any existing queries
+        updateClusterSettings(this::disableTopQueriesSettings);
+        Thread.sleep(1000);
+
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
 
-        doSearch(10);
+        doSearch(5);
 
         assertTopQueriesCount(5, "latency");
+
+        // Disable all features to clear queries
+        updateClusterSettings(this::disableTopQueriesSettings);
+        Thread.sleep(1000);
 
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
 
         // Do Search
-        doSearch(10);
+        doSearch(5);
 
         assertTopQueriesCount(5, "cpu");
     }
@@ -84,6 +92,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     private String topQueriesByResourceUsagesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.latency.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.memory.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.memory.top_n_size\" : \"5\",\n"
