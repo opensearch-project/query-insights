@@ -50,7 +50,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         // Disable all features first to clear any existing queries
         updateClusterSettings(this::disableTopQueriesSettings);
         Thread.sleep(1000);
-        
+
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
 
