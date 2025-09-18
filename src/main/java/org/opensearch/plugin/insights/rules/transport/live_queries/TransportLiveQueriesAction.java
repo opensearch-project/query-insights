@@ -108,10 +108,15 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
 
                         String wlmGroupId = null;
-                        if (runningTask instanceof org.opensearch.action.search.SearchTask searchTask) {
-                            wlmGroupId = searchTask.getWorkloadGroupId();
+                        if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
+                            wlmGroupId = workloadTask.getWorkloadGroupId();
                         }
                         attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
+                        String targetWlmGroupId = request.getWlmGroupId();
+                        if (targetWlmGroupId != null && !targetWlmGroupId.equals(wlmGroupId)) {
+                            // skip if this task's wlm group does not match user requested wlm group
+                            continue;
+                        }
                         SearchQueryRecord record = new SearchQueryRecord(
                             timestamp,
                             measurements,
@@ -119,9 +124,6 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             taskInfo.getTaskId().toString()
                         );
 
-                        if (request.getWlmGroupId() != null && !request.getWlmGroupId().equals(attributes.get(Attribute.WLM_GROUP_ID))) {
-                            continue;
-                        }
                         allFilteredRecords.add(record);
                     }
 

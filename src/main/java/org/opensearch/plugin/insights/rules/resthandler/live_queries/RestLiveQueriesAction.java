@@ -33,7 +33,7 @@ import org.opensearch.rest.action.RestResponseListener;
 import org.opensearch.transport.client.node.NodeClient;
 
 /**
-    * Rest action to get ongoing live queries
+ * Rest action to get ongoing live queries
  */
 public class RestLiveQueriesAction extends BaseRestHandler {
     static final Set<String> ALLOWED_METRICS = MetricType.allMetricTypes().stream().map(MetricType::toString).collect(Collectors.toSet());
