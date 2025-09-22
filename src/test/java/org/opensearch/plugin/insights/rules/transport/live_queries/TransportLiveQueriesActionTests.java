@@ -143,7 +143,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         LiveQueriesRequest request = new LiveQueriesRequest(true);
         TaskInfo task1 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "desc1", 500L, 1024L);
         TaskInfo task2 = createTaskInfo(node2, "indices:data/read/search", System.currentTimeMillis(), 2000000L, "desc2", 600L, 2048L);
-        TaskInfo nonSearchTask = createTaskInfo(
+        TaskInfo nonSearchTask1 = createTaskInfo(
             node1,
             "cluster:monitor/nodes/tasks/list",
             System.currentTimeMillis(),
@@ -152,7 +152,16 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
             700L,
             4096L
         );
-        List<TaskInfo> tasks = List.of(task1, task2, nonSearchTask);
+        TaskInfo nonSearchTask2 = createTaskInfo(
+            node1,
+            "indices:data/read/search[phase/query]",
+            System.currentTimeMillis(),
+            3000000L,
+            "desc3",
+            700L,
+            4096L
+        );
+        List<TaskInfo> tasks = List.of(task1, task2, nonSearchTask1, nonSearchTask2);
         ListTasksResponse listTasksResponse = new ListTasksResponse(tasks, emptyList(), emptyList());
 
         // Mock the listTasks asynchronous call

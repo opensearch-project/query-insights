@@ -55,7 +55,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
-        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search*");
+        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search");
 
         // Set nodes filter if provided in the request
         String[] requestedNodeIds = request.nodesIds();
@@ -70,7 +70,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 try {
                     List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
-                        if (!taskInfo.getAction().startsWith("indices:data/read/search")) {
+                        if (!taskInfo.getAction().equals("indices:data/read/search")) {
                             continue;
                         }
                         long timestamp = taskInfo.getStartTime();
