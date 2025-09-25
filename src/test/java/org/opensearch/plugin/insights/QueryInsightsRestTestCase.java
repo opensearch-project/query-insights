@@ -789,7 +789,21 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             }
             idNodePairs.add(new String[] { id, nodeId });
 
-            Map<String, Object> source = (Map<String, Object>) query.get("source");
+            Object sourceObj = query.get("source");
+            Map<String, Object> source;
+            if (sourceObj instanceof String) {
+                try (
+                    XContentParser sourceParser = JsonXContent.jsonXContent.createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        (String) sourceObj
+                    )
+                ) {
+                    source = sourceParser.map();
+                }
+            } else {
+                source = (Map<String, Object>) sourceObj;
+            }
             Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
             Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
             Map<String, Object> title = (Map<String, Object>) match.get("title");

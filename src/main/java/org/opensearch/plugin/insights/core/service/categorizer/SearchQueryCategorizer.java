@@ -81,7 +81,12 @@ public final class SearchQueryCategorizer {
      * @param record search query record
      */
     public void categorize(SearchQueryRecord record) {
-        SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
+        Object sourceObj = record.getAttributes().get(Attribute.SOURCE);
+        if (sourceObj == null || sourceObj instanceof String) {
+            return;
+        }
+
+        SearchSourceBuilder source = (SearchSourceBuilder) sourceObj;
         Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);

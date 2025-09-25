@@ -69,6 +69,10 @@ public final class SearchResponseParser {
         final SearchResponse searchResponse,
         final NamedXContentRegistry namedXContentRegistry
     ) throws Exception {
+        if (searchResponse == null) {
+            throw new IllegalArgumentException("SearchResponse cannot be null");
+        }
+
         List<SearchQueryRecord> records = new ArrayList<>();
 
         for (SearchHit hit : searchResponse.getHits()) {
