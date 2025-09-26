@@ -182,7 +182,7 @@ public final class QueryInsightsQueryBuilder {
 
         // Add ID-specific or metric-type-specific filter
         if (id != null) {
-            query.must(QueryBuilders.matchQuery(ID, id));
+            query.must(QueryBuilders.termQuery(ID, id));
         } else {
             query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
         }
