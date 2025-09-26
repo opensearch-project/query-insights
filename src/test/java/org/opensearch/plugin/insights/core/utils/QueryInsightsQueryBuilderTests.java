@@ -414,4 +414,38 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         assertTrue("Should expand to open indices", searchRequest.indicesOptions().expandWildcardsOpen());
         assertFalse("Should not expand to closed indices", searchRequest.indicesOptions().expandWildcardsClosed());
     }
+
+    public void testIdQueryMatch() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        Boolean verbose = true;
+        MetricType metricType = MetricType.LATENCY;
+
+        String[] testIds = {
+            "a7f3b2c8-5291-7634-9c4e-def123cd4589",
+            "b8e4c3d9-5291-8745-1a2b-abc456ef7890",
+            "c9f5d4ea-7634-5291-3c4d-fed789ab1234" };
+
+        for (String id : testIds) {
+            SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+            SearchSourceBuilder sourceBuilder = searchRequest.source();
+            BoolQueryBuilder boolQuery = (BoolQueryBuilder) sourceBuilder.query();
+            List<QueryBuilder> mustClauses = boolQuery.must();
+
+            boolean foundExactIdMatch = false;
+            for (QueryBuilder mustClause : mustClauses) {
+                if (mustClause instanceof TermQueryBuilder) {
+                    TermQueryBuilder termQuery = (TermQueryBuilder) mustClause;
+                    if ("id".equals(termQuery.fieldName()) && id.equals(termQuery.value())) {
+                        foundExactIdMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            assertTrue("Query should match the exact ID without tokenization: " + id, foundExactIdMatch);
+        }
+    }
 }
