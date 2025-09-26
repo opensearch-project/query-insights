@@ -5,14 +5,8 @@
     "query_insights_feature_space": "top_n_queries"
   },
   "properties": {
-    "id" : {
-      "type" : "text",
-      "fields" : {
-        "keyword" : {
-          "type" : "keyword",
-          "ignore_above" : 256
-        }
-      }
+    "id": {
+      "type": "keyword"
     },
     "node_id" : {
       "type" : "text",
