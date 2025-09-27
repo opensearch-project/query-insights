@@ -317,6 +317,12 @@ public class TopQueriesService {
                     .addTag(METRIC_TYPE_TAG, this.metricType.name())
                     .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
             );
+
+        // Return empty results when service is disabled
+        if (!enabled) {
+            return new ArrayList<>();
+        }
+
         // read from window snapshots
         final List<SearchQueryRecord> queries = new ArrayList<>(topQueriesCurrentSnapshot.get());
         if (includeLastWindow) {
