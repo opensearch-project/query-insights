@@ -49,7 +49,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     public void testTopQueriesResponses() throws IOException, InterruptedException {
         // Disable all features first to clear any existing queries
         updateClusterSettings(this::disableTopQueriesSettings);
-        Thread.sleep(1000);
+        waitForEmptyTopQueriesResponse();
 
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
@@ -60,7 +60,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         // Disable all features to clear queries
         updateClusterSettings(this::disableTopQueriesSettings);
-        Thread.sleep(1000);
+        waitForEmptyTopQueriesResponse();
 
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
