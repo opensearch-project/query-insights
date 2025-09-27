@@ -89,6 +89,114 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         }
     }
 
+    /**
+     * Test missing time parameters
+     *
+     * @throws IOException IOException
+     */
+    public void testMissingTimeParameters() throws IOException {
+        String[] missingTimeParams = { "?from=2025-01-01T00:00:00Z", "?to=2025-01-02T00:00:00Z" };
+
+        for (String param : missingTimeParams) {
+            Request request = new Request("GET", "/_insights/top_queries" + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with missing time parameter: " + param);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+            }
+        }
+    }
+
+    /**
+     * Test malformed timestamp parameters
+     *
+     * @throws IOException IOException
+     */
+    public void testMalformedTimestamps() throws IOException {
+        String[] malformedTimeParams = {
+            "?from=invalid-timestamp&to=2025-01-02T00:00:00Z",
+            "?from=2025-01-01T00:00:00Z&to=invalid-timestamp",
+            "?from=2025-13-01T00:00:00Z&to=2025-01-02T00:00:00Z",
+            "?from=2025-01-32T00:00:00Z&to=2025-01-02T00:00:00Z",
+            "?from=not-a-date&to=not-a-date",
+            "?from=2025-01-02T00:00:00Z&to=2025-01-01T00:00:00Z" }; // to timestamp is before from timestamp
+
+        for (String param : malformedTimeParams) {
+            Request request = new Request("GET", "/_insights/top_queries" + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with malformed timestamp: " + param);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+            }
+        }
+    }
+
+    /**
+     * Test multiple invalid parameters
+     *
+     * @throws IOException IOException
+     */
+    public void testMultipleInvalidParameters() throws IOException {
+        String[] multipleInvalidParams = {
+            "?type=invalid&from=2025-01-01T00:00:00Z&to=2025-01-32T00:00:00Z",
+            "?type=latency&from=bad-timestamp&to=2025-01-32T00:00:00Z" };
+
+        for (String param : multipleInvalidParams) {
+            Request request = new Request("GET", "/_insights/top_queries" + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with multiple invalid parameters: " + param);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                if (param.contains("type=invalid")) {
+                    assertTrue(
+                        "Error message should contain 'invalid metric type [invalid]' for: " + param,
+                        e.getMessage().contains("invalid metric type [invalid]")
+                    );
+                } else if (param.contains("from=bad-timestamp")) {
+                    assertTrue("Error message should contain '[bad-timestamp]' for: " + param, e.getMessage().contains("[bad-timestamp]"));
+                }
+            }
+        }
+    }
+
+    /**
+     * Test invalid metric type parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testInvalidTypeParameter() throws IOException {
+        String invalidTypeParam = "?type=invalid";
+
+        Request request = new Request("GET", "/_insights/top_queries" + invalidTypeParam);
+        try {
+            client().performRequest(request);
+            fail("Should not succeed with invalid type parameter");
+        } catch (ResponseException e) {
+            assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+        }
+    }
+
+    /**
+     * Test valid parameters with unexpected extra parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testValidParametersWithExtraParams() throws IOException {
+        // Test all expected parameters plus an unexpected one
+        String paramsWithExtra =
+            "?type=latency&verbose=true&from=2025-01-01T00:00:00Z&to=2025-01-02T00:00:00Z&id=test-id&unknownParam=value";
+        Request request = new Request("GET", "/_insights/top_queries" + paramsWithExtra);
+        try {
+            client().performRequest(request);
+            fail("Should not succeed with an unexpected extra parameter");
+        } catch (ResponseException e) {
+            assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+        }
+    }
+
     private String topQueriesByResourceUsagesSettings() {
         return "{\n"
             + "    \"persistent\" : {\n"
