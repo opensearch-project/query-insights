@@ -600,6 +600,59 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertEquals(expectedDelayEdge, getInitialDelay(instantEdge));
     }
 
+    public void testEnableCollectionClearsQueueWhenAllFeaturesDisabled() {
+        // Add some records to the queue
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        for (SearchQueryRecord record : records) {
+            queryInsightsService.addRecord(record);
+        }
+
+        // Verify queue has records
+        QueryInsightsHealthStats healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable all features one by one
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+
+        // Queue should not be cleared yet as MEMORY is still enabled
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable the last feature
+        queryInsightsService.enableCollection(MetricType.MEMORY, false);
+
+        // Now the queue should be cleared
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(0, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testEnableCollectionDoesNotClearQueueWhenOtherFeaturesEnabled() {
+        // Add some records to the queue
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        for (SearchQueryRecord record : records) {
+            queryInsightsService.addRecord(record);
+        }
+
+        // Verify queue has records
+        QueryInsightsHealthStats healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable only LATENCY, but keep CPU and MEMORY enabled
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+
+        // Queue should NOT be cleared as other features are still enabled
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable CPU as well, but keep MEMORY enabled
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+
+        // Queue should still NOT be cleared
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+    }
+
     // Util functions
     private List<AbstractLifecycleComponent> createQueryInsightsServiceWithIndexState(Map<String, IndexMetadata> indexMetadataMap) {
         Settings.Builder settingsBuilder = Settings.builder();

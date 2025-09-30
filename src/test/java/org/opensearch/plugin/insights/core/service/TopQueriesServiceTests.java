@@ -143,6 +143,42 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
     }
 
+    public void testSetEnabledFalseClearsSnapshots() {
+        // Add records to the service
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        topQueriesService.consumeRecords(records);
+
+        // Verify records are present
+        assertEquals(5, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Disable the service
+        topQueriesService.setEnabled(false);
+
+        // Re-enable to check if snapshots were cleared
+        topQueriesService.setEnabled(true);
+
+        // Snapshots should be empty after disabling
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+    }
+
+    public void testSetEnabledFalseReturnsEmptyResults() {
+        // Add records to the service while enabled
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        topQueriesService.consumeRecords(records);
+
+        // Verify records are present
+        assertEquals(5, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Disable the service
+        topQueriesService.setEnabled(false);
+
+        // Should return empty results immediately when disabled
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Also test with includeLastWindow = true
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
+    }
+
     public void testValidateWindowSize() {
         assertThrows(IllegalArgumentException.class, () -> {
             topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MAX_WINDOW_SIZE.getSeconds() + 1, TimeUnit.SECONDS));
