@@ -71,6 +71,11 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         }
         final MetricType sortBy = MetricType.fromString(sortParam);
         final int size = request.paramAsInt("size", QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE);
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
+            );
+        }
         return new LiveQueriesRequest(verbose, sortBy, size, nodesIds);
     }
 

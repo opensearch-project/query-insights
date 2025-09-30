@@ -121,7 +121,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
         String nodeId = nodes.keySet().iterator().next();
 
-        String[] params = new String[] { "?size=1", "", "?size=0", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
+        String[] params = new String[] { "?size=1", "", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
         Map<String, Boolean> foundParams = new java.util.HashMap<>();
         for (String param : params) {
             foundParams.put(param, false);
@@ -267,7 +267,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         String nodeId = nodes.keySet().iterator().next();
 
         // Define parameter combinations to test
-        String[] params = new String[] { "", "?verbose=false", "?sort=cpu", "?size=1", "?size=0", "?nodeId=" + nodeId };
+        String[] params = new String[] { "", "?verbose=false", "?sort=cpu", "?size=1", "?nodeId=" + nodeId };
         for (String param : params) {
             String uri = QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param;
             Request req = new Request("GET", uri);
