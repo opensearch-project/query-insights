@@ -141,8 +141,16 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
             .withParams(params)
             .withMethod(RestRequest.Method.GET)
             .build();
-        LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
-        assertEquals(0, req.getSize());
+        assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
+    }
+
+    public void testPrepareRequestWithNegativeSize() {
+        Map<String, String> params = Map.of("size", "-1");
+        RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(QueryInsightsSettings.LIVE_QUERIES_BASE_URI)
+            .withParams(params)
+            .withMethod(RestRequest.Method.GET)
+            .build();
+        assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
     }
 
     public void testPrepareRequestInvalidVerbose() {
