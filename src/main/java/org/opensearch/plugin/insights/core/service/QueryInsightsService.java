@@ -272,6 +272,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public void enableCollection(final MetricType metricType, final boolean enable) {
         this.enableCollect.put(metricType, enable);
         this.topQueriesServices.get(metricType).setEnabled(enable);
+
+        // Clear the queue when all features are disabled to prevent stale records from being processed
+        // when features are re-enabled
+        if (!enable && !isAnyFeatureEnabled()) {
+            queryRecordsQueue.clear();
+        }
     }
 
     /**
