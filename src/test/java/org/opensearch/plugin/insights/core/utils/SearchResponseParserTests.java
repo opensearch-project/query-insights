@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +30,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.SearchHits;
@@ -77,9 +79,10 @@ public class SearchResponseParserTests extends OpenSearchTestCase {
         assertNotNull("Parsed records should not be null", parsedRecords);
         assertEquals("Should parse correct number of records", testRecords.size(), parsedRecords.size());
 
+        List<SearchQueryRecord> expectedRecords = convertRecordsToStringSource(testRecords);
         assertTrue(
             "Parsed records should match original records exactly",
-            QueryInsightsTestUtils.checkRecordsEquals(testRecords, parsedRecords)
+            QueryInsightsTestUtils.checkRecordsEquals(expectedRecords, parsedRecords)
         );
     }
 
@@ -167,10 +170,10 @@ public class SearchResponseParserTests extends OpenSearchTestCase {
         assertNotNull("Parsed records should not be null", parsedRecords);
         assertEquals("Should parse exactly one record", 1, parsedRecords.size());
 
-        List<SearchQueryRecord> originalRecords = List.of(testRecord);
+        List<SearchQueryRecord> expectedRecords = convertRecordsToStringSource(List.of(testRecord));
         assertTrue(
             "Parsed record should match original record exactly",
-            QueryInsightsTestUtils.checkRecordsEquals(originalRecords, parsedRecords)
+            QueryInsightsTestUtils.checkRecordsEquals(expectedRecords, parsedRecords)
         );
     }
 
@@ -198,9 +201,10 @@ public class SearchResponseParserTests extends OpenSearchTestCase {
         assertNotNull("Parsed records should not be null", parsedRecords);
         assertEquals("Should parse correct number of records", testRecords.size(), parsedRecords.size());
 
+        List<SearchQueryRecord> expectedRecords = convertRecordsToStringSource(testRecords);
         assertTrue(
             "All parsed records should match original records exactly",
-            QueryInsightsTestUtils.checkRecordsEquals(testRecords, parsedRecords)
+            QueryInsightsTestUtils.checkRecordsEquals(expectedRecords, parsedRecords)
         );
     }
 
@@ -263,5 +267,33 @@ public class SearchResponseParserTests extends OpenSearchTestCase {
         when(searchResponse.getHits()).thenReturn(searchHits);
 
         return searchResponse;
+    }
+
+    /**
+     * Converts SearchQueryRecord objects to simulate what happens when records are parsed from JSON.
+     * This includes converting enums to strings and other type conversions.
+     */
+    private List<SearchQueryRecord> convertRecordsToStringSource(List<SearchQueryRecord> records) {
+        List<SearchQueryRecord> convertedRecords = new ArrayList<>();
+
+        for (SearchQueryRecord record : records) {
+            SearchQueryRecord convertedRecord = new SearchQueryRecord(record);
+
+            // Convert query_group_hashcode to string (as it becomes when parsed from JSON)
+            Object hashcode = record.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE);
+            if (hashcode != null) {
+                convertedRecord.getAttributes().put(Attribute.QUERY_GROUP_HASHCODE, hashcode.toString());
+            }
+
+            // Convert group_by enum to string (as it becomes when parsed from JSON)
+            Object groupBy = record.getAttributes().get(Attribute.GROUP_BY);
+            if (groupBy != null) {
+                convertedRecord.getAttributes().put(Attribute.GROUP_BY, groupBy.toString());
+            }
+
+            convertedRecords.add(convertedRecord);
+        }
+
+        return convertedRecords;
     }
 }

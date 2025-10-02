@@ -47,6 +47,7 @@ import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.transport.client.Client;
 
@@ -217,9 +218,14 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
+            SearchQueryRecord recordForExport = new SearchQueryRecord(record);
+            Object sourceValue = recordForExport.getAttributes().get(Attribute.SOURCE);
+            if (sourceValue != null) {
+                recordForExport.getAttributes().put(Attribute.SOURCE, sourceValue.toString());
+            }
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(recordForExport.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
