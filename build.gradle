@@ -318,7 +318,7 @@ tasks.named("integTest").configure {
 }
 
 testClusters.all {
-    testDistribution = "INTEG_TEST"
+    testDistribution = "ARCHIVE"
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
 
