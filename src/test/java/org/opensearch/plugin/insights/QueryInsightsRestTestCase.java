@@ -229,7 +229,25 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"similarity\",\n"
-            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5\n"
+            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5,\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_name\" : true,\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_type\" : true\n"
+            + "    }\n"
+            + "}";
+    }
+
+    protected String disableFieldNameSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_name\" : false\n"
+            + "    }\n"
+            + "}";
+    }
+
+    protected String disableFieldTypeSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_type\" : false\n"
             + "    }\n"
             + "}";
     }
@@ -384,6 +402,14 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                     + "    }\n"
                     + "  }\n"
                     + "}";
+
+            case "match_text_field":
+                // Match query on a text field
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"message\": \"document\"\n" + "    }\n" + "  }\n" + "}";
+
+            case "match_keyword_field":
+                // Match query on a keyword field
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"user.id\": \"abcdef\"\n" + "    }\n" + "  }\n" + "}";
 
             default:
                 throw new IllegalArgumentException("Unknown query type: " + queryType);
