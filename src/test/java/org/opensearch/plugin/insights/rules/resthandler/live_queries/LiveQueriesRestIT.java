@@ -24,6 +24,7 @@ import org.apache.logging.log4j.Logger;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
+import org.opensearch.client.ResponseException;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -275,6 +276,117 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             assertEquals("Status for param '" + param + "'", 200, res.getStatusLine().getStatusCode());
             Map<String, Object> map = entityAsMap(res);
             assertTrue("Response should contain live_queries for param '" + param + "'", map.containsKey("live_queries"));
+        }
+    }
+
+    /**
+     * Test invalid sort parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testInvalidSortParameter() throws IOException {
+        String[] invalidSortValues = {
+            "invalid",
+            "{\"script\":\"doc['field'].value\"}",
+            "<script>alert('xss')</script>",
+            "../../../etc/passwd" };
+
+        for (String sortValue : invalidSortValues) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI);
+            request.addParameter("sort", sortValue);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with invalid sort parameter: " + sortValue);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                assertTrue(
+                    "Error message should contain sort validation error for: " + sortValue,
+                    e.getMessage().contains("invalid sort metric type")
+                );
+            }
+        }
+    }
+
+    /**
+     * Test invalid size parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testInvalidSizeParameter() throws IOException {
+        String[] invalidSizeParams = { "?size=-1", "?size=invalid" };
+
+        for (String param : invalidSizeParams) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with invalid size parameter: " + param);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                if (param.contains("size=-1")) {
+                    assertTrue(
+                        "Error message should contain 'invalid size parameter [-1]' for: " + param,
+                        e.getMessage().contains("invalid size parameter [-1]")
+                    );
+                } else if (param.contains("size=invalid")) {
+                    assertTrue(
+                        "Error message should contain parameter parsing error for: " + param,
+                        e.getMessage().contains("Failed to parse int parameter [size] with value [invalid]")
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Test multiple invalid parameters
+     *
+     * @throws IOException IOException
+     */
+    public void testMultipleInvalidParameters() throws IOException {
+        String[] multipleInvalidParams = { "?verbose=invalid&size=-1", "?sort=invalid&size=-1" };
+
+        for (String param : multipleInvalidParams) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with multiple invalid parameters: " + multipleInvalidParams);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                if (param.contains("verbose=invalid")) {
+                    assertTrue(
+                        "Error message should contain verbose parameter error",
+                        e.getMessage().contains("Failed to parse value [invalid] as only [true] or [false] are allowed")
+                    );
+                } else if (param.contains("sort=invalid")) {
+                    assertTrue(
+                        "Error message should contain sort parameter error",
+                        e.getMessage().contains("invalid sort metric type [invalid]")
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Test valid parameters with unexpected extra parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testValidParametersWithExtraParams() throws IOException {
+        Request nodesRequest = new Request("GET", "/_nodes");
+        Response nodesResponse = client().performRequest(nodesRequest);
+        Map<String, Object> nodesMap = entityAsMap(nodesResponse);
+        Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
+        String nodeId = nodes.keySet().iterator().next();
+
+        // Test all expected parameters plus an unexpected one
+        String paramsWithExtra = "?sort=latency&verbose=true&size=5&nodeId=" + nodeId + "&unknownParam=value";
+        Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + paramsWithExtra);
+        try {
+            client().performRequest(request);
+            fail("Should not succeed with an unexpected extra parameter");
+        } catch (ResponseException e) {
+            assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
         }
     }
 
