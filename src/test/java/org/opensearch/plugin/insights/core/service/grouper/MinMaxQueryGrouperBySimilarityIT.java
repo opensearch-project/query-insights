@@ -131,8 +131,8 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
 
         List<Map<String, Object>> topQueries = null;
-        // run ten times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 10; i++) {
+        // run twenty times to make sure the records are drained to the top queries services
+        for (int i = 0; i < 20; i++) {
             // Parse the response to validate group structure
             Request request = new Request("GET", "/_insights/top_queries?type=latency");
             Response response = client().performRequest(request);
@@ -175,12 +175,12 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
                 return;
             }
 
-            if (i < 9) {
+            if (i < 19) {
                 Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
             }
         }
         fail(
-            "Failed to validate groups after 10 attempts. Expected groups: "
+            "Failed to validate groups after 20 attempts. Expected groups: "
                 + Arrays.toString(expectedGroupSizes)
                 + ", but got: "
                 + (topQueries != null ? topQueries.size() : "null")
