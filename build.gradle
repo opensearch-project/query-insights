@@ -25,7 +25,7 @@ buildscript {
 
   repositories {
     mavenLocal()
-    maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
+    maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
     mavenCentral()
     maven { url "https://plugins.gradle.org/m2/" }
   }
@@ -132,10 +132,11 @@ publishing {
   repositories {
     maven {
       name = "Snapshots"
-      url = "https://aws.oss.sonatype.org/content/repositories/snapshots"
-      credentials {
-        username "$System.env.SONATYPE_USERNAME"
-        password "$System.env.SONATYPE_PASSWORD"
+      url = System.getenv("MAVEN_SNAPSHOTS_S3_REPO")
+      credentials(AwsCredentials) {
+          accessKey = System.getenv("AWS_ACCESS_KEY_ID")
+          secretKey = System.getenv("AWS_SECRET_ACCESS_KEY")
+          sessionToken = System.getenv("AWS_SESSION_TOKEN")
       }
     }
   }
@@ -187,15 +188,15 @@ allprojects {
 }
 
 repositories {
-  mavenLocal()
-  maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
-  mavenCentral()
-  maven { url "https://plugins.gradle.org/m2/" }
+    mavenLocal()
+    maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+    mavenCentral()
+    maven { url "https://plugins.gradle.org/m2/" }
 }
 
 ext {
   getSecurityPluginDownloadLink = { ->
-    var repo = "https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/" +
+    var repo = "https://ci.opensearch.org/ci/dbc/snapshots/maven/org/opensearch/plugin/" +
       "opensearch-security/$opensearch_build_snapshot/"
     var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
     download.run {
