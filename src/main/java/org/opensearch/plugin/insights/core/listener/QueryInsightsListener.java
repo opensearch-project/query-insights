@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.listener;
 
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP;
 import static org.opensearch.plugin.insights.settings.QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_SOURCE_LENGTH;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
@@ -67,6 +68,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
+    private int maxSourceLength;
 
     /**
      * Constructor for QueryInsightsListener
@@ -163,6 +165,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
+
+        // Setting for max source length
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(MAX_SOURCE_LENGTH, this::setMaxSourceLength);
+        setMaxSourceLength(clusterService.getClusterSettings().get(MAX_SOURCE_LENGTH));
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -200,6 +206,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     public void setGroupingFieldTypeEnabled(Boolean fieldTypeEnabled) {
         this.groupingFieldTypeEnabled = fieldTypeEnabled;
+    }
+
+    /**
+     * Set the maximum source length before truncation
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
     }
 
     /**
@@ -313,7 +327,22 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source());
+
+            // Handle source with truncation for very long queries to prevent storage bloat
+            if (request.source() != null) {
+                String sourceString = request.source().toString();
+                if (sourceString.length() > maxSourceLength) {
+                    // Simple truncation - categorization will be skipped via boolean flag
+                    attributes.put(Attribute.SOURCE, sourceString.substring(0, maxSourceLength));
+                    attributes.put(Attribute.SOURCE_TRUNCATED, true);
+                } else {
+                    attributes.put(Attribute.SOURCE, sourceString);
+                    attributes.put(Attribute.SOURCE_TRUNCATED, false);
+                }
+            } else {
+                attributes.put(Attribute.SOURCE, null);
+                attributes.put(Attribute.SOURCE_TRUNCATED, false);
+            }
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());

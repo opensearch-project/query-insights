@@ -54,6 +54,10 @@
         }
       }
     },
+    "source" : {
+      "type" : "keyword",
+      "index" : false
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {

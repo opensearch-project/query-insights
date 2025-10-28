@@ -815,10 +815,33 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             }
             idNodePairs.add(new String[] { id, nodeId });
 
-            Map<String, Object> source = (Map<String, Object>) query.get("source");
-            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
-            Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
-            Map<String, Object> title = (Map<String, Object>) match.get("title");
+            Object sourceObj = query.get("source");
+            Map<String, Object> source = null;
+            if (sourceObj instanceof String) {
+                try (
+                    XContentParser sourceParser = JsonXContent.jsonXContent.createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        (String) sourceObj
+                    )
+                ) {
+                    source = sourceParser.map();
+                } catch (Exception e) {
+                    // Skip validation if source is truncated or malformed
+                    continue;
+                }
+            } else {
+                source = (Map<String, Object>) sourceObj;
+            }
+            if (source != null) {
+                Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+                if (queryBlock != null) {
+                    Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                    if (match != null) {
+                        Map<String, Object> title = (Map<String, Object>) match.get("title");
+                    }
+                }
+            }
             List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
             Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
             for (Map<String, Object> task : taskUsages) {

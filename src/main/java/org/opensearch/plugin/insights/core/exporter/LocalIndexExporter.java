@@ -18,7 +18,9 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import org.apache.logging.log4j.LogManager;
@@ -47,6 +49,7 @@ import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.transport.client.Client;
 
@@ -217,10 +220,26 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
-            bulkRequestBuilder.add(
-                new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
-            );
+            Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+            if (sourceValue != null && !(sourceValue instanceof String)) {
+                Map<Attribute, Object> modifiedAttrs = new HashMap<>(record.getAttributes());
+                modifiedAttrs.put(Attribute.SOURCE, sourceValue.toString());
+                SearchQueryRecord recordForExport = new SearchQueryRecord(
+                    record.getTimestamp(),
+                    record.getMeasurements(),
+                    modifiedAttrs,
+                    record.getId()
+                );
+                bulkRequestBuilder.add(
+                    new IndexRequest(indexName).id(record.getId())
+                        .source(recordForExport.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                );
+            } else {
+                bulkRequestBuilder.add(
+                    new IndexRequest(indexName).id(record.getId())
+                        .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                );
+            }
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
             @Override
@@ -328,8 +347,8 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Ensures that the template exists. This method first checks if the template exists and
-     * only creates it if it doesn't.
+     * Ensures that the template exists and is up-to-date. This method checks if the template exists,
+     * compares its mapping with the current mapping, and updates it if necessary.
      *
      * @return CompletableFuture that completes when the template check/creation is done
      */
@@ -341,16 +360,39 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         client.execute(GetComposableIndexTemplateAction.INSTANCE, getRequest, new ActionListener<>() {
             @Override
             public void onResponse(GetComposableIndexTemplateAction.Response response) {
-                // If the template exists and priority has not been changed, we don't need to create/update it
-                if (response.indexTemplates().containsKey(TEMPLATE_NAME)
-                    && response.indexTemplates().get(TEMPLATE_NAME).priority() == templatePriority) {
-                    logger.debug("Template [{}] already exists, skipping creation", TEMPLATE_NAME);
-                    future.complete(true);
-                    return;
-                }
+                try {
+                    String currentMapping = readIndexMappings();
 
-                // Template doesn't exist, create it
-                createTemplate(future);
+                    if (response.indexTemplates().containsKey(TEMPLATE_NAME)) {
+                        ComposableIndexTemplate existingTemplate = response.indexTemplates().get(TEMPLATE_NAME);
+
+                        // Check if template needs updating
+                        boolean needsUpdate = existingTemplate.priority() != templatePriority;
+
+                        // For now, always update template when mapping content changes
+                        // More sophisticated mapping comparison can be added later if needed
+                        if (!needsUpdate && existingTemplate.template() != null && existingTemplate.template().mappings() != null) {
+                            String existingMappingString = existingTemplate.template().mappings().toString();
+                            if (!Objects.equals(existingMappingString, currentMapping)) {
+                                needsUpdate = true;
+                            }
+                        }
+
+                        if (!needsUpdate) {
+                            logger.debug("Template [{}] is up-to-date, skipping update", TEMPLATE_NAME);
+                            future.complete(true);
+                            return;
+                        }
+
+                        logger.info("Template [{}] needs updating", TEMPLATE_NAME);
+                    }
+
+                    // Template doesn't exist or needs updating
+                    createTemplate(future);
+                } catch (IOException e) {
+                    logger.error("Failed to read current mapping for template comparison", e);
+                    createTemplate(future);
+                }
             }
 
             @Override
@@ -365,7 +407,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Helper method to create the template
+     * Helper method to create or update the template
      *
      * @param future The CompletableFuture to complete when done
      */

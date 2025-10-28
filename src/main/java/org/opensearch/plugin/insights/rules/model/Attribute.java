@@ -82,7 +82,12 @@ public enum Attribute {
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED;
+    IS_CANCELLED,
+
+    /**
+     * Indicates if the source was truncated due to length limits.
+     */
+    SOURCE_TRUNCATED;
 
     /**
      * Read an Attribute from a StreamInput
@@ -138,8 +143,14 @@ public enum Attribute {
         if (attribute == Attribute.TASK_RESOURCE_USAGES) {
             return in.readList(TaskResourceInfo::readFromStream);
         } else if (attribute == Attribute.SOURCE) {
-            SearchSourceBuilder builder = new SearchSourceBuilder(in);
-            return builder;
+            Object value = in.readGenericValue();
+            if (value instanceof SearchSourceBuilder) {
+                // Convert old SearchSourceBuilder objects to string for consistency
+                return ((SearchSourceBuilder) value).toString();
+            } else {
+                // Already a string (new format)
+                return value;
+            }
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {
