@@ -362,10 +362,6 @@ task integTestWithSecurity(type: RestIntegTestTask) {
   systemProperty "cluster.names",
     getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
 
-  getClusters().forEach { cluster ->
-    configureSecurityPlugin(cluster)
-  }
-
   dependsOn project.tasks.bundlePlugin
   testLogging {
     events "passed", "skipped", "failed"
@@ -385,6 +381,7 @@ task integTestWithSecurity(type: RestIntegTestTask) {
   doFirst {
     systemProperty 'cluster.debug', getDebug()
     getClusters().forEach { cluster ->
+      configureSecurityPlugin(cluster)
 
       String allTransportSocketURI = cluster.nodes.stream().flatMap { node ->
         node.getAllTransportPortURI().stream()
