@@ -360,6 +360,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     }
 
     public void testSkipQueryFromExcludedIndices() {
+        when(searchRequest.indices()).thenReturn(new String[] { "index-1" });
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         // Search request having one excluded index
         when(searchRequestContext.getSuccessfulSearchShardIndices())
@@ -412,6 +413,46 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
                 new Index("first", "uuid-1"),
                 new Index("second-non-excluded-index", "uuid-2")
             )));
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testExcludeInternalIndex() {
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
+        // Search request having internal index
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index("top_queries-2025.11.18-85608", "uuid-1")
+            )));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+
+        // test search top_queries* index along with other indices
+        when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(2);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices())
+            .thenReturn(new HashSet<>(List.of(
+                new Index("index-1", "uuid-1"),
+                new Index("top_queries-2025.11.18-85608", "uuid-2")
+            )));
+
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(1)).addRecord(any());
