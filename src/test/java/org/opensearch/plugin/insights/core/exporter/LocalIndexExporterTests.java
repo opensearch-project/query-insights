@@ -106,6 +106,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary(indexName, true, 1, 0);
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
 
         // Create local index exporter
         localIndexExporter = new LocalIndexExporter(client, clusterService, format, "", "id");
@@ -291,6 +292,9 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         ClusterService mockClusterService = mock(ClusterService.class);
         ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
         org.opensearch.cluster.metadata.Metadata metadata = mock(org.opensearch.cluster.metadata.Metadata.class);
         when(metadata.templates()).thenReturn(Map.of());
         when(metadata.templatesV2()).thenReturn(Map.of());
@@ -403,4 +407,206 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         // Verify there is no number_of_replicas setting.
         assertNull(settings.get("index.number_of_replicas"));
     }
+
+    /**
+     * Test template update when priority differs
+     */
+    public void testTemplateUpdateWhenPriorityDiffers() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        // Mock existing template with different priority
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            when(mockTemplate.priority()).thenReturn(100L);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        // Mock createTemplate to complete successfully
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists();
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        // Verify createTemplate was called (indicating update was triggered)
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class));
+    }
+
+    /**
+     * Test template update when new field added to mapping
+     */
+    public void testTemplateUpdateWhenNewFieldAdded() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            org.opensearch.cluster.metadata.Template template = mock(org.opensearch.cluster.metadata.Template.class);
+
+            when(mockTemplate.priority()).thenReturn(DEFAULT_TEMPLATE_PRIORITY);
+            when(mockTemplate.template()).thenReturn(template);
+            when(template.mappings()).thenReturn(null);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        String newMapping = "{\"properties\":{\"testing\":{\"type\":\"keyword\",\"index\":false}}}";
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, newMapping, "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists();
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class));
+    }
+
+    /**
+     * Test template creation failure handling
+     */
+    public void testTemplateCreationFailure() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of());
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        doAnswer(invocation -> {
+            ActionListener listener = invocation.getArgument(2);
+            listener.onFailure(new RuntimeException("Template creation failed"));
+            return null;
+        }).when(mockClient).execute(eq(PutComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+
+        CompletableFuture<Boolean> result = exporter.ensureTemplateExists();
+
+        try {
+            result.get(5, TimeUnit.SECONDS);
+            fail("Expected exception due to template creation failure");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+    }
+
+    /**
+     * Test mapping comparison with identical content
+     */
+    public void testMappingComparisonWithIdenticalContent() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+
+        assertTrue("Identical mappings should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different formatting
+     */
+    public void testMappingComparisonWithDifferentFormatting() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Same content, different formatting
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\n  \"properties\": {\n    \"source\": {\n      \"type\": \"keyword\",\n      \"index\": false\n    }\n  }\n}";
+
+        assertTrue("Mappings with different formatting should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different field order
+     */
+    public void testMappingComparisonWithDifferentFieldOrder() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Same fields, different order
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false},\"timestamp\":{\"type\":\"long\"}}}";
+        String mapping2 = "{\"properties\":{\"timestamp\":{\"type\":\"long\"},\"source\":{\"index\":false,\"type\":\"keyword\"}}}";
+
+        assertTrue("Mappings with different field order should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different content
+     */
+    public void testMappingComparisonWithDifferentContent() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\"properties\":{\"source\":{\"type\":\"text\",\"index\":false}}}";
+        String mapping3 = "{\"properties\":{\"timestamp\":{\"type\":\"long\"}}}";
+        String mapping4 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false},\"timestamp\":{\"type\":\"long\"}}}";
+
+        assertFalse("Mappings with different content should not be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+        assertFalse("Mappings with different content should not be equivalent", exporter.mappingsEqual(mapping3, mapping4));
+    }
+
+    /**
+     * Test mapping comparison with empty mappings
+     */
+    public void testMappingComparisonWithEmptyMappings() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        assertTrue("Empty mappings should be equivalent", exporter.mappingsEqual("{}", "{}"));
+        assertTrue("Null and empty should be equivalent", exporter.mappingsEqual(null, ""));
+        assertTrue("Empty string and empty object should be equivalent", exporter.mappingsEqual("", "{}"));
+    }
+
+    /**
+     * Test mapping comparison with invalid JSON falls back to string comparison
+     */
+    public void testMappingComparisonWithInvalidJson() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Invalid JSON should fall back to string comparison
+        String invalidJson1 = "{invalid json}";
+        String invalidJson2 = "{invalid json}";
+        String differentInvalidJson = "{different invalid}";
+
+        assertTrue("Identical invalid JSON should be equal via string comparison", exporter.mappingsEqual(invalidJson1, invalidJson2));
+        assertFalse("Different invalid JSON should not be equal", exporter.mappingsEqual(invalidJson1, differentInvalidJson));
+    }
+
 }

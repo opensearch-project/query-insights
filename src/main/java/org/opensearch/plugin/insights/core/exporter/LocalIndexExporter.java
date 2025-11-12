@@ -19,6 +19,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import org.apache.logging.log4j.LogManager;
@@ -41,8 +42,10 @@ import org.opensearch.common.compress.CompressedXContent;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -328,28 +331,61 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Ensures that the template exists. This method first checks if the template exists and
-     * only creates it if it doesn't.
+     * Ensures that the template exists and is up-to-date. This method checks if the template exists,
+     * compares its mapping with the current mapping, and updates it if necessary.
+     * Only the cluster manager node performs template management to avoid race conditions.
      *
      * @return CompletableFuture that completes when the template check/creation is done
      */
     CompletableFuture<Boolean> ensureTemplateExists() {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+        // Only cluster manager node should manage templates to avoid race conditions
+        ClusterState clusterState = clusterService.state();
+        if (clusterState == null || !clusterState.nodes().isLocalNodeElectedClusterManager()) {
+            logger.debug("Skipping template management on non-cluster-manager node");
+            future.complete(true);
+            return future;
+        }
         // First check if the template already exists
         GetComposableIndexTemplateAction.Request getRequest = new GetComposableIndexTemplateAction.Request();
 
         client.execute(GetComposableIndexTemplateAction.INSTANCE, getRequest, new ActionListener<>() {
             @Override
             public void onResponse(GetComposableIndexTemplateAction.Response response) {
-                // If the template exists and priority has not been changed, we don't need to create/update it
-                if (response.indexTemplates().containsKey(TEMPLATE_NAME)
-                    && response.indexTemplates().get(TEMPLATE_NAME).priority() == templatePriority) {
-                    logger.debug("Template [{}] already exists, skipping creation", TEMPLATE_NAME);
-                    future.complete(true);
-                    return;
+                try {
+                    String currentMapping = readIndexMappings();
+
+                    if (response.indexTemplates().containsKey(TEMPLATE_NAME)) {
+                        ComposableIndexTemplate existingTemplate = response.indexTemplates().get(TEMPLATE_NAME);
+
+                        // Check if template needs updating
+                        boolean needsUpdate = existingTemplate == null || existingTemplate.priority() != templatePriority;
+
+                        // Check if mapping content changes
+                        if (!needsUpdate) {
+                            String existingMappingString = "{}";
+                            if (existingTemplate.template() != null && existingTemplate.template().mappings() != null) {
+                                existingMappingString = existingTemplate.template().mappings().toString();
+                            }
+                            if (!mappingsEqual(existingMappingString, currentMapping)) {
+                                needsUpdate = true;
+                            }
+                        }
+
+                        if (!needsUpdate) {
+                            logger.debug("Template [{}] is up-to-date, skipping update", TEMPLATE_NAME);
+                            future.complete(true);
+                            return;
+                        }
+
+                        logger.info("Template [{}] needs updating", TEMPLATE_NAME);
+                    }
+                } catch (IOException e) {
+                    logger.error("Failed to read current mapping for template comparison", e);
                 }
 
-                // Template doesn't exist, create it
+                // Template doesn't exist, create it or needs updating
                 createTemplate(future);
             }
 
@@ -365,7 +401,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Helper method to create the template
+     * Helper method to create or update the template
      *
      * @param future The CompletableFuture to complete when done
      */
@@ -441,6 +477,43 @@ public class LocalIndexExporter implements QueryInsightsExporter {
      */
     public long getTemplatePriority() {
         return templatePriority;
+    }
+
+    /**
+     * Compare two JSON mapping strings for semantic equivalence.
+     * Parses both mappings as JSON and compares their structure rather than string content.
+     * Falls back to string comparison if JSON parsing fails.
+     *
+     * @param mapping1 First mapping JSON string
+     * @param mapping2 Second mapping JSON string
+     * @return true if mappings are semantically equivalent, false otherwise
+     */
+    boolean mappingsEqual(String mapping1, String mapping2) {
+        try {
+            Map<String, Object> map1 = parseJsonToMap(mapping1);
+            Map<String, Object> map2 = parseJsonToMap(mapping2);
+            return Objects.equals(map1, map2);
+        } catch (Exception e) {
+            logger.debug("Failed to parse mappings as JSON, falling back to string comparison: {}", e.getMessage());
+            return Objects.equals(mapping1, mapping2);
+        }
+    }
+
+    /**
+     * Parse JSON string to Map using OpenSearch XContent utilities
+     *
+     * @param json JSON string to parse
+     * @return Map representation of the JSON
+     * @throws IOException if parsing fails
+     */
+    private Map<String, Object> parseJsonToMap(String json) throws IOException {
+        if (json == null || json.trim().isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        try (XContentParser parser = XContentType.JSON.xContent().createParser(null, null, json)) {
+            return parser.map();
+        }
     }
 
 }
