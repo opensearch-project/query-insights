@@ -315,15 +315,27 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
      * Get a client that targets only the first node to avoid query insights being captured on multiple nodes
      */
     protected RestClient getFirstNodeClient() throws IOException {
-        // Get the first host from the cluster hosts
+        return getNodeClient(0);
+    }
+
+    /**
+     * Get a client that targets a specific node by index
+     * @param nodeIndex the index of the node to target (0-based)
+     * @return RestClient targeting the specified node
+     * @throws IOException if client creation fails
+     */
+    protected RestClient getNodeClient(int nodeIndex) throws IOException {
         List<HttpHost> hosts = getClusterHosts();
         if (hosts.isEmpty()) {
             throw new IllegalStateException("No cluster hosts available");
         }
-        HttpHost firstHost = hosts.get(0);
+        if (nodeIndex < 0 || nodeIndex >= hosts.size()) {
+            throw new IllegalArgumentException("Node index " + nodeIndex + " out of bounds. Available nodes: " + hosts.size());
+        }
+        HttpHost targetHost = hosts.get(nodeIndex);
 
-        // Create a client that only targets the first node
-        RestClientBuilder builder = RestClient.builder(firstHost);
+        // Create a client that only targets the specified node
+        RestClientBuilder builder = RestClient.builder(targetHost);
         if (isHttps()) {
             configureHttpsClient(builder, Settings.EMPTY);
         } else {
@@ -331,6 +343,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
         builder.setStrictDeprecationMode(false);
         return builder.build();
+    }
+
+    /**
+     * Get the number of nodes in the cluster
+     * @return number of nodes
+     * @throws IOException if request fails
+     */
+    protected int getClusterNodeCount() throws IOException {
+        return getClusterHosts().size();
     }
 
     protected void doSearch(int times) throws IOException {

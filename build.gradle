@@ -411,6 +411,10 @@ task integTestWithSecurity(type: RestIntegTestTask) {
   }
 }
 
+testClusters.integTestWithSecurity {
+    numberOfNodes = 2
+}
+
 // updateVersion: Task to auto update version to the next development iteration
 task updateVersion {
     onlyIf { System.getProperty('newVersion') }
