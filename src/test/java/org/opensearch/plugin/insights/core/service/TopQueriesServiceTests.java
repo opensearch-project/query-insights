@@ -578,7 +578,9 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(5).getMillis()), ZoneOffset.UTC)
             .toString();
 
-        List<SearchQueryRecord> filteredResults = topQueriesService.getTopQueriesRecords(false, from, to, null, null);
+        // Include both current and history windows since records may end up in either snapshot
+        // depending on timing differences between when currentTime is captured and when consumeRecords() runs
+        List<SearchQueryRecord> filteredResults = topQueriesService.getTopQueriesRecords(true, from, to, null, null);
         assertEquals(5, filteredResults.size());
     }
 

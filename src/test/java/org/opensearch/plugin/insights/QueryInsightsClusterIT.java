@@ -77,26 +77,13 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
             }
         }
 
-        // Wait for query processing
+        // Wait for query processing and drain
         Thread.sleep(6000);
 
-        // Verify aggregated data from all nodes for all metric types
-        assertTopQueriesCount(4, "latency");
-        assertTopQueriesCount(4, "cpu");
-        assertTopQueriesCount(4, "memory");
-
-        // Verify data collection from multiple nodes with data integrity checks
-        // Retry fetching historical queries with timeout to handle timing issues
-        List<Map<String, Object>> topQueries = null;
-        long timeout = System.currentTimeMillis() + 15000; // 15 second timeout
-        while (System.currentTimeMillis() < timeout) {
-            topQueries = fetchHistoricalTopQueries(null, null, "latency");
-            if (!topQueries.isEmpty()) {
-                break;
-            }
-            Thread.sleep(1000); // Wait 1 second before retry
-        }
-        assertFalse("Should have collected queries after retries", topQueries == null || topQueries.isEmpty());
+        // Verify aggregated data from all nodes with data integrity checks
+        // Fetch queries and validate both count and content in a single API call
+        List<Map<String, Object>> topQueries = fetchHistoricalTopQueries(null, null, "latency");
+        assertEquals("Should have collected 4 queries for latency", 4, topQueries.size());
 
         Set<String> uniqueNodeIds = new HashSet<>();
         for (Map<String, Object> query : topQueries) {
@@ -114,6 +101,10 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
             }
         }
         assertTrue("Should have data from multiple nodes", uniqueNodeIds.size() >= 1);
+
+        // Verify CPU and memory metrics are also working
+        assertTopQueriesCount(4, "cpu");
+        assertTopQueriesCount(4, "memory");
     }
 
     /**
@@ -181,6 +172,7 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
 
         // Verify query grouping consistency - should have grouping info
         List<Map<String, Object>> topQueries = fetchHistoricalTopQueries(null, null, "latency");
+        assertFalse("Should have collected queries", topQueries.isEmpty());
         for (Map<String, Object> query : topQueries) {
             assertTrue("Query should have source", query.containsKey("source"));
             Map<String, Object> source = (Map<String, Object>) query.get("source");
@@ -244,6 +236,7 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
             }
             Thread.sleep(1000);
         }
+
         // Test filtering by node ID
         List<Map<String, Object>> node1Queries = fetchHistoricalTopQueries(null, node1Id, "latency");
         for (Map<String, Object> query : node1Queries) {
@@ -404,25 +397,46 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
     /**
      * Verify multi-node cluster setup
      */
-    private void verifyMultiNodeClusterSetup() throws IOException {
-        Request request = new Request("GET", "/_cluster/health");
-        Response response = client().performRequest(request);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+    private void verifyMultiNodeClusterSetup() throws IOException, InterruptedException {
+        long timeoutMillis = 60000; // 60 seconds timeout for cluster to become green
+        long startTime = System.currentTimeMillis();
+        boolean isGreen = false;
+        int numberOfNodes = 0;
 
-        String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        while ((System.currentTimeMillis() - startTime) < timeoutMillis) {
+            Request request = new Request("GET", "/_cluster/health");
+            Response response = client().performRequest(request);
+            assertEquals(200, response.getStatusLine().getStatusCode());
 
-        try (
-            XContentParser parser = JsonXContent.jsonXContent.createParser(
-                NamedXContentRegistry.EMPTY,
-                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                responseBody.getBytes(StandardCharsets.UTF_8)
-            )
-        ) {
-            Map<String, Object> healthMap = parser.map();
-            int numberOfNodes = (Integer) healthMap.get("number_of_nodes");
-            assertTrue("Expected at least 2 nodes for multi-node testing", numberOfNodes >= 2);
-            assertEquals("green", healthMap.get("status"));
+            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+
+            try (
+                XContentParser parser = JsonXContent.jsonXContent.createParser(
+                    NamedXContentRegistry.EMPTY,
+                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                    responseBody.getBytes(StandardCharsets.UTF_8)
+                )
+            ) {
+                Map<String, Object> healthMap = parser.map();
+                numberOfNodes = (Integer) healthMap.get("number_of_nodes");
+                String status = (String) healthMap.get("status");
+
+                if (numberOfNodes >= 2 && "green".equals(status)) {
+                    isGreen = true;
+                    break;
+                }
+
+                // If yellow, wait and retry; if red, fail immediately
+                if ("red".equals(status)) {
+                    fail("Cluster status is red, cannot proceed with testing. Number of nodes: " + numberOfNodes);
+                }
+            }
+
+            Thread.sleep(1000); // Wait 1 second before retry
         }
+
+        assertTrue("Expected at least 2 nodes for multi-node testing, found: " + numberOfNodes, numberOfNodes >= 2);
+        assertTrue("Cluster did not reach green status within timeout. This may indicate replica allocation issues.", isGreen);
     }
 
     /**
@@ -470,7 +484,9 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
     }
 
     /**
-     * Multi-node all metrics settings
+     * Multi-node all metrics settings with longer window size
+     * Uses 5-minute windows to prevent queries from being lost during test execution
+     * when multiple assertions are performed (latency, cpu, memory)
      */
     private String multiNodeAllMetricsSettings() {
         return "{\n"
@@ -478,9 +494,9 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
-            + "        \"search.insights.top_queries.cpu.window_size\" : \"1m\",\n"
-            + "        \"search.insights.top_queries.memory.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
+            + "        \"search.insights.top_queries.cpu.window_size\" : \"5m\",\n"
+            + "        \"search.insights.top_queries.memory.window_size\" : \"5m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.cpu.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.memory.top_n_size\" : 5,\n"

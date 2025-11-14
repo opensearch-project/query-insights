@@ -213,7 +213,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
@@ -226,7 +226,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"similarity\",\n"
             + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5,\n"
@@ -774,7 +774,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected List<Map<String, Object>> fetchHistoricalTopQueries(String filterId, String filterNodeID, String type) throws IOException {
 
-        String to = formatter.format(Instant.now());
+        // Add 10 second buffer to 'to' time to account for processing delays, clock skew, and drain timing
+        // This ensures recently executed queries aren't excluded due to timestamp precision issues
+        String to = formatter.format(Instant.now().plusSeconds(10));
         String from = formatter.format(Instant.now().minusSeconds(9600)); // Default 160 minutes
 
         String endpoint = "/_insights/top_queries?from=" + from + "&to=" + to;
