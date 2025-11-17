@@ -327,6 +327,22 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Default maximum source length before truncation
+     */
+    public static final int DEFAULT_MAX_SOURCE_LENGTH = 10000;
+
+    /**
+     * Setting for maximum source length before truncation
+     */
+    public static final Setting<Integer> MAX_SOURCE_LENGTH = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_source_length",
+        DEFAULT_MAX_SOURCE_LENGTH,
+        1, // min value is 1
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
      * Get the enabled setting based on type
      * @param type MetricType
      * @return enabled setting

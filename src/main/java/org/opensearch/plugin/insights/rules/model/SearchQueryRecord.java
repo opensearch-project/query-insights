@@ -121,6 +121,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String WLM_GROUP_ID = "wlm_group_id";
     /**
+     * Indicates if the source was truncated due to length limits
+     */
+    public static final String SOURCE_TRUNCATED = "source_truncated";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -297,6 +301,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             attributes.put(Attribute.SOURCE, searchSourceBuilder.toString());
                         }
                         break;
+                    case SOURCE_TRUNCATED:
+                        attributes.put(Attribute.SOURCE_TRUNCATED, parser.booleanValue());
                     case TOTAL_SHARDS:
                         attributes.put(Attribute.TOTAL_SHARDS, parser.intValue());
                         break;

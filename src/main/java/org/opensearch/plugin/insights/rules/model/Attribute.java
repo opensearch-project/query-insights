@@ -83,7 +83,12 @@ public enum Attribute {
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED;
+    IS_CANCELLED,
+
+    /**
+     * Indicates if the source was truncated due to length limits.
+     */
+    SOURCE_TRUNCATED;
 
     /**
      * Read an Attribute from a StreamInput

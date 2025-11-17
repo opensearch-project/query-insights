@@ -319,6 +319,21 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
     }
 
+    public void testSkipCategorizationForTruncatedSource() {
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.matchQuery("tags", "php"));
+
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        // Set the source as truncated string and add truncation flag
+        record.getAttributes().put(org.opensearch.plugin.insights.rules.model.Attribute.SOURCE, "{\"query\":{\"match\":{\"tags\":\"p");
+        record.getAttributes().put(org.opensearch.plugin.insights.rules.model.Attribute.SOURCE_TRUNCATED, true);
+
+        searchQueryCategorizer.categorize(record);
+
+        // Verify histograms were not incremented since categorization was skipped
+        verifyMeasurementHistogramsIncremented(record, 0);
+    }
+
     private void verifyMeasurementHistogramsIncremented(SearchQueryRecord record, int times) {
         Double expectedLatency = record.getMeasurement(MetricType.LATENCY).doubleValue();
         Double expectedCpu = record.getMeasurement(MetricType.CPU).doubleValue();
