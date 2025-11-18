@@ -19,7 +19,7 @@ jobs:
         java:
           - 21
           - 25
-    name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ubuntu-latest
+    name: Build JDK ${{ matrix.java }}, ubuntu-latest
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
@@ -89,7 +89,7 @@ jobs:
           - os: macos-latest
             os_build_args: -x jacocoTestReport
 
-    name: Build and Test query-insights plugin with JDK ${{ matrix.java }} on ${{ matrix.os }}
+    name: Build JDK ${{ matrix.java }}, ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
     steps:
