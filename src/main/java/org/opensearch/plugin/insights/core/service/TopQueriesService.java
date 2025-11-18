@@ -186,6 +186,7 @@ public class TopQueriesService {
      * @param size the wanted top N size
      */
     public void validateTopNSize(final int size) {
+        // remove here
         if (size < 1 || size > QueryInsightsSettings.MAX_N_SIZE) {
             throw new IllegalArgumentException(
                 "Top N size setting for ["
@@ -244,6 +245,7 @@ public class TopQueriesService {
      * @param windowSize the window size to validate
      */
     public void validateWindowSize(final TimeValue windowSize) {
+        // remove here
         if (windowSize.compareTo(QueryInsightsSettings.MAX_WINDOW_SIZE) > 0
             || windowSize.compareTo(QueryInsightsSettings.MIN_WINDOW_SIZE) < 0) {
             throw new IllegalArgumentException(
