@@ -30,8 +30,15 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      * @throws IOException IOException
      */
     public void testGroupingBySimilarity() throws IOException, InterruptedException {
+        // Disable first to clear any previous state
+        updateClusterSettings(this::disableTopQueriesSettings);
+        waitForEmptyTopQueriesResponse();
 
+        // Enable grouping settings
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+
+        // Allow time for settings to propagate to all nodes
+        Thread.sleep(2000);
 
         waitForEmptyTopQueriesResponse();
 
@@ -49,8 +56,17 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      * @throws IOException IOException
      */
     public void testGroupingWithFieldName() throws IOException, InterruptedException {
+        // Disable first to clear any previous state
+        updateClusterSettings(this::disableTopQueriesSettings);
         waitForEmptyTopQueriesResponse();
+
+        // Enable grouping settings
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+
+        // Allow time for settings to propagate to all nodes
+        Thread.sleep(2000);
+
+        // Wait for any residual queries to clear after settings change
         waitForEmptyTopQueriesResponse();
 
         // With field_name enabled, match queries on different fields should NOT group together
@@ -66,12 +82,18 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      * @throws IOException IOException
      */
     public void testGroupingWithFieldNameDisabled() throws IOException, InterruptedException {
+        // Disable first to clear any previous state
+        updateClusterSettings(this::disableTopQueriesSettings);
         waitForEmptyTopQueriesResponse();
+
+        // Enable grouping settings
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
-
+        Thread.sleep(2000);
         waitForEmptyTopQueriesResponse();
 
+        // Now disable field_name
         updateClusterSettings(this::disableFieldNameSettings);
+        Thread.sleep(2000);
         waitForEmptyTopQueriesResponse();
 
         // With field_name disabled, match queries on different fields should group together
@@ -87,8 +109,17 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      * @throws IOException IOException
      */
     public void testGroupingWithFieldType() throws IOException, InterruptedException {
+        // Disable first to clear any previous state
+        updateClusterSettings(this::disableTopQueriesSettings);
         waitForEmptyTopQueriesResponse();
+
+        // Enable grouping settings
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+
+        // Allow time for settings to propagate to all nodes (especially important in multi-node security cluster)
+        Thread.sleep(2000);
+
+        // Wait for any residual queries to clear after settings change
         waitForEmptyTopQueriesResponse();
 
         // With field_type enabled, match queries on fields with different data types should NOT group together
@@ -104,16 +135,23 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
      * @throws IOException IOException
      */
     public void testGroupingWithFieldTypeDisabled() throws IOException, InterruptedException {
+        // Disable first to clear any previous state
+        updateClusterSettings(this::disableTopQueriesSettings);
         waitForEmptyTopQueriesResponse();
-        updateClusterSettings(this::defaultTopQueryGroupingSettings);
 
+        // Enable grouping settings
+        updateClusterSettings(this::defaultTopQueryGroupingSettings);
+        Thread.sleep(2000);
         waitForEmptyTopQueriesResponse();
 
         // First disable field_name so field names don't interfere
         updateClusterSettings(this::disableFieldNameSettings);
+        Thread.sleep(2000);
         waitForEmptyTopQueriesResponse();
 
+        // Now disable field_type
         updateClusterSettings(this::disableFieldTypeSettings);
+        Thread.sleep(2000);
         waitForEmptyTopQueriesResponse();
 
         // With both field_name and field_type disabled, match queries should group together

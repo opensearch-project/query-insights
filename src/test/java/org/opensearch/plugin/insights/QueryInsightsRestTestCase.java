@@ -213,7 +213,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
@@ -226,7 +226,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"similarity\",\n"
             + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5,\n"
@@ -315,15 +315,27 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
      * Get a client that targets only the first node to avoid query insights being captured on multiple nodes
      */
     protected RestClient getFirstNodeClient() throws IOException {
-        // Get the first host from the cluster hosts
+        return getNodeClient(0);
+    }
+
+    /**
+     * Get a client that targets a specific node by index
+     * @param nodeIndex the index of the node to target (0-based)
+     * @return RestClient targeting the specified node
+     * @throws IOException if client creation fails
+     */
+    protected RestClient getNodeClient(int nodeIndex) throws IOException {
         List<HttpHost> hosts = getClusterHosts();
         if (hosts.isEmpty()) {
             throw new IllegalStateException("No cluster hosts available");
         }
-        HttpHost firstHost = hosts.get(0);
+        if (nodeIndex < 0 || nodeIndex >= hosts.size()) {
+            throw new IllegalArgumentException("Node index " + nodeIndex + " out of bounds. Available nodes: " + hosts.size());
+        }
+        HttpHost targetHost = hosts.get(nodeIndex);
 
-        // Create a client that only targets the first node
-        RestClientBuilder builder = RestClient.builder(firstHost);
+        // Create a client that only targets the specified node
+        RestClientBuilder builder = RestClient.builder(targetHost);
         if (isHttps()) {
             configureHttpsClient(builder, Settings.EMPTY);
         } else {
@@ -331,6 +343,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
         builder.setStrictDeprecationMode(false);
         return builder.build();
+    }
+
+    /**
+     * Get the number of nodes in the cluster
+     * @return number of nodes
+     * @throws IOException if request fails
+     */
+    protected int getClusterNodeCount() throws IOException {
+        return getClusterHosts().size();
     }
 
     protected void doSearch(int times) throws IOException {
@@ -753,7 +774,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected List<Map<String, Object>> fetchHistoricalTopQueries(String filterId, String filterNodeID, String type) throws IOException {
 
-        String to = formatter.format(Instant.now());
+        // Add 10 second buffer to 'to' time to account for processing delays, clock skew, and drain timing
+        // This ensures recently executed queries aren't excluded due to timestamp precision issues
+        String to = formatter.format(Instant.now().plusSeconds(10));
         String from = formatter.format(Instant.now().minusSeconds(9600)); // Default 160 minutes
 
         String endpoint = "/_insights/top_queries?from=" + from + "&to=" + to;

@@ -408,6 +408,8 @@ task integTestWithSecurity(type: RestIntegTestTask) {
 
   filter {
     includeTestsMatching 'org.opensearch.plugin.insights.*IT'
+    // QueryInsightsClusterIT requires 2+ nodes; excluded because demo SSL certs don't support multi-node in Java 21
+    excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
   }
 }
 
