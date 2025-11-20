@@ -257,9 +257,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             return true;
         }
         // Skip local index reader requests
-        if (searchRequestContext.getRequest().indices() != null
-            && Arrays.stream(searchRequestContext.getRequest().indices())
-                .allMatch(index -> index.contains(QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX))) {
+        String[] searchIndices = searchRequestContext.getRequest().indices();
+        if (searchIndices != null
+            && searchIndices.length > 0
+            && Arrays.stream(searchIndices).allMatch(index -> index.contains(QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX))) {
             return true;
         }
 

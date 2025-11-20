@@ -419,19 +419,20 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     }
 
     public void testExcludeInternalIndex() {
+        QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
         // Search request having internal index
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
-        when(searchRequestContext.getSuccessfulSearchShardIndices())
-            .thenReturn(new HashSet<>(List.of(
-                new Index("top_queries-2025.11.18-85608", "uuid-1")
-            )));
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("top_queries-2025.11.18-85608", "uuid-1")))
+        );
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
 
         // test search top_queries* index along with other indices
+        queryInsightsService = mock(QueryInsightsService.class);
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(2);
@@ -447,12 +448,20 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
         when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
-        when(searchRequestContext.getSuccessfulSearchShardIndices())
-            .thenReturn(new HashSet<>(List.of(
-                new Index("index-1", "uuid-1"),
-                new Index("top_queries-2025.11.18-85608", "uuid-2")
-            )));
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("top_queries-2025.11.18-85608", "uuid-2")))
+        );
 
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+
+        // test search with empty indices array should not skip
+        queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.indices()).thenReturn(new String[0]);
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("index-2", "uuid-2")))
+        );
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(1)).addRecord(any());
