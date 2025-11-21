@@ -456,6 +456,13 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(1)).addRecord(any());
 
+        // test when request indices is null
+        queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.indices()).thenReturn(null);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+
         // test search with empty indices array should not skip
         queryInsightsService = mock(QueryInsightsService.class);
         when(searchRequest.indices()).thenReturn(new String[0]);
