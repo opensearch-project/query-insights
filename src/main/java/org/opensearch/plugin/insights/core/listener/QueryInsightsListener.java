@@ -19,6 +19,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getT
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -253,6 +254,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .map(SearchRequest::source)
             .map(SearchSourceBuilder::profile)
             .orElse(false)) {
+            return true;
+        }
+        // Skip local index reader requests
+        String[] searchIndices = searchRequestContext.getRequest().indices();
+        if (searchIndices != null
+            && searchIndices.length > 0
+            && Arrays.stream(searchIndices).allMatch(index -> index.contains(QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX))) {
             return true;
         }
 

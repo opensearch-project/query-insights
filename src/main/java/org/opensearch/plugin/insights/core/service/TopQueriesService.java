@@ -24,7 +24,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -51,7 +50,6 @@ import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGroupe
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
-import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -275,25 +273,6 @@ public class TopQueriesService {
     }
 
     /**
-     * Lambda function to mark if a record is internal
-     */
-    private final Predicate<SearchQueryRecord> checkIfInternal = (record) -> {
-        Map<Attribute, Object> attributes = record.getAttributes();
-        Object indicesObject = attributes.get(Attribute.INDICES);
-        if (indicesObject instanceof Object[]) {
-            Object[] indices = (Object[]) indicesObject;
-            return Arrays.stream(indices).noneMatch(index -> {
-                if (index instanceof String) {
-                    String indexString = (String) index;
-                    return indexString.contains(TOP_QUERIES_INDEX_PREFIX);
-                }
-                return false;
-            });
-        }
-        return true;
-    };
-
-    /**
      * Get all top queries records that are in the current top n queries store
      * Optionally include top N records from the last window.
      * <p>
@@ -340,7 +319,7 @@ public class TopQueriesService {
             final ZonedDateTime end = ZonedDateTime.parse(to);
             Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                 && element.getTimestamp() <= end.toInstant().toEpochMilli();
-            filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
+            filterQueries = queries.stream().filter(timeFilter).collect(Collectors.toList());
         }
 
         // Filter based on the id, if provided
@@ -389,7 +368,6 @@ public class TopQueriesService {
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {
                         List<SearchQueryRecord> filteredRecords = records.stream()
-                            .filter(checkIfInternal)
                             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
                             .collect(Collectors.toList());
                         listener.onResponse(filteredRecords);
