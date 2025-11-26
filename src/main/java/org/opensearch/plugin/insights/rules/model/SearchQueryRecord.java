@@ -22,13 +22,16 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
@@ -116,6 +119,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * The WLM query group id
      */
     public static final String WLM_GROUP_ID = "wlm_group_id";
+    /**
+     * Indicates if the source was truncated due to length limits
+     */
+    public static final String SOURCE_TRUNCATED = "source_truncated";
     /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
@@ -259,8 +266,31 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
-                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
-                        attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(parser, false));
+                        if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
+                            String sourceString = parser.text();
+                            // Check if this source was truncated - if so, store as string without parsing
+                            Boolean isTruncated = (Boolean) attributes.get(Attribute.SOURCE_TRUNCATED);
+                            if (Boolean.TRUE.equals(isTruncated)) {
+                                attributes.put(Attribute.SOURCE, sourceString);
+                            } else {
+                                try {
+                                    XContentParser sourceParser = JsonXContent.jsonXContent.createParser(
+                                        NamedXContentRegistry.EMPTY,
+                                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                                        sourceString
+                                    );
+                                    attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(sourceParser, false));
+                                } catch (Exception e) {
+                                    attributes.put(Attribute.SOURCE, sourceString);
+                                }
+                            }
+                        } else {
+                            XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                            attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(parser, false));
+                        }
+                        break;
+                    case SOURCE_TRUNCATED:
+                        attributes.put(Attribute.SOURCE_TRUNCATED, parser.booleanValue());
                         break;
                     case TOTAL_SHARDS:
                         attributes.put(Attribute.TOTAL_SHARDS, parser.intValue());
@@ -579,14 +609,49 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             return false;
         }
         final SearchQueryRecord other = (SearchQueryRecord) o;
-        return timestamp == other.getTimestamp()
-            && measurements.equals(other.getMeasurements())
-            && attributes.size() == other.getAttributes().size();
+        if (timestamp != other.getTimestamp()
+            || !measurements.equals(other.getMeasurements())
+            || attributes.size() != other.getAttributes().size()) {
+            return false;
+        }
+
+        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
+            Attribute key = entry.getKey();
+            Object value = entry.getValue();
+            Object otherValue = other.getAttributes().get(key);
+
+            if (key == Attribute.SOURCE) {
+                String thisSource = value != null ? value.toString() : null;
+                String otherSource = otherValue != null ? otherValue.toString() : null;
+                if (!Objects.equals(thisSource, otherSource)) {
+                    return false;
+                }
+            } else if (value instanceof Object[] && otherValue instanceof Object[]) {
+                if (!Arrays.deepEquals((Object[]) value, (Object[]) otherValue)) {
+                    return false;
+                }
+            } else {
+                if (!Objects.equals(value, otherValue)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, measurements, attributes);
+        Map<Attribute, Object> attributesForHash = new HashMap<>();
+        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
+            if (entry.getKey() == Attribute.SOURCE) {
+                attributesForHash.put(entry.getKey(), entry.getValue() != null ? entry.getValue().toString() : null);
+            } else if (entry.getValue() instanceof Object[]) {
+                attributesForHash.put(entry.getKey(), Arrays.deepHashCode((Object[]) entry.getValue()));
+            } else {
+                attributesForHash.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Objects.hash(timestamp, measurements, attributesForHash);
     }
 
     @Override
