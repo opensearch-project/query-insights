@@ -14,6 +14,7 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 | Ankit Jain  | [jainankitk](https://github.com/jainankitk)                       | Amazon      |
 | Siddhant Deshmukh     | [deshsidd](https://github.com/deshsidd)                           | Amazon      |
 | David Zane         | [dzane17](https://github.com/dzane17)                 | Amazon      |
+| Kishore Kumaar Natarajan         | [KishoreKicha14](https://github.com/KishoreKicha14)                 | Amazon      |
 
 ## Emeritus
 
