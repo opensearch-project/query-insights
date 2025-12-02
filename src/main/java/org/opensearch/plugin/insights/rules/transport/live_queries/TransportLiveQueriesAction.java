@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
@@ -22,6 +24,7 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.CompletedLiveQueriesService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -45,12 +48,16 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final CompletedLiveQueriesService completedQueriesService;
+    private final Set<String> trackedTaskIds = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> taskStartTimes = new ConcurrentHashMap<>();
 
     @Inject
     public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.completedQueriesService = CompletedLiveQueriesService.getInstance();
     }
 
     @Override
@@ -69,6 +76,8 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             public void onResponse(ListTasksResponse taskResponse) {
                 try {
                     List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
+                    Set<String> currentTaskIds = ConcurrentHashMap.newKeySet();
+
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
                         if (!taskInfo.getAction().equals("indices:data/read/search")) {
                             continue;
@@ -98,6 +107,8 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
                         Map<Attribute, Object> attributes = new HashMap<>();
                         attributes.put(Attribute.NODE_ID, nodeId);
+                        attributes.put(Attribute.STATUS, "running");
+                        attributes.put(Attribute.START_TIMESTAMP, taskInfo.getStartTime());
                         if (request.isVerbose()) {
                             attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
                             attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
@@ -117,22 +128,38 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             // skip if this task's wlm group does not match user requested wlm group
                             continue;
                         }
-                        SearchQueryRecord record = new SearchQueryRecord(
-                            timestamp,
-                            measurements,
-                            attributes,
-                            taskInfo.getTaskId().toString()
-                        );
+                        String taskId = taskInfo.getTaskId().toString();
+                        currentTaskIds.add(taskId);
+                        trackedTaskIds.add(taskId);
+                        taskStartTimes.put(taskId, taskInfo.getStartTime());
+
+                        SearchQueryRecord record = new SearchQueryRecord(timestamp, measurements, attributes, taskId);
 
                         allFilteredRecords.add(record);
                     }
+
+                    // Check for completed/cancelled tasks and move them to completed queries
+                    trackedTaskIds.removeIf(taskId -> {
+                        if (!currentTaskIds.contains(taskId)) {
+                            // Task completed or cancelled, create a record
+                            Long startTime = taskStartTimes.remove(taskId);
+                            SearchQueryRecord finishedRecord = createFinishedRecord(taskId, startTime);
+                            if (finishedRecord != null) {
+                                completedQueriesService.addCompletedQuery(finishedRecord);
+                            }
+                            return true;
+                        }
+                        return false;
+                    });
 
                     // Sort descending by the requested metric and apply size limit in one pass
                     List<SearchQueryRecord> finalRecords = allFilteredRecords.stream()
                         .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
                         .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
                         .toList();
-                    listener.onResponse(new LiveQueriesResponse(finalRecords));
+
+                    List<SearchQueryRecord> finishedQueries = completedQueriesService.getCompletedQueries();
+                    listener.onResponse(new LiveQueriesResponse(finalRecords, finishedQueries));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -145,5 +172,23 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 listener.onFailure(e);
             }
         });
+    }
+
+    private SearchQueryRecord createFinishedRecord(String taskId, Long startTime) {
+        // Create a basic finished record (completed or cancelled)
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(0L));
+        measurements.put(MetricType.CPU, new Measurement(0L));
+        measurements.put(MetricType.MEMORY, new Measurement(0L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.NODE_ID, transportService.getLocalNode().getId());
+        attributes.put(Attribute.STATUS, "finished");
+        attributes.put(Attribute.END_TIMESTAMP, System.currentTimeMillis());
+        if (startTime != null) {
+            attributes.put(Attribute.START_TIMESTAMP, startTime);
+        }
+
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, taskId);
     }
 }

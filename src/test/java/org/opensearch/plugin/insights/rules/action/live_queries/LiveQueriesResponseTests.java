@@ -51,7 +51,8 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
 
     public void testSerialization() throws IOException {
         List<SearchQueryRecord> queries = createLiveQueriesList(3, 1000);
-        LiveQueriesResponse originalResponse = new LiveQueriesResponse(queries);
+        List<SearchQueryRecord> completedQueries = createLiveQueriesList(2, 2000);
+        LiveQueriesResponse originalResponse = new LiveQueriesResponse(queries, completedQueries);
         BytesStreamOutput out = new BytesStreamOutput();
         originalResponse.writeTo(out);
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
@@ -59,6 +60,8 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
 
         assertEquals(originalResponse.getLiveQueries().size(), deserializedResponse.getLiveQueries().size());
         assertEquals(originalResponse.getLiveQueries(), deserializedResponse.getLiveQueries());
+        assertEquals(originalResponse.getCompletedQueries().size(), deserializedResponse.getCompletedQueries().size());
+        assertEquals(originalResponse.getCompletedQueries(), deserializedResponse.getCompletedQueries());
     }
 
     public void testToXContent() throws IOException {
@@ -73,18 +76,24 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
         SearchQueryRecord rec1 = new SearchQueryRecord(1L, measurements, emptyMap(), "id1");
         SearchQueryRecord rec2 = new SearchQueryRecord(2L, measurements, emptyMap(), "id2");
         SearchQueryRecord rec3 = new SearchQueryRecord(3L, measurements, emptyMap(), "id3");
+        SearchQueryRecord completed1 = new SearchQueryRecord(4L, measurements, emptyMap(), "completed1");
         List<SearchQueryRecord> records = List.of(rec2, rec1, rec3);
-        LiveQueriesResponse response = new LiveQueriesResponse(records);
+        List<SearchQueryRecord> completedRecords = List.of(completed1);
+        LiveQueriesResponse response = new LiveQueriesResponse(records, completedRecords);
         XContentBuilder builder = XContentFactory.jsonBuilder();
         response.toXContent(builder, ToXContent.EMPTY_PARAMS);
         String json = builder.toString();
         Map<String, Object> parsed = XContentHelper.convertToMap(JsonXContent.jsonXContent, json, false);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> liveQueriesList = (List<Map<String, Object>>) parsed.get("live_queries");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> finishedQueriesList = (List<Map<String, Object>>) parsed.get("finished_queries");
         assertEquals(records.size(), liveQueriesList.size());
+        assertEquals(completedRecords.size(), finishedQueriesList.size());
         assertEquals("id2", liveQueriesList.get(0).get("id"));
         assertEquals("id1", liveQueriesList.get(1).get("id"));
         assertEquals("id3", liveQueriesList.get(2).get("id"));
+        assertEquals("completed1", finishedQueriesList.get(0).get("id"));
     }
 
     public void testToXContentEmptyList() throws IOException {
@@ -92,6 +101,13 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
         XContentBuilder builder = XContentFactory.jsonBuilder();
         response.toXContent(builder, ToXContent.EMPTY_PARAMS);
         String json = builder.toString();
-        assertEquals("{\"live_queries\":[]}", json);
+        assertEquals("{\"live_queries\":[],\"finished_queries\":[]}", json);
+    }
+
+    public void testBackwardCompatibilityConstructor() throws IOException {
+        List<SearchQueryRecord> queries = createLiveQueriesList(2, 1000);
+        LiveQueriesResponse response = new LiveQueriesResponse(queries);
+        assertEquals(queries.size(), response.getLiveQueries().size());
+        assertEquals(0, response.getCompletedQueries().size());
     }
 }
