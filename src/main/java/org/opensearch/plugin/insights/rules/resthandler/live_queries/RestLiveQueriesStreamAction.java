@@ -18,7 +18,6 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesStrea
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesStreamResponse;
 import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.BytesRestResponse;
-import org.opensearch.rest.RestChannel;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.RestResponse;
 import org.opensearch.rest.action.RestResponseListener;

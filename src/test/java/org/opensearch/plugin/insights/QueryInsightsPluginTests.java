@@ -108,7 +108,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             metricsRegistry
         );
-        assertEquals(2, components.size());
+        assertEquals(3, components.size());
         assertTrue(components.get(0) instanceof QueryInsightsService);
         assertTrue(components.get(1) instanceof QueryInsightsListener);
     }
@@ -123,7 +123,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetRestHandlers() {
         List<RestHandler> components = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
-        assertEquals(3, components.size());
+        assertEquals(4, components.size());
         assertTrue(components.get(0) instanceof RestTopQueriesAction);
         assertTrue(components.get(1) instanceof RestHealthStatsAction);
         assertTrue(components.get(2) instanceof RestLiveQueriesAction);
@@ -131,7 +131,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetActions() {
         List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> components = queryInsightsPlugin.getActions();
-        assertEquals(3, components.size());
+        assertEquals(4, components.size());
         assertTrue(components.get(0).getAction() instanceof TopQueriesAction);
         assertTrue(components.get(1).getAction() instanceof HealthStatsAction);
         assertTrue(components.get(2).getAction() instanceof LiveQueriesAction);
