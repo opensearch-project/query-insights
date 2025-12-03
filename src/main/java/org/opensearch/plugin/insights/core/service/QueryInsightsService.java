@@ -205,7 +205,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
-        this.liveQueriesCache = new LiveQueriesCache(client, threadPool);
+        this.liveQueriesCache = new LiveQueriesCache(client, threadPool, null);
     }
 
     /**

@@ -31,7 +31,6 @@ import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
-import org.opensearch.plugin.insights.core.service.LiveQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
@@ -99,8 +98,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsExporterFactory(client, clusterService),
             new QueryInsightsReaderFactory(client)
         );
-        final LiveQueriesCache liveQueriesCache = new LiveQueriesCache(client, threadPool);
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, false), liveQueriesCache);
+        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, false));
     }
 
     @Override
