@@ -125,7 +125,12 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
         final IndexNameExpressionResolver indexNameExpressionResolver,
         final Supplier<DiscoveryNodes> nodesInCluster
     ) {
-        return List.of(new RestTopQueriesAction(), new RestHealthStatsAction(), new RestLiveQueriesAction(), new RestLiveQueriesStreamAction());
+        return List.of(
+            new RestTopQueriesAction(),
+            new RestHealthStatsAction(),
+            new RestLiveQueriesAction(),
+            new RestLiveQueriesStreamAction()
+        );
     }
 
     @Override

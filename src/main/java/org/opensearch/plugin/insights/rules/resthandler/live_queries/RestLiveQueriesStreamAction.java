@@ -45,7 +45,7 @@ public class RestLiveQueriesStreamAction extends BaseRestHandler {
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final LiveQueriesStreamRequest streamRequest = new LiveQueriesStreamRequest(nodesIds);
-        
+
         return channel -> client.execute(LiveQueriesStreamAction.INSTANCE, streamRequest, new RestResponseListener<>(channel) {
             @Override
             public RestResponse buildResponse(LiveQueriesStreamResponse response) throws Exception {
