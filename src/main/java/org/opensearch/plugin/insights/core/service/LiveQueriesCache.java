@@ -14,12 +14,16 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
+import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.TaskInfo;
+import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 
@@ -34,7 +38,7 @@ public class LiveQueriesCache {
     private final Client client;
     private final ThreadPool threadPool;
     private final org.opensearch.transport.TransportService transportService;
-    private org.opensearch.threadpool.Scheduler.Cancellable pollingTask;
+    private Scheduler.Cancellable pollingTask;
 
     public LiveQueriesCache(Client client, ThreadPool threadPool, org.opensearch.transport.TransportService transportService) {
         this.client = client;
@@ -44,11 +48,7 @@ public class LiveQueriesCache {
 
     public void start() {
         // Add initial delay to allow cluster initialization, then poll every 10ms
-        pollingTask = threadPool.schedule(
-            this::startPolling,
-            new org.opensearch.common.unit.TimeValue(5, TimeUnit.SECONDS),
-            ThreadPool.Names.GENERIC
-        );
+        pollingTask = threadPool.schedule(this::startPolling, new TimeValue(5, TimeUnit.SECONDS), ThreadPool.Names.GENERIC);
     }
 
     private void startPolling() {
@@ -60,7 +60,7 @@ public class LiveQueriesCache {
                     // Cluster is ready, start polling
                     pollingTask = threadPool.scheduleWithFixedDelay(
                         LiveQueriesCache.this::pollRunningTasks,
-                        new org.opensearch.common.unit.TimeValue(10, TimeUnit.MILLISECONDS),
+                        new TimeValue(10, TimeUnit.MILLISECONDS),
                         ThreadPool.Names.GENERIC
                     );
                 }
@@ -70,18 +70,14 @@ public class LiveQueriesCache {
                     // Retry after 1 second if cluster not ready
                     pollingTask = threadPool.schedule(
                         LiveQueriesCache.this::startPolling,
-                        new org.opensearch.common.unit.TimeValue(1, TimeUnit.SECONDS),
+                        new TimeValue(1, TimeUnit.SECONDS),
                         ThreadPool.Names.GENERIC
                     );
                 }
             });
         } catch (Exception e) {
             // Retry after 1 second if any error
-            pollingTask = threadPool.schedule(
-                this::startPolling,
-                new org.opensearch.common.unit.TimeValue(1, TimeUnit.SECONDS),
-                ThreadPool.Names.GENERIC
-            );
+            pollingTask = threadPool.schedule(this::startPolling, new TimeValue(1, TimeUnit.SECONDS), ThreadPool.Names.GENERIC);
         }
     }
 
@@ -131,11 +127,11 @@ public class LiveQueriesCache {
 
         long cpuNanos = 0L;
         long memBytes = 0L;
-        org.opensearch.core.tasks.resourcetracker.TaskResourceStats stats = task.getResourceStats();
+        TaskResourceStats stats = task.getResourceStats();
         if (stats != null) {
-            java.util.Map<String, org.opensearch.core.tasks.resourcetracker.TaskResourceUsage> usageInfo = stats.getResourceUsageInfo();
+            Map<String, TaskResourceUsage> usageInfo = stats.getResourceUsageInfo();
             if (usageInfo != null) {
-                org.opensearch.core.tasks.resourcetracker.TaskResourceUsage totalUsage = usageInfo.get("total");
+                TaskResourceUsage totalUsage = usageInfo.get("total");
                 if (totalUsage != null) {
                     cpuNanos = totalUsage.getCpuTimeInNanos();
                     memBytes = totalUsage.getMemoryInBytes();
