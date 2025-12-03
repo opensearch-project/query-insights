@@ -22,9 +22,11 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 
 /**
@@ -37,10 +39,10 @@ public class LiveQueriesCache {
     private final ConcurrentHashMap<String, SearchQueryRecord> runningQueries = new ConcurrentHashMap<>();
     private final Client client;
     private final ThreadPool threadPool;
-    private final org.opensearch.transport.TransportService transportService;
+    private final TransportService transportService;
     private Scheduler.Cancellable pollingTask;
 
-    public LiveQueriesCache(Client client, ThreadPool threadPool, org.opensearch.transport.TransportService transportService) {
+    public LiveQueriesCache(Client client, ThreadPool threadPool, TransportService transportService) {
         this.client = client;
         this.threadPool = threadPool;
         this.transportService = transportService;
@@ -147,8 +149,8 @@ public class LiveQueriesCache {
         attributes.put(Attribute.IS_CANCELLED, task.isCancelled());
 
         String wlmGroupId = null;
-        if (transportService.getLocalNode().getId().equals(task.getTaskId().getNodeId())) {
-            org.opensearch.tasks.Task runningTask = transportService.getTaskManager().getTask(task.getTaskId().getId());
+        if (transportService != null && transportService.getLocalNode().getId().equals(task.getTaskId().getNodeId())) {
+            Task runningTask = transportService.getTaskManager().getTask(task.getTaskId().getId());
             if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
                 wlmGroupId = workloadTask.getWorkloadGroupId();
             }
