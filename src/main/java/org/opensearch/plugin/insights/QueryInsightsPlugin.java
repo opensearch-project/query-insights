@@ -34,12 +34,15 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesStreamAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
 import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQueriesStreamAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesStreamAction;
 import org.opensearch.plugin.insights.rules.transport.top_queries.TransportTopQueriesAction;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -120,7 +123,12 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
         final IndexNameExpressionResolver indexNameExpressionResolver,
         final Supplier<DiscoveryNodes> nodesInCluster
     ) {
-        return List.of(new RestTopQueriesAction(), new RestHealthStatsAction(), new RestLiveQueriesAction());
+        return List.of(
+            new RestTopQueriesAction(),
+            new RestHealthStatsAction(),
+            new RestLiveQueriesAction(),
+            new RestLiveQueriesStreamAction()
+        );
     }
 
     @Override
@@ -128,7 +136,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
         return List.of(
             new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class),
             new ActionPlugin.ActionHandler<>(HealthStatsAction.INSTANCE, TransportHealthStatsAction.class),
-            new ActionPlugin.ActionHandler<>(LiveQueriesAction.INSTANCE, TransportLiveQueriesAction.class)
+            new ActionPlugin.ActionHandler<>(LiveQueriesAction.INSTANCE, TransportLiveQueriesAction.class),
+            new ActionPlugin.ActionHandler<>(LiveQueriesStreamAction.INSTANCE, TransportLiveQueriesStreamAction.class)
         );
     }
 
