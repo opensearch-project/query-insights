@@ -117,6 +117,18 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String WLM_GROUP_ID = "wlm_group_id";
     /**
+     * Query status (running, completed, cancelled)
+     */
+    public static final String STATUS = "status";
+    /**
+     * Query start timestamp
+     */
+    public static final String START_TIMESTAMP = "start_timestamp";
+    /**
+     * Query end timestamp
+     */
+    public static final String END_TIMESTAMP = "end_timestamp";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -291,6 +303,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case WLM_GROUP_ID:
                         attributes.put(Attribute.WLM_GROUP_ID, parser.text());
+                        break;
+                    case STATUS:
+                        attributes.put(Attribute.STATUS, parser.text());
+                        break;
+                    case START_TIMESTAMP:
+                        attributes.put(Attribute.START_TIMESTAMP, parser.longValue());
+                        break;
+                    case END_TIMESTAMP:
+                        attributes.put(Attribute.END_TIMESTAMP, parser.longValue());
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);

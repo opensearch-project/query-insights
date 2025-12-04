@@ -82,7 +82,22 @@ public enum Attribute {
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED;
+    IS_CANCELLED,
+
+    /**
+     * Query status (running, completed, cancelled)
+     */
+    STATUS,
+
+    /**
+     * Query start timestamp
+     */
+    START_TIMESTAMP,
+
+    /**
+     * Query end timestamp
+     */
+    END_TIMESTAMP;
 
     /**
      * Read an Attribute from a StreamInput

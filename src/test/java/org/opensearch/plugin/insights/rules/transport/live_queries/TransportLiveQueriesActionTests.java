@@ -61,6 +61,12 @@ import org.opensearch.transport.client.ClusterAdminClient;
 @SuppressWarnings("unchecked")
 public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
+    @Override
+    public void tearDown() throws Exception {
+        super.tearDown();
+        org.opensearch.plugin.insights.core.service.CompletedLiveQueriesService.resetForTesting();
+    }
+
     private TransportLiveQueriesAction transportLiveQueriesAction;
     private Client client;
     private ClusterService clusterService;
