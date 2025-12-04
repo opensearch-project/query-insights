@@ -19,6 +19,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import org.apache.logging.log4j.LogManager;
@@ -41,8 +42,12 @@ import org.opensearch.common.compress.CompressedXContent;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -138,10 +143,13 @@ public class LocalIndexExporter implements QueryInsightsExporter {
             return;
         }
         try {
+            // Read index mappings once and pass to downstream methods to avoid multiple I/O operations
+            final String currentMapping = readIndexMappings();
+
             final String indexName = buildLocalIndexName();
             if (!checkIndexExists(indexName)) {
                 // First ensure the template exists, then create the index
-                ensureTemplateExists().whenComplete((templateCreated, templateException) -> {
+                ensureTemplateExists(currentMapping).whenComplete((templateCreated, templateException) -> {
                     if (templateException != null) {
                         logger.error("Error ensuring template exists:", templateException);
                         OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
@@ -150,9 +158,9 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                     // Proceed with index creation even if there was a template error
                     // The template might already exist or might be created by another node
                     try {
-                        createIndexAndBulk(indexName, records);
-                    } catch (IOException ioe) {
-                        logger.error("Error creating index:", ioe);
+                        createIndexAndBulk(indexName, records, currentMapping);
+                    } catch (Exception e) {
+                        logger.error("Unable to create index and bulk export:", e);
                         OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
                     }
                 });
@@ -171,9 +179,9 @@ public class LocalIndexExporter implements QueryInsightsExporter {
      *
      * @param indexName Name of the index to create
      * @param records Records to export
-     * @throws IOException If there's an error reading mappings
+     * @param mapping Index mapping to use
      */
-    void createIndexAndBulk(String indexName, List<SearchQueryRecord> records) throws IOException {
+    void createIndexAndBulk(String indexName, List<SearchQueryRecord> records, String mapping) {
         CreateIndexRequest createIndexRequest = new CreateIndexRequest(indexName);
 
         createIndexRequest.settings(
@@ -181,7 +189,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                 .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
                 .put("index.auto_expand_replicas", DEFAULT_AUTO_EXPAND_REPLICAS)
         );
-        createIndexRequest.mapping(readIndexMappings());
+        createIndexRequest.mapping(mapping);
 
         client.admin().indices().create(createIndexRequest, new ActionListener<>() {
             @Override
@@ -328,36 +336,64 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Ensures that the template exists. This method first checks if the template exists and
-     * only creates it if it doesn't.
+     * Ensures that the template exists and is up-to-date. This method checks if the template exists,
+     * compares its mapping with the current mapping, and updates it if necessary.
+     * Only the cluster manager node performs template management to avoid race conditions.
      *
+     * @param currentMapping The index mapping to use for template creation/comparison
      * @return CompletableFuture that completes when the template check/creation is done
      */
-    CompletableFuture<Boolean> ensureTemplateExists() {
+    CompletableFuture<Boolean> ensureTemplateExists(String currentMapping) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+        // Only cluster manager node should manage templates to avoid race conditions
+        ClusterState clusterState = clusterService.state();
+        if (clusterState == null || !clusterState.nodes().isLocalNodeElectedClusterManager()) {
+            logger.debug("Skipping template management on non-cluster-manager node");
+            future.complete(true);
+            return future;
+        }
         // First check if the template already exists
         GetComposableIndexTemplateAction.Request getRequest = new GetComposableIndexTemplateAction.Request();
 
         client.execute(GetComposableIndexTemplateAction.INSTANCE, getRequest, new ActionListener<>() {
             @Override
             public void onResponse(GetComposableIndexTemplateAction.Response response) {
-                // If the template exists and priority has not been changed, we don't need to create/update it
-                if (response.indexTemplates().containsKey(TEMPLATE_NAME)
-                    && response.indexTemplates().get(TEMPLATE_NAME).priority() == templatePriority) {
-                    logger.debug("Template [{}] already exists, skipping creation", TEMPLATE_NAME);
-                    future.complete(true);
-                    return;
+                if (response.indexTemplates().containsKey(TEMPLATE_NAME)) {
+                    ComposableIndexTemplate existingTemplate = response.indexTemplates().get(TEMPLATE_NAME);
+
+                    // Check if template needs updating
+                    boolean needsUpdate = existingTemplate == null || existingTemplate.priority() != templatePriority;
+
+                    // Check if mapping content changes
+                    if (!needsUpdate) {
+                        String existingMappingString = "{}";
+                        if (existingTemplate.template() != null && existingTemplate.template().mappings() != null) {
+                            existingMappingString = existingTemplate.template().mappings().toString();
+                        }
+                        if (!mappingsEqual(existingMappingString, currentMapping)) {
+                            needsUpdate = true;
+                        }
+                    }
+
+                    if (!needsUpdate) {
+                        logger.debug("Template [{}] is up-to-date, skipping update", TEMPLATE_NAME);
+                        future.complete(true);
+                        return;
+                    }
+
+                    logger.info("Template [{}] needs updating", TEMPLATE_NAME);
                 }
 
-                // Template doesn't exist, create it
-                createTemplate(future);
+                // Template doesn't exist, create it or needs updating
+                createTemplate(future, currentMapping);
             }
 
             @Override
             public void onFailure(Exception e) {
                 // If we can't retrieve the template info, try creating it anyway
                 logger.warn("Failed to check if template [{}] exists: {}", TEMPLATE_NAME, e.getMessage());
-                createTemplate(future);
+                createTemplate(future, currentMapping);
             }
         });
 
@@ -365,14 +401,15 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Helper method to create the template
+     * Helper method to create or update the template
      *
      * @param future The CompletableFuture to complete when done
+     * @param mapping The index mapping to use for template creation
      */
-    void createTemplate(CompletableFuture<Boolean> future) {
+    void createTemplate(CompletableFuture<Boolean> future, String mapping) {
         try {
             // Create a V2 template (ComposableIndexTemplate)
-            CompressedXContent compressedMapping = new CompressedXContent(readIndexMappings());
+            CompressedXContent compressedMapping = new CompressedXContent(mapping);
 
             // Create template component
             org.opensearch.cluster.metadata.Template template = new org.opensearch.cluster.metadata.Template(
@@ -441,6 +478,46 @@ public class LocalIndexExporter implements QueryInsightsExporter {
      */
     public long getTemplatePriority() {
         return templatePriority;
+    }
+
+    /**
+     * Compare two JSON mapping strings for semantic equivalence.
+     * Parses both mappings as JSON and compares their structure rather than string content.
+     * Falls back to string comparison if JSON parsing fails.
+     *
+     * @param mapping1 First mapping JSON string
+     * @param mapping2 Second mapping JSON string
+     * @return true if mappings are semantically equivalent, false otherwise
+     */
+    boolean mappingsEqual(String mapping1, String mapping2) {
+        try {
+            Map<String, Object> map1 = parseJsonToMap(mapping1);
+            Map<String, Object> map2 = parseJsonToMap(mapping2);
+            return Objects.equals(map1, map2);
+        } catch (Exception e) {
+            logger.debug("Failed to parse mappings as JSON, falling back to string comparison: {}", e.getMessage());
+            return Objects.equals(mapping1, mapping2);
+        }
+    }
+
+    /**
+     * Parse JSON string to Map using OpenSearch XContent utilities
+     *
+     * @param json JSON string to parse
+     * @return Map representation of the JSON
+     * @throws IOException if parsing fails
+     */
+    private Map<String, Object> parseJsonToMap(String json) throws IOException {
+        if (json == null || json.trim().isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        try (
+            XContentParser parser = XContentType.JSON.xContent()
+                .createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS, json)
+        ) {
+            return parser.map();
+        }
     }
 
 }

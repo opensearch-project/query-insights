@@ -578,12 +578,13 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected void defaultExporterSettings() throws IOException {
         Request request = new Request("PUT", "/_cluster/settings");
+        request.addParameter("cluster_manager_timeout", "30s");
         request.setJsonEntity(
             "{ \"persistent\": { "
                 + "\"search.insights.top_queries.exporter.type\": \"local_index\", "
                 + "\"search.insights.top_queries.latency.enabled\": \"true\" } }"
         );
-        Response response = client().performRequest(request);
+        Response response = adminClient().performRequest(request);
         Assert.assertEquals(200, response.getStatusLine().getStatusCode());
     }
 
@@ -708,48 +709,65 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void checkQueryInsightsIndexTemplate() throws IOException {
-        Request request = new Request("GET", "/_index_template?pretty");
-        Response response = client().performRequest(request);
-        byte[] bytes = response.getEntity().getContent().readAllBytes();
+        for (int i = 0; i < 60; i++) {
+            Request request = new Request("GET", "/_index_template?pretty");
+            Response response = adminClient().performRequest(request);
+            byte[] bytes = response.getEntity().getContent().readAllBytes();
 
-        try (
-            XContentParser parser = JsonXContent.jsonXContent.createParser(
-                NamedXContentRegistry.EMPTY,
-                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                bytes
-            )
-        ) {
-            Map<String, Object> parsed = parser.map();
+            try (
+                XContentParser parser = JsonXContent.jsonXContent.createParser(
+                    NamedXContentRegistry.EMPTY,
+                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                    bytes
+                )
+            ) {
+                Map<String, Object> parsed = parser.map();
+                List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
 
-            List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
-            Assert.assertNotNull("Expected index_templates to exist", templates);
-            Assert.assertFalse("Expected at least one index_template", templates.isEmpty());
+                if (templates != null && !templates.isEmpty()) {
+                    validateTemplate(templates);
+                    return;
+                }
+            }
 
-            Map<String, Object> firstTemplate = templates.get(0);
-            Assert.assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
-
-            Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
-
-            List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
-            Assert.assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
-
-            Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
-            Map<String, Object> settings = (Map<String, Object>) template.get("settings");
-            Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
-            Assert.assertEquals("1", indexSettings.get("number_of_shards"));
-            Assert.assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
-
-            Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
-            Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
-            Assert.assertEquals(1, ((Number) meta.get("schema_version")).intValue());
-            Assert.assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
-
-            Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
-            Assert.assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
-            Assert.assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
-            Assert.assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
-            Assert.assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
         }
+        Assert.fail("Index template not created within timeout");
+    }
+
+    private void validateTemplate(List<Map<String, Object>> templates) {
+        Assert.assertNotNull("Expected index_templates to exist", templates);
+        Assert.assertFalse("Expected at least one index_template", templates.isEmpty());
+
+        Map<String, Object> firstTemplate = templates.get(0);
+        Assert.assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
+
+        Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
+
+        List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
+        Assert.assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
+
+        Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
+        Map<String, Object> settings = (Map<String, Object>) template.get("settings");
+        Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
+        Assert.assertEquals("1", indexSettings.get("number_of_shards"));
+        Assert.assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
+
+        Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
+        Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
+        Assert.assertEquals(1, ((Number) meta.get("schema_version")).intValue());
+        Assert.assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
+
+        Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
+        Assert.assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
+        Assert.assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
+        Assert.assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
+        Assert.assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
     }
 
     protected void setLocalIndexToDebug() throws IOException {
@@ -866,5 +884,19 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
 
         return idNodePairs;
+    }
+
+    protected void waitForClusterManagerAndTriggerTemplate() throws IOException, InterruptedException {
+        // Wait for cluster manager election
+        for (int i = 0; i < 30; i++) {
+            Request request = new Request("GET", "/_cluster/state/cluster_manager_node");
+            Response response = client().performRequest(request);
+            String content = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            if (content.contains("cluster_manager_node") && !content.contains("null")) {
+                return;
+            }
+            Thread.sleep(1000);
+        }
+        throw new IllegalStateException("Cluster manager not elected within timeout");
     }
 }

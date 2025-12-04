@@ -106,6 +106,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary(indexName, true, 1, 0);
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
 
         // Create local index exporter
         localIndexExporter = new LocalIndexExporter(client, clusterService, format, "", "id");
@@ -146,10 +147,10 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         verify(exporterSpy).bulk(anyString(), eq(records));
 
         // ensureTemplateExists was NOT called
-        verify(exporterSpy, never()).ensureTemplateExists();
+        verify(exporterSpy, never()).ensureTemplateExists(eq("{}"));
 
         // createIndexAndBulk was NOT called
-        verify(exporterSpy, never()).createIndexAndBulk(anyString(), any());
+        verify(exporterSpy, never()).createIndexAndBulk(anyString(), any(), eq("{}"));
     }
 
     public void testExportRecordsWhenIndexNotExist() throws IOException {
@@ -162,16 +163,16 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         // to simulate index doesn't exist
         doReturn(false).when(exporterSpy).checkIndexExists(anyString());
         CompletableFuture<Boolean> completedFuture = CompletableFuture.completedFuture(true);
-        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists();
-        doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any());
+        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists(eq("{}"));
+        doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any(), eq("{}"));
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(3);
 
         exporterSpy.export(records);
 
         // ensureTemplateExists was called (since index doesn't exist)
-        verify(exporterSpy).ensureTemplateExists();
+        verify(exporterSpy).ensureTemplateExists(eq("{}"));
         // createIndexAndBulk was called
-        verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
+        verify(exporterSpy).createIndexAndBulk(anyString(), eq(records), eq("{}"));
         // bulk was NOT called directly (it's called inside createIndexAndBulk)
         verify(exporterSpy, never()).bulk(anyString(), any());
     }
@@ -186,14 +187,14 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         // simulate index doesn't exist
         doReturn(false).when(exporterSpy).checkIndexExists(anyString());
         CompletableFuture<Boolean> templateFuture = new CompletableFuture<>();
-        doReturn(templateFuture).when(exporterSpy).ensureTemplateExists();
+        doReturn(templateFuture).when(exporterSpy).ensureTemplateExists(eq("{}"));
 
         // Use a CountDownLatch to track if createIndexAndBulk is called
         CountDownLatch createIndexCalled = new CountDownLatch(1);
         doAnswer(invocation -> {
             createIndexCalled.countDown();
             return null;
-        }).when(exporterSpy).createIndexAndBulk(anyString(), any());
+        }).when(exporterSpy).createIndexAndBulk(anyString(), any(), eq("{}"));
 
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(3);
 
@@ -275,9 +276,9 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // make ensureTemplateExists to complete successfully
         CompletableFuture<Boolean> completedFuture = CompletableFuture.completedFuture(true);
-        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists();
+        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists(eq("{}"));
 
-        CompletableFuture<Boolean> future = exporterSpy.ensureTemplateExists();
+        CompletableFuture<Boolean> future = exporterSpy.ensureTemplateExists("{}");
         assertTrue(future.get(5, TimeUnit.SECONDS));
 
         assertEquals("Template priority should be set correctly", 5000L, exporterSpy.getTemplatePriority());
@@ -291,6 +292,9 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         ClusterService mockClusterService = mock(ClusterService.class);
         ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
         org.opensearch.cluster.metadata.Metadata metadata = mock(org.opensearch.cluster.metadata.Metadata.class);
         when(metadata.templates()).thenReturn(Map.of());
         when(metadata.templatesV2()).thenReturn(Map.of());
@@ -317,7 +321,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
 
-        CompletableFuture<Boolean> future = exporter.ensureTemplateExists();
+        CompletableFuture<Boolean> future = exporter.ensureTemplateExists("{}");
         Boolean result = future.get(5, TimeUnit.SECONDS);
 
         assertTrue("Template check should be successful", result);
@@ -389,7 +393,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         when(adminClient.indices()).thenReturn(indicesClient);
 
         doNothing().when(indicesClient).create(requestCaptor.capture(), any(ActionListener.class));
-        exporterSpy.createIndexAndBulk("test-index", Collections.emptyList());
+        exporterSpy.createIndexAndBulk("test-index", Collections.emptyList(), "{}");
 
         // Verify the captured request
         CreateIndexRequest capturedRequest = requestCaptor.getValue();
@@ -403,4 +407,369 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         // Verify there is no number_of_replicas setting.
         assertNull(settings.get("index.number_of_replicas"));
     }
+
+    /**
+     * Test template update when priority differs
+     */
+    public void testTemplateUpdateWhenPriorityDiffers() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        // Mock existing template with different priority
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            when(mockTemplate.priority()).thenReturn(100L);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        // Mock createTemplate to complete successfully
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class), eq("{}"));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists("{}");
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        // Verify createTemplate was called (indicating update was triggered)
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class), eq("{}"));
+    }
+
+    /**
+     * Test template update when adding new field to existing mapping
+     */
+    public void testTemplateUpdateWhenAddingNewField() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        String existingMapping = "{\"properties\":{\"timestamp\":{\"type\":\"long\"}}}";
+        String newMapping = "{\"properties\":{\"timestamp\":{\"type\":\"long\"},\"source\":{\"type\":\"keyword\"}}}";
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, newMapping, "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            org.opensearch.cluster.metadata.Template template = mock(org.opensearch.cluster.metadata.Template.class);
+
+            when(mockTemplate.priority()).thenReturn(DEFAULT_TEMPLATE_PRIORITY);
+            when(mockTemplate.template()).thenReturn(template);
+            when(template.mappings()).thenReturn(null);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        doAnswer(invocation -> exporter.mappingsEqual(existingMapping, newMapping)).when(exporterSpy)
+            .mappingsEqual(anyString(), anyString());
+
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists(newMapping);
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        // Verify template update was triggered due to mapping difference
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+
+        // Verify mappings are actually different
+        assertFalse("Adding field should make mappings different", exporter.mappingsEqual(existingMapping, newMapping));
+    }
+
+    /**
+     * Test template update when modifying field type
+     */
+    public void testTemplateUpdateWhenModifyingFieldType() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        String existingMapping = "{\"properties\":{\"query\":{\"type\":\"text\"}}}";
+        String newMapping = "{\"properties\":{\"query\":{\"type\":\"keyword\"}}}";
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, newMapping, "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            org.opensearch.cluster.metadata.Template template = mock(org.opensearch.cluster.metadata.Template.class);
+
+            when(mockTemplate.priority()).thenReturn(DEFAULT_TEMPLATE_PRIORITY);
+            when(mockTemplate.template()).thenReturn(template);
+            when(template.mappings()).thenReturn(null);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        doAnswer(invocation -> exporter.mappingsEqual(existingMapping, newMapping)).when(exporterSpy)
+            .mappingsEqual(anyString(), anyString());
+
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists(newMapping);
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+        assertFalse("Field type change should make mappings different", exporter.mappingsEqual(existingMapping, newMapping));
+    }
+
+    /**
+     * Test template update when adding field properties
+     */
+    public void testTemplateUpdateWhenAddingFieldProperties() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        String existingMapping = "{\"properties\":{\"latency\":{\"type\":\"long\"}}}";
+        String newMapping = "{\"properties\":{\"latency\":{\"type\":\"long\",\"ignore_above\" : 256}}}";
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, newMapping, "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
+            org.opensearch.cluster.metadata.Template template = mock(org.opensearch.cluster.metadata.Template.class);
+
+            when(mockTemplate.priority()).thenReturn(DEFAULT_TEMPLATE_PRIORITY);
+            when(mockTemplate.template()).thenReturn(template);
+            when(template.mappings()).thenReturn(null);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
+
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        doAnswer(invocation -> exporter.mappingsEqual(existingMapping, newMapping)).when(exporterSpy)
+            .mappingsEqual(anyString(), anyString());
+
+        doAnswer(invocation -> {
+            CompletableFuture<Boolean> future = invocation.getArgument(0);
+            future.complete(true);
+            return null;
+        }).when(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+
+        CompletableFuture<Boolean> result = exporterSpy.ensureTemplateExists(newMapping);
+        assertTrue(result.get(5, TimeUnit.SECONDS));
+
+        verify(exporterSpy).createTemplate(any(CompletableFuture.class), eq(newMapping));
+        assertFalse("Adding field properties should make mappings different", exporter.mappingsEqual(existingMapping, newMapping));
+    }
+
+    /**
+     * Test template creation failure handling
+     */
+    public void testTemplateCreationFailure() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(true);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        doAnswer(invocation -> {
+            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
+            when(mockResponse.indexTemplates()).thenReturn(Map.of());
+            ActionListener listener = invocation.getArgument(2);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(mockClient).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        doAnswer(invocation -> {
+            ActionListener listener = invocation.getArgument(2);
+            listener.onFailure(new RuntimeException("Template creation failed"));
+            return null;
+        }).when(mockClient).execute(eq(PutComposableIndexTemplateAction.INSTANCE), any(), any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+
+        CompletableFuture<Boolean> result = exporter.ensureTemplateExists("{}");
+
+        try {
+            result.get(5, TimeUnit.SECONDS);
+            fail("Expected exception due to template creation failure");
+        } catch (Exception e) {
+            assertTrue(e.getCause() instanceof RuntimeException);
+        }
+    }
+
+    /**
+     * Test mapping comparison with identical content
+     */
+    public void testMappingComparisonWithIdenticalContent() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+
+        assertTrue("Identical mappings should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different formatting
+     */
+    public void testMappingComparisonWithDifferentFormatting() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Same content, different formatting
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\n  \"properties\": {\n    \"source\": {\n      \"type\": \"keyword\",\n      \"index\": false\n    }\n  }\n}";
+
+        assertTrue("Mappings with different formatting should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different field order
+     */
+    public void testMappingComparisonWithDifferentFieldOrder() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Same fields, different order
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false},\"timestamp\":{\"type\":\"long\"}}}";
+        String mapping2 = "{\"properties\":{\"timestamp\":{\"type\":\"long\"},\"source\":{\"index\":false,\"type\":\"keyword\"}}}";
+
+        assertTrue("Mappings with different field order should be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+    }
+
+    /**
+     * Test mapping comparison with different content
+     */
+    public void testMappingComparisonWithDifferentContent() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        String mapping1 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false}}}";
+        String mapping2 = "{\"properties\":{\"source\":{\"type\":\"text\",\"index\":false}}}";
+        String mapping3 = "{\"properties\":{\"timestamp\":{\"type\":\"long\"}}}";
+        String mapping4 = "{\"properties\":{\"source\":{\"type\":\"keyword\",\"index\":false},\"timestamp\":{\"type\":\"long\"}}}";
+
+        assertFalse("Mappings with different content should not be equivalent", exporter.mappingsEqual(mapping1, mapping2));
+        assertFalse("Mappings with different content should not be equivalent", exporter.mappingsEqual(mapping3, mapping4));
+    }
+
+    /**
+     * Test mapping comparison with empty mappings
+     */
+    public void testMappingComparisonWithEmptyMappings() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        assertTrue("Empty mappings should be equivalent", exporter.mappingsEqual("{}", "{}"));
+        assertTrue("Null and empty should be equivalent", exporter.mappingsEqual(null, ""));
+        assertTrue("Empty string and empty object should be equivalent", exporter.mappingsEqual("", "{}"));
+    }
+
+    /**
+     * Test mapping comparison with invalid JSON falls back to string comparison
+     */
+    public void testMappingComparisonWithInvalidJson() throws Exception {
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+
+        // Invalid JSON should fall back to string comparison
+        String invalidJson1 = "{invalid json}";
+        String invalidJson2 = "{invalid json}";
+        String differentInvalidJson = "{different invalid}";
+
+        assertTrue("Identical invalid JSON should be equal via string comparison", exporter.mappingsEqual(invalidJson1, invalidJson2));
+        assertFalse("Different invalid JSON should not be equal", exporter.mappingsEqual(invalidJson1, differentInvalidJson));
+    }
+
+    /**
+     * Test that non-cluster manager nodes skip template management
+     */
+    public void testNonClusterManagerNodeSkipsTemplateManagement() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+
+        // Configure as non-cluster manager node
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(false);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+
+        CompletableFuture<Boolean> result = exporter.ensureTemplateExists("{}");
+        assertTrue("Non-cluster manager should complete successfully without template operations", result.get(5, TimeUnit.SECONDS));
+
+        // Verify no client interactions occurred
+        verify(mockClient, never()).execute(any(), any(), any());
+    }
+
+    /**
+     * Test export on non-cluster manager node when index doesn't exist
+     */
+    public void testExportOnNonClusterManagerWhenIndexNotExist() throws Exception {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        ClusterState mockState = mock(ClusterState.class);
+        org.opensearch.cluster.node.DiscoveryNodes mockNodes = mock(org.opensearch.cluster.node.DiscoveryNodes.class);
+
+        // Configure as non-cluster manager node
+        when(mockNodes.isLocalNodeElectedClusterManager()).thenReturn(false);
+        when(mockState.nodes()).thenReturn(mockNodes);
+        when(mockClusterService.state()).thenReturn(mockState);
+
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        // Mock index doesn't exist
+        doReturn(false).when(exporterSpy).checkIndexExists(anyString());
+        doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any(), any());
+
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        exporterSpy.export(records);
+
+        // Verify ensureTemplateExists was called but completed immediately without client calls
+        verify(exporterSpy).ensureTemplateExists(eq("{}"));
+        // Verify createIndexAndBulk was still called (index creation should proceed)
+        verify(exporterSpy).createIndexAndBulk(anyString(), eq(records), eq("{}"));
+        // Verify no template-related client calls were made
+        verify(mockClient, never()).execute(eq(GetComposableIndexTemplateAction.INSTANCE), any(), any());
+        verify(mockClient, never()).execute(eq(PutComposableIndexTemplateAction.INSTANCE), any(), any());
+    }
+
 }
