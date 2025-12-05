@@ -27,7 +27,8 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         doSearch("match", 6);
         doSearch("term", 4);
 
-        assertTopQueriesCount(12, "latency");
+        // defaultTopQueriesSettings is latency.top_n_size = 5
+        assertTopQueriesCount(5, "latency");
 
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
 
@@ -66,7 +67,8 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         doSearch("match", 6);
         doSearch("term", 4);
 
-        assertTopQueriesCount(12, "latency");
+        // defaultTopQueriesSettings is latency.top_n_size = 5
+        assertTopQueriesCount(5, "latency");
     }
 
     public void testSimilarityMaxGroupsChanged() throws IOException, InterruptedException {
