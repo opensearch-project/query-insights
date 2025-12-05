@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.util.ArrayUtil;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -118,7 +119,13 @@ public enum Attribute {
         if (attributeValue instanceof List) {
             out.writeList((List<? extends Writeable>) attributeValue);
         } else if (attributeValue instanceof SearchSourceBuilder) {
-            ((SearchSourceBuilder) attributeValue).writeTo(out);
+            if (out.getVersion().onOrAfter(Version.V_3_4_0)) {
+                // For 3.4+ versions, always write as string
+                out.writeGenericValue(attributeValue.toString());
+            } else {
+                // For pre-3.4 versions, write as SearchSourceBuilder for backward compatibility
+                ((SearchSourceBuilder) attributeValue).writeTo(out);
+            }
         } else if (attributeValue instanceof GroupingType) {
             out.writeString(((GroupingType) attributeValue).getValue());
         } else {
@@ -138,8 +145,32 @@ public enum Attribute {
         if (attribute == Attribute.TASK_RESOURCE_USAGES) {
             return in.readList(TaskResourceInfo::readFromStream);
         } else if (attribute == Attribute.SOURCE) {
-            SearchSourceBuilder builder = new SearchSourceBuilder(in);
-            return builder;
+            if (in.getVersion().onOrAfter(Version.V_3_4_0)) {
+                // For 3.4+ versions, always return as string
+                Object value = in.readGenericValue();
+                return value instanceof String ? value : value.toString();
+            } else {
+                // For pre-3.4 versions, we need to handle both old format (SearchSourceBuilder)
+                // and new format (string from 3.4+ nodes) gracefully
+
+                // Mark the current position in case we need to reset
+                in.mark(1024); // Mark with a reasonable read-ahead limit
+
+                try {
+                    // First, try to read as SearchSourceBuilder (for old indices)
+                    return new SearchSourceBuilder(in);
+                } catch (Exception e) {
+                    // If SearchSourceBuilder read fails, reset and try generic read
+                    try {
+                        in.reset();
+                        Object value = in.readGenericValue();
+                        return value;
+                    } catch (Exception e2) {
+                        // If both fail, this is likely a data corruption issue
+                        throw new IOException("Failed to read SOURCE attribute: " + e2.getMessage(), e2);
+                    }
+                }
+            }
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {
