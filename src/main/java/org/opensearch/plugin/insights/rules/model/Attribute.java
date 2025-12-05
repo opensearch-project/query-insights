@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.util.ArrayUtil;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -147,9 +148,8 @@ public enum Attribute {
     public static Object readAttributeValue(StreamInput in, Attribute attribute) throws IOException {
         if (attribute == Attribute.TASK_RESOURCE_USAGES) {
             return in.readList(TaskResourceInfo::readFromStream);
-        } else if (attribute == Attribute.SOURCE) {
-            SearchSourceBuilder builder = new SearchSourceBuilder(in);
-            return builder;
+        } else if (attribute == Attribute.SOURCE && !in.getVersion().onOrAfter(Version.V_3_5_0)) {
+            return new SearchSourceBuilder(in).toString();
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {

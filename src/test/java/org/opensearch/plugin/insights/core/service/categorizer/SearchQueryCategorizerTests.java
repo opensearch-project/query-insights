@@ -25,6 +25,8 @@ import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -39,6 +41,7 @@ import org.opensearch.index.query.WildcardQueryBuilder;
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.search.SearchModule;
 import org.opensearch.search.aggregations.bucket.range.RangeAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.terms.MultiTermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.MultiTermsValuesSourceConfig;
@@ -81,7 +84,9 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
                 return histogram;
             }
         });
-        searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
+        SearchModule searchModule = new SearchModule(Settings.EMPTY, java.util.Collections.emptyList());
+        NamedXContentRegistry xContentRegistry = new NamedXContentRegistry(searchModule.getNamedXContents());
+        searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry, xContentRegistry);
     }
 
     @After
@@ -195,7 +200,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         BoostingQueryBuilder queryBuilder = new BoostingQueryBuilder(
             new TermQueryBuilder("unmapped_field", "foo"),
             new MatchNoneQueryBuilder()
-        );
+        ).negativeBoost(0.5f); // Set positive boost value
         sourceBuilder.query(queryBuilder);
 
         SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);

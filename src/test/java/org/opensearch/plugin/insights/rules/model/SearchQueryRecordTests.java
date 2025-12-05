@@ -21,6 +21,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -100,6 +101,103 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("Test should not throw exceptions when parsing search query record");
         }
+    }
+
+    public void testFromXContentWithSearchSourceBuilderObject() throws IOException {
+        // Test backward compatibility: existing Local Index data may have SearchSourceBuilder objects
+        // After parsing, SOURCE should be converted to string format
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(10);
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        builder.field("timestamp", 1706574180000L);
+        builder.field("id", "test-id");
+        builder.field("source");
+        sourceBuilder.toXContent(builder, null); // Store as object (old format)
+        builder.startObject("measurements");
+        builder.startObject("latency");
+        builder.field("number", 1L);
+        builder.field("count", 1);
+        builder.field("aggregationType", "NONE");
+        builder.endObject();
+        builder.endObject();
+        builder.endObject();
+
+        String json = builder.toString();
+        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
+
+        // Verify SOURCE is converted to string format for consistency
+        Object sourceValue = parsedRecord.getAttributes().get(Attribute.SOURCE);
+        assertTrue("SOURCE should be converted to string format", sourceValue instanceof String);
+        assertEquals("SOURCE content should match original", sourceBuilder.toString(), sourceValue.toString());
+
+        // Verify SearchSourceBuilder is available for categorization
+        assertNotNull("SearchSourceBuilder should be available for categorization", parsedRecord.getSearchSourceBuilder());
+    }
+
+    public void testBackwardCompatibilityWithMatchAllQuery() throws IOException {
+        // Test backward compatibility with simple SearchSourceBuilder (no complex queries)
+        // After parsing, SOURCE should be converted to string format
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(5);
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        builder.field("timestamp", 1234567890L);
+        builder.field("id", "test-id");
+        builder.field("source");
+        sourceBuilder.toXContent(builder, null);
+        builder.startObject("measurements");
+        builder.startObject("latency");
+        builder.field("number", 1L);
+        builder.field("count", 1);
+        builder.field("aggregationType", "NONE");
+        builder.endObject();
+        builder.endObject();
+        builder.endObject();
+
+        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, builder.toString());
+        SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
+
+        Object source = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull("Source should not be null", source);
+        assertTrue("SOURCE should be converted to string format", source instanceof String);
+        assertTrue("Source should contain size parameter", source.toString().contains("size"));
+
+        // Verify SearchSourceBuilder is available for categorization
+        assertNotNull("SearchSourceBuilder should be available for categorization", record.getSearchSourceBuilder());
+    }
+
+    public void testToXContentForExportWithObjectSource() throws IOException {
+        // Create record with SearchSourceBuilder for object source test
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(10);
+        java.util.Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100.0));
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.SOURCE, sourceBuilder.toString());
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, sourceBuilder, "test-id");
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentForExport(builder, null, true);
+
+        String json = builder.toString();
+
+        // Verify the source field is serialized as an object (SearchSourceBuilder), not a string
+        assertTrue("JSON should contain source as object with size", json.contains("\"source\":{\"size\":10}"));
+    }
+
+    public void testToXContentForExportWithObjectSource_InvalidJson() throws IOException {
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("test-id");
+        record.getAttributes().put(Attribute.SOURCE, "invalid-json-string");
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentForExport(builder, null, true);
+
+        String json = builder.toString();
+
+        // Verify fallback to string when JSON parsing fails
+        assertTrue("JSON should contain source as string fallback", json.contains("\"source\":\"invalid-json-string\""));
     }
 
     /**
