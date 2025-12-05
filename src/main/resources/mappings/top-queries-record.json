@@ -60,6 +60,10 @@
         }
       }
     },
+    "source" : {
+      "type" : "match_only_text",
+      "index" : false
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {
