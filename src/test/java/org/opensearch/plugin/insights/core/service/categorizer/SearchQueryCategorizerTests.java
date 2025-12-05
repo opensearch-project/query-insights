@@ -25,6 +25,7 @@ import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.BoostingQueryBuilder;
 import org.opensearch.index.query.MatchNoneQueryBuilder;
@@ -39,6 +40,7 @@ import org.opensearch.index.query.WildcardQueryBuilder;
 import org.opensearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.search.SearchModule;
 import org.opensearch.search.aggregations.bucket.range.RangeAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.terms.MultiTermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.MultiTermsValuesSourceConfig;
@@ -81,7 +83,9 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
                 return histogram;
             }
         });
-        searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
+        SearchModule searchModule = new SearchModule(org.opensearch.common.settings.Settings.EMPTY, java.util.Collections.emptyList());
+        NamedXContentRegistry xContentRegistry = new NamedXContentRegistry(searchModule.getNamedXContents());
+        searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry, xContentRegistry);
     }
 
     @After
@@ -195,7 +199,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         BoostingQueryBuilder queryBuilder = new BoostingQueryBuilder(
             new TermQueryBuilder("unmapped_field", "foo"),
             new MatchNoneQueryBuilder()
-        );
+        ).negativeBoost(0.5f); // Set positive boost value
         sourceBuilder.query(queryBuilder);
 
         SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
@@ -313,6 +317,21 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("regexp")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getCounterByQueryBuilderName("bool")).add(eq(1.0d), any(Tags.class));
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
+    }
+
+    public void testSkipCategorizationForTruncatedSource() {
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.matchQuery("tags", "php"));
+
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        // Set the source as truncated string and add truncation flag
+        record.getAttributes().put(org.opensearch.plugin.insights.rules.model.Attribute.SOURCE, "{\"query\":{\"match\":{\"tags\":\"p");
+        record.getAttributes().put(org.opensearch.plugin.insights.rules.model.Attribute.SOURCE_TRUNCATED, true);
+
+        searchQueryCategorizer.categorize(record);
+
+        // Verify histograms were not incremented since categorization was skipped
+        verifyMeasurementHistogramsIncremented(record, 0);
     }
 
     private void verifyMeasurementHistogramsIncremented(SearchQueryRecord record, int times) {

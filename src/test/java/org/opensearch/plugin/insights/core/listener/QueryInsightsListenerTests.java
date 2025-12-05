@@ -141,7 +141,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
-        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
+        assertEquals(searchSourceBuilder.toString(), generatedRecord.getAttributes().get(Attribute.SOURCE));
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
     }
@@ -519,5 +519,73 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("Expect no exception when valid excluded indices is set.");
         }
+    }
+
+    public void testSourceTruncation() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.setMaxSourceLength(100);
+
+        SearchSourceBuilder longSource = new SearchSourceBuilder();
+        StringBuilder longQuery = new StringBuilder("{\"query\":{\"bool\":{\"must\":[");
+        for (int i = 0; i < 50; i++) {
+            if (i > 0) longQuery.append(",");
+            longQuery.append("{\"match\":{\"field").append(i).append("\":\"value").append(i).append("\"}}");
+        }
+        longQuery.append("]}}");
+
+        SearchTask task = new SearchTask(0, "n/a", "n/a", () -> "test", TaskId.EMPTY_TASK_ID, Collections.emptyMap());
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(longSource);
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequestContext.phaseTookMap()).thenReturn(Collections.emptyMap());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(Collections.emptySet());
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+
+        String source = (String) record.getAttributes().get(Attribute.SOURCE);
+        Boolean truncated = (Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED);
+
+        if (longSource.toString().length() > 100) {
+            assertEquals(100, source.length());
+            assertTrue(truncated);
+        } else {
+            assertEquals(longSource.toString(), source);
+            assertFalse(truncated);
+        }
+    }
+
+    public void testSourceTruncationWithNullSource() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.setMaxSourceLength(100);
+
+        SearchTask task = new SearchTask(0, "n/a", "n/a", () -> "test", TaskId.EMPTY_TASK_ID, Collections.emptyMap());
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(null);
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequestContext.phaseTookMap()).thenReturn(Collections.emptyMap());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(Collections.emptySet());
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+        assertFalse((Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 }
