@@ -12,6 +12,10 @@ import java.util.List;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.common.xcontent.LoggingDeprecationHandler;
+import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -39,14 +43,17 @@ public final class SearchQueryCategorizer {
 
     final SearchQueryAggregationCategorizer searchQueryAggregationCategorizer;
     private static SearchQueryCategorizer instance;
+    private static NamedXContentRegistry namedXContentRegistry;
 
     /**
      * Constructor for SearchQueryCategorizor
      * @param metricsRegistry opentelemetry metrics registry
+     * @param xContentRegistry NamedXContentRegistry for parsing
      */
-    private SearchQueryCategorizer(MetricsRegistry metricsRegistry) {
+    private SearchQueryCategorizer(MetricsRegistry metricsRegistry, NamedXContentRegistry xContentRegistry) {
         searchQueryCounters = new SearchQueryCounters(metricsRegistry);
         searchQueryAggregationCategorizer = new SearchQueryAggregationCategorizer(searchQueryCounters);
+        namedXContentRegistry = xContentRegistry;
     }
 
     /**
@@ -55,10 +62,20 @@ public final class SearchQueryCategorizer {
      * @return singleton instance
      */
     public static SearchQueryCategorizer getInstance(MetricsRegistry metricsRegistry) {
+        return getInstance(metricsRegistry, NamedXContentRegistry.EMPTY);
+    }
+
+    /**
+     * Get singleton instance of SearchQueryCategorizer
+     * @param metricsRegistry metric registry
+     * @param xContentRegistry NamedXContentRegistry for parsing
+     * @return singleton instance
+     */
+    public static SearchQueryCategorizer getInstance(MetricsRegistry metricsRegistry, NamedXContentRegistry xContentRegistry) {
         if (instance == null) {
             synchronized (SearchQueryCategorizer.class) {
                 if (instance == null) {
-                    instance = new SearchQueryCategorizer(metricsRegistry);
+                    instance = new SearchQueryCategorizer(metricsRegistry, xContentRegistry);
                 }
             }
         }
@@ -81,7 +98,25 @@ public final class SearchQueryCategorizer {
      * @param record search query record
      */
     public void categorize(SearchQueryRecord record) {
-        SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
+        SearchSourceBuilder source = record.getSearchSourceBuilder();
+        if (source == null) {
+            // SearchSourceBuilder should always be available but as a fallback try to parse from string source
+            String sourceStr = (String) record.getAttributes().get(Attribute.SOURCE);
+            if (sourceStr != null && !sourceStr.isEmpty()) {
+                try (
+                    XContentParser parser = XContentType.JSON.xContent()
+                        .createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE, sourceStr)
+                ) {
+                    source = SearchSourceBuilder.fromXContent(parser, false);
+                } catch (Exception e) {
+                    logger.debug("Failed to parse source string for categorization: {}", e.getMessage());
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+
         Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);
@@ -128,6 +163,7 @@ public final class SearchQueryCategorizer {
     public void reset() {
         synchronized (SearchQueryCategorizer.class) {
             instance = null;
+            namedXContentRegistry = null;
         }
     }
 }
