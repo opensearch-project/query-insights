@@ -22,10 +22,12 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -45,16 +47,52 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
+        if (request.isCached()) {
+            try {
+                List<CachedQueryRecord> cachedQueries = queryInsightsService.getLiveQueriesCache().getCurrentQueries();
+                List<SearchQueryRecord> searchRecords = new ArrayList<>();
+
+                for (CachedQueryRecord cached : cachedQueries) {
+                    Map<MetricType, Measurement> measurements = new HashMap<>();
+                    measurements.put(MetricType.LATENCY, new Measurement(cached.getLatencyNanos()));
+                    measurements.put(MetricType.CPU, new Measurement(cached.cpuNanos));
+                    measurements.put(MetricType.MEMORY, new Measurement(cached.memoryBytes));
+
+                    Map<Attribute, Object> attributes = new HashMap<>();
+                    attributes.put(Attribute.NODE_ID, cached.nodeId);
+                    if (cached.workloadGroup != null) {
+                        attributes.put(Attribute.WLM_GROUP_ID, cached.workloadGroup);
+                    }
+
+                    searchRecords.add(new SearchQueryRecord(cached.timestamp, measurements, attributes, cached.taskId));
+                }
+
+                listener.onResponse(new LiveQueriesResponse(searchRecords));
+                return;
+            } catch (Exception ex) {
+                logger.error("Failed to retrieve live queries from cache", ex);
+                listener.onFailure(ex);
+                return;
+            }
+        }
+
         ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search");
 
         // Set nodes filter if provided in the request
@@ -71,6 +109,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
                         if (!taskInfo.getAction().equals("indices:data/read/search")) {
+                            continue;
+                        }
+                        // Filter by specific task ID if provided
+                        if (request.getTaskId() != null && !taskInfo.getTaskId().toString().equals(request.getTaskId())) {
                             continue;
                         }
                         long timestamp = taskInfo.getStartTime();

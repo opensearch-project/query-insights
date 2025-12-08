@@ -55,9 +55,21 @@ public class RestLiveQueriesAction extends BaseRestHandler {
 
     @Override
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) {
-        final LiveQueriesRequest liveQueriesRequest = prepareRequest(request);
+        final boolean useCached = request.paramAsBoolean("cached", false);
 
-        return channel -> client.execute(LiveQueriesAction.INSTANCE, liveQueriesRequest, liveQueriesResponse(channel));
+        final LiveQueriesRequest liveQueriesRequest = prepareRequest(request);
+        liveQueriesRequest.setCached(useCached);
+
+        if (useCached) {
+            return channel -> client.execute(LiveQueriesAction.INSTANCE, liveQueriesRequest, new RestResponseListener<>(channel) {
+                @Override
+                public RestResponse buildResponse(LiveQueriesResponse response) throws Exception {
+                    return new BytesRestResponse(RestStatus.OK, response.toXContent(channel.newBuilder(), ToXContent.EMPTY_PARAMS));
+                }
+            });
+        } else {
+            return channel -> client.execute(LiveQueriesAction.INSTANCE, liveQueriesRequest, liveQueriesResponse(channel));
+        }
     }
 
     static LiveQueriesRequest prepareRequest(final RestRequest request) {
@@ -65,6 +77,7 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         final boolean verbose = request.paramAsBoolean("verbose", true);
         final String sortParam = request.param("sort", MetricType.LATENCY.toString());
         final String wlmGroupId = request.param("wlmGroupId", null);
+        final String taskId = request.param("task_id", null);
 
         if (!ALLOWED_METRICS.contains(sortParam)) {
             throw new IllegalArgumentException(
@@ -78,7 +91,9 @@ public class RestLiveQueriesAction extends BaseRestHandler {
                 String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
             );
         }
-        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId);
+        LiveQueriesRequest liveQueriesRequest = new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId);
+        liveQueriesRequest.setTaskId(taskId);
+        return liveQueriesRequest;
     }
 
     @Override
@@ -99,4 +114,5 @@ public class RestLiveQueriesAction extends BaseRestHandler {
             }
         };
     }
+
 }

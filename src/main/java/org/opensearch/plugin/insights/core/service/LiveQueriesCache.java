@@ -4,11 +4,9 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -18,10 +16,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
-import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.Measurement;
-import org.opensearch.plugin.insights.rules.model.MetricType;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
 import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.Scheduler;
@@ -35,8 +30,9 @@ import org.opensearch.transport.client.Client;
 public class LiveQueriesCache {
 
     private static final Logger logger = LogManager.getLogger(LiveQueriesCache.class);
-    private static final int MAX_CACHE_SIZE = 10000;
-    private final ConcurrentHashMap<String, SearchQueryRecord> runningQueries = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_SIZE = 100; // Keep only top 100 longest running
+    private static final String SEARCH_ACTION = "indices:data/read/search";
+    private volatile CachedQueryRecord[] sortedQueries = new CachedQueryRecord[0];
     private final Client client;
     private final ThreadPool threadPool;
     private final TransportService transportService;
@@ -62,7 +58,7 @@ public class LiveQueriesCache {
                     // Cluster is ready, start polling
                     pollingTask = threadPool.scheduleWithFixedDelay(
                         LiveQueriesCache.this::pollRunningTasks,
-                        new TimeValue(10, TimeUnit.MILLISECONDS),
+                        new TimeValue(100, TimeUnit.MILLISECONDS),
                         ThreadPool.Names.GENERIC
                     );
                 }
@@ -92,22 +88,39 @@ public class LiveQueriesCache {
     private void pollRunningTasks() {
         try {
             ListTasksRequest request = new ListTasksRequest();
-            request.setActions("indices:data/read/search*");
+            request.setActions(SEARCH_ACTION);
 
             client.admin().cluster().listTasks(request, new ActionListener<ListTasksResponse>() {
                 @Override
                 public void onResponse(ListTasksResponse response) {
                     try {
-                        runningQueries.clear();
-                        int count = 0;
+                        logger.info("LiveQueriesCache polling found {} total tasks", response.getTasks().size());
+                        // Use priority queue to keep only top N longest running queries
+                        java.util.PriorityQueue<CachedQueryRecord> topQueries = new java.util.PriorityQueue<>(
+                            MAX_CACHE_SIZE + 1,
+                            java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos)
+                        );
+
+                        int searchTasks = 0;
                         for (TaskInfo task : response.getTasks()) {
-                            if (count >= MAX_CACHE_SIZE) break;
-                            SearchQueryRecord record = createRecordFromTask(task);
-                            runningQueries.put(String.valueOf(task.getId()), record);
-                            count++;
+                            if (task.getAction().equals(SEARCH_ACTION)) {
+                                searchTasks++;
+                                CachedQueryRecord record = createCachedRecordFromTask(task);
+                                topQueries.offer(record);
+                                if (topQueries.size() > MAX_CACHE_SIZE) {
+                                    topQueries.poll(); // Remove shortest running
+                                }
+                            }
                         }
+
+                        logger.info("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
+
+                        // Convert to sorted array (longest first)
+                        List<CachedQueryRecord> sorted = new ArrayList<>(topQueries);
+                        sorted.sort(java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos).reversed());
+                        sortedQueries = sorted.toArray(new CachedQueryRecord[0]);
                     } catch (Throwable e) {
-                        logger.debug("Error processing live queries response: {}", e.getMessage());
+                        logger.error("Error processing live queries response: {}", e.getMessage());
                     }
                 }
 
@@ -121,12 +134,7 @@ public class LiveQueriesCache {
         }
     }
 
-    private SearchQueryRecord createRecordFromTask(TaskInfo task) {
-        Map<MetricType, Measurement> measurements = new HashMap<>();
-
-        long runningNanos = task.getRunningTimeNanos();
-        measurements.put(MetricType.LATENCY, new Measurement(runningNanos));
-
+    private CachedQueryRecord createCachedRecordFromTask(TaskInfo task) {
         long cpuNanos = 0L;
         long memBytes = 0L;
         TaskResourceStats stats = task.getResourceStats();
@@ -140,27 +148,38 @@ public class LiveQueriesCache {
                 }
             }
         }
-        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
-        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
 
-        Map<Attribute, Object> attributes = new HashMap<>();
-        attributes.put(Attribute.NODE_ID, task.getTaskId().getNodeId());
-        attributes.put(Attribute.DESCRIPTION, task.getDescription());
-        attributes.put(Attribute.IS_CANCELLED, task.isCancelled());
-
-        String wlmGroupId = null;
-        if (transportService != null && transportService.getLocalNode().getId().equals(task.getTaskId().getNodeId())) {
-            Task runningTask = transportService.getTaskManager().getTask(task.getTaskId().getId());
-            if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
-                wlmGroupId = workloadTask.getWorkloadGroupId();
+        String workloadGroup = null;
+        // TransportService may be null during initialization, skip workload group detection
+        if (transportService != null) {
+            try {
+                if (transportService.getLocalNode().getId().equals(task.getTaskId().getNodeId())) {
+                    Task runningTask = transportService.getTaskManager().getTask(task.getTaskId().getId());
+                    if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
+                        workloadGroup = workloadTask.getWorkloadGroupId();
+                    }
+                }
+            } catch (Exception e) {
+                logger.debug("Failed to get workload group for task {}: {}", task.getTaskId(), e.getMessage());
             }
         }
-        attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
 
-        return new SearchQueryRecord(task.getStartTime(), measurements, attributes, task.getTaskId().toString());
+        String searchType = task.getAction().contains("msearch") ? "multi_search" : "search";
+
+        return new CachedQueryRecord(
+            task.getStartTime(),
+            task.getTaskId().toString(),
+            task.getTaskId().getNodeId(),
+            task.getRunningTimeNanos(),
+            cpuNanos,
+            memBytes,
+            workloadGroup,
+            searchType
+        );
     }
 
-    public List<SearchQueryRecord> getCurrentQueries() {
-        return new CopyOnWriteArrayList<>(runningQueries.values());
+    public List<CachedQueryRecord> getCurrentQueries() {
+        logger.info("LiveQueriesCache returning {} cached queries", sortedQueries.length);
+        return java.util.Arrays.asList(sortedQueries);
     }
 }

@@ -29,6 +29,8 @@ public class LiveQueriesRequest extends ActionRequest {
     // Node IDs to filter queries by
     private final String[] nodeIds;
     private String wlmGroupId;
+    private boolean cached = false;
+    private String taskId;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -109,6 +111,22 @@ public class LiveQueriesRequest extends ActionRequest {
      */
     public String getWlmGroupId() {
         return wlmGroupId;
+    }
+
+    public boolean isCached() {
+        return cached;
+    }
+
+    public void setCached(boolean cached) {
+        this.cached = cached;
+    }
+
+    public String getTaskId() {
+        return taskId;
+    }
+
+    public void setTaskId(String taskId) {
+        this.taskId = taskId;
     }
 
     @Override

@@ -11,21 +11,21 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
 
 /**
- * Response for streaming live queries
+ * Response for cached live queries with minimal data
  */
-public class LiveQueriesStreamResponse extends ActionResponse implements ToXContentObject {
+public class LiveQueriesCachedResponse extends ActionResponse implements ToXContentObject {
 
-    private final List<SearchQueryRecord> queries;
+    private final List<CachedQueryRecord> queries;
 
-    public LiveQueriesStreamResponse(StreamInput in) throws IOException {
+    public LiveQueriesCachedResponse(StreamInput in) throws IOException {
         super(in);
-        this.queries = in.readList(SearchQueryRecord::new);
+        this.queries = in.readList(CachedQueryRecord::new);
     }
 
-    public LiveQueriesStreamResponse(List<SearchQueryRecord> queries) {
+    public LiveQueriesCachedResponse(List<CachedQueryRecord> queries) {
         this.queries = queries;
     }
 
@@ -37,15 +37,15 @@ public class LiveQueriesStreamResponse extends ActionResponse implements ToXCont
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
-        builder.startArray("queries");
-        for (SearchQueryRecord query : queries) {
+        builder.startArray("live_queries");
+        for (CachedQueryRecord query : queries) {
             query.toXContent(builder, params);
         }
         builder.endArray();
         return builder.endObject();
     }
 
-    public List<SearchQueryRecord> getQueries() {
+    public List<CachedQueryRecord> getQueries() {
         return queries;
     }
 }
