@@ -312,6 +312,28 @@ public class QueryInsightsSettings {
     public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = TOP_QUERIES_INDEX_PREFIX + "-*";
 
     /**
+     * Default maximum source length before truncation (in bytes)
+     */
+    public static final int DEFAULT_MAX_SOURCE_SIZE = 10000;
+    /**
+     * Maximum allowed source length (in bytes)
+     */
+    public static final int MAX_SOURCE_SIZE = 1048576; // 1MB
+
+    /**
+     * Setting for maximum source length before truncation.
+     * The value is measured in bytes for accurate memory usage control.
+     */
+    public static final Setting<Integer> TOP_N_QUERIES_MAX_SOURCE_SIZE = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_source_length",
+        DEFAULT_MAX_SOURCE_SIZE,
+        2, // min byte size for a valid query is 2 bytes: {}
+        MAX_SOURCE_SIZE,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
      * Get the enabled setting based on type
      * @param type MetricType
      * @return enabled setting
