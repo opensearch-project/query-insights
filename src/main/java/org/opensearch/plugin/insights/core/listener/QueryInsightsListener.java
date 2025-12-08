@@ -15,10 +15,12 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_SIZE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
 
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -68,6 +70,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
+    private int maxSourceSize;
 
     /**
      * Constructor for QueryInsightsListener
@@ -164,6 +167,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
+
+        // Setting for max source length
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_SIZE, this::setMaxSourceSize);
+        setMaxSourceSize(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_SIZE));
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -201,6 +208,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     public void setGroupingFieldTypeEnabled(Boolean fieldTypeEnabled) {
         this.groupingFieldTypeEnabled = fieldTypeEnabled;
+    }
+
+    /**
+     * Set the maximum source length before truncation
+     * @param maxSourceSize maximum length for source strings
+     */
+    public void setMaxSourceSize(int maxSourceSize) {
+        this.maxSourceSize = maxSourceSize;
     }
 
     /**
@@ -320,8 +335,23 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             );
 
             Map<Attribute, Object> attributes = new HashMap<>();
+            // Handle source with truncation for very long queries
+            if (request.source() != null) {
+                String sourceString = request.source().toString();
+                byte[] sourceBytes = sourceString.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                if (sourceBytes.length > maxSourceSize) {
+                    attributes.put(Attribute.SOURCE, truncateJsonWithValidStructure(sourceString));
+                    attributes.put(Attribute.SOURCE_TRUNCATED, true);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+                } else {
+                    attributes.put(Attribute.SOURCE, sourceString);
+                    attributes.put(Attribute.SOURCE_TRUNCATED, false);
+                }
+            } else {
+                attributes.put(Attribute.SOURCE, null);
+                attributes.put(Attribute.SOURCE_TRUNCATED, false);
+            }
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source() != null ? request.source().toString() : null);
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
@@ -371,6 +401,59 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
         }
+    }
+
+    /**
+     * Truncates a JSON string to fit within maxSourceSize bytes while maintaining valid JSON structure.
+     */
+    String truncateJsonWithValidStructure(String json) {
+        if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= maxSourceSize) return json;
+
+        // We need to keep track of the order of [] and {} as nesting order matters so we use a stack
+        ArrayDeque<Character> nestingStack = new ArrayDeque<>();
+        boolean inString = false, escaped = false;
+        int charPos = 0;
+
+        // Find character position that keeps us under byte limit including closing chars
+        for (int bytes = 0; charPos < json.length(); charPos++) {
+            char c = json.charAt(charPos);
+            bytes += String.valueOf(c).getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+            // ", ], and } are all 1 byte each
+            int closingBytes = (inString ? 1 : 0) + nestingStack.size();
+            if (bytes + closingBytes > maxSourceSize) break;
+
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                inString = !inString;
+            } else if (!inString) {
+                if (c == '{') {
+                    nestingStack.push('{');
+                } else if (c == '}') {
+                    if (!nestingStack.isEmpty() && nestingStack.peek() == '{') {
+                        nestingStack.pop();
+                    }
+                } else if (c == '[') {
+                    nestingStack.push('[');
+                } else if (c == ']') {
+                    if (!nestingStack.isEmpty() && nestingStack.peek() == '[') {
+                        nestingStack.pop();
+                    }
+                }
+            }
+        }
+
+        // Build closing characters in reverse order (LIFO)
+        StringBuilder closings = new StringBuilder((inString ? 1 : 0) + nestingStack.size());
+        if (inString) closings.append('"');
+        while (!nestingStack.isEmpty()) {
+            char c = nestingStack.pop();
+            closings.append(c == '{' ? '}' : ']');
+        }
+
+        return json.substring(0, charPos) + closings;
     }
 
     /**

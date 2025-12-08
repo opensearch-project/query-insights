@@ -18,6 +18,8 @@ import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
@@ -70,7 +72,11 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
 
         // Deserialize with fromXContent
         String json = builder.toString();
-        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            json
+        );
         SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
 
         originalRecord.getAttributes().remove(Attribute.TOP_N_QUERY);
@@ -87,7 +93,11 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
 
         // Deserialize with fromXContent
         String json = builder.toString();
-        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            json
+        );
         SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
 
         assertEquals(originalRecord, parsedRecord);
@@ -124,7 +134,11 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         builder.endObject();
 
         String json = builder.toString();
-        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            json
+        );
         SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
 
         // Verify SOURCE is converted to string format for consistency
@@ -156,7 +170,11 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         builder.endObject();
         builder.endObject();
 
-        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, builder.toString());
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            builder.toString()
+        );
         SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
 
         Object source = record.getAttributes().get(Attribute.SOURCE);

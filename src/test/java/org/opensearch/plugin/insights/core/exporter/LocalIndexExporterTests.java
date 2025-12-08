@@ -110,6 +110,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary(indexName, true, 1, 0);
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
 
         // Create local index exporter
         localIndexExporter = new LocalIndexExporter(client, clusterService, format, "", "id");
