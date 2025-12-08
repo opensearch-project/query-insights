@@ -126,6 +126,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String USER_ROLES = "user_roles";
     /**
+     * Indicates if the source was truncated due to length limits
+     */
+    public static final String SOURCE_TRUNCATED = "source_truncated";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -288,6 +292,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                             attributes.put(Attribute.SOURCE, new SourceString(SearchSourceBuilder.fromXContent(parser, false).toString()));
                         }
+                        break;
+                    case SOURCE_TRUNCATED:
+                        attributes.put(Attribute.SOURCE_TRUNCATED, parser.booleanValue());
                         break;
                     case TOTAL_SHARDS:
                         attributes.put(Attribute.TOTAL_SHARDS, parser.intValue());

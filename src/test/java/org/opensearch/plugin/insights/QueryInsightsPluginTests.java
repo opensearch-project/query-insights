@@ -105,6 +105,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER,
                 QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
+                QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
                 QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
             ),
             queryInsightsPlugin.getSettings()

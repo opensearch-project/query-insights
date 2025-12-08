@@ -89,6 +89,9 @@
       "type" : "match_only_text",
       "index" : false
     },
+    "source_truncated" : {
+      "type" : "boolean"
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {
