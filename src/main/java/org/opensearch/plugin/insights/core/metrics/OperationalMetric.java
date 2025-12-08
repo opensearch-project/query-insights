@@ -21,7 +21,8 @@ public enum OperationalMetric {
     QUERY_CATEGORIZE_EXCEPTIONS("Number of exceptions when categorizing the queries"),
     EXPORTER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the exporter"),
     READER_FAIL_TO_CLOSE_EXCEPTION("Number of failures when closing the reader"),
-    TOP_N_QUERIES_USAGE_COUNT("Number of times the top n queries API is used");
+    TOP_N_QUERIES_USAGE_COUNT("Number of times the top n queries API is used"),
+    TOP_N_QUERIES_SOURCE_TRUNCATION("Number of times a query source was truncated due to size limit");
 
     private final String description;
 

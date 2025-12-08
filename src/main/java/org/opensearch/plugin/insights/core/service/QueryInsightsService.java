@@ -133,6 +133,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     SinkType sinkType;
 
+    private int maxSourceLength;
+
     /**
      * Constructor of the QueryInsightsService
      *
@@ -221,6 +223,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set the maximum source length before truncation
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
+    }
+
+    /**
      * Drain the queryRecordsQueue into internal stores and services
      */
     public void drainRecords() {
@@ -228,10 +238,24 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
 
-        // Set SOURCE attribute asynchronously to avoid slowing down search requests
+        // Set SOURCE attribute and handle truncation asynchronously to avoid slowing down search requests
         for (SearchQueryRecord record : records) {
             if (record.getSearchSourceBuilder() != null && record.getAttributes().get(Attribute.SOURCE) == null) {
-                record.addAttribute(Attribute.SOURCE, new SourceString(record.getSearchSourceBuilder().toString()));
+                String sourceString = record.getSearchSourceBuilder().toString();
+                if (maxSourceLength == 0) {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(""));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+                } else if (maxSourceLength > 0 && sourceString.length() > maxSourceLength) {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(sourceString.substring(0, maxSourceLength)));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+                } else {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+                }
+            } else if (record.getSearchSourceBuilder() == null) {
+                record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
             }
         }
 
