@@ -14,6 +14,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 public class FinishedQueriesCache {
 
     private static final int MAX_FINISHED_QUERIES = 1000;
+    private static final int MAX_RETURNED_QUERIES = 50;
     private static final long FINISHED_QUERY_RETENTION_MS = 30_000L;
     private static final long TRACKING_INACTIVITY_MS = 300_000L;
 
@@ -48,7 +49,7 @@ public class FinishedQueriesCache {
             while (!finishedQueries.isEmpty() && (lastAccessTime - finishedQueries.peek().finishTime) > FINISHED_QUERY_RETENTION_MS) {
                 finishedQueries.poll();
             }
-            return finishedQueries.stream().map(fq -> fq.record).toList();
+            return finishedQueries.stream().sorted((a, b) -> Long.compare(b.finishTime, a.finishTime)).limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
         }
     }
 

@@ -34,7 +34,8 @@ import org.opensearch.transport.client.Client;
 public class LiveQueriesCache {
 
     private static final Logger logger = LogManager.getLogger(LiveQueriesCache.class);
-    private static final int MAX_CACHE_SIZE = 100;
+    private static final int MAX_CACHE_SIZE = 1000;
+    private static final int MAX_RETURNED_QUERIES = 100;
     private static final String SEARCH_ACTION = "indices:data/read/search";
     private volatile SearchQueryRecord[] sortedQueries = new SearchQueryRecord[0];
     private final Client client;
@@ -130,7 +131,7 @@ public class LiveQueriesCache {
                                 ((Number) a.getMeasurement(MetricType.LATENCY)).longValue()
                             )
                         );
-                        sortedQueries = sorted.toArray(new SearchQueryRecord[0]);
+                        sortedQueries = sorted.stream().limit(MAX_RETURNED_QUERIES).toArray(SearchQueryRecord[]::new);
                     } catch (Throwable e) {
                         logger.error("Error processing live queries response: {}", e.getMessage());
                     }
