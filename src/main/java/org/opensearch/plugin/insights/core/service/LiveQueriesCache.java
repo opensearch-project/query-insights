@@ -37,22 +37,15 @@ public class LiveQueriesCache {
     private static final int MAX_CACHE_SIZE = 100;
     private static final String SEARCH_ACTION = "indices:data/read/search";
     private volatile SearchQueryRecord[] sortedQueries = new SearchQueryRecord[0];
-    private final FinishedQueriesCache finishedQueriesCache;
     private final Client client;
     private final ThreadPool threadPool;
     private final TransportService transportService;
     private Scheduler.Cancellable pollingTask;
 
-    public LiveQueriesCache(
-        Client client,
-        ThreadPool threadPool,
-        TransportService transportService,
-        FinishedQueriesCache finishedQueriesCache
-    ) {
+    public LiveQueriesCache(Client client, ThreadPool threadPool, TransportService transportService) {
         this.client = client;
         this.threadPool = threadPool;
         this.transportService = transportService;
-        this.finishedQueriesCache = finishedQueriesCache;
     }
 
     public void start() {
@@ -128,8 +121,6 @@ public class LiveQueriesCache {
                             }
                         }
 
-                        detectFinishedQueries(currentTasks);
-
                         logger.info("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
 
                         List<SearchQueryRecord> sorted = new ArrayList<>(topQueries);
@@ -197,15 +188,6 @@ public class LiveQueriesCache {
         }
 
         return new SearchQueryRecord(task.getStartTime(), measurements, attributes, task.getTaskId().toString());
-    }
-
-    private void detectFinishedQueries(Map<String, TaskInfo> currentTasks) {
-        SearchQueryRecord[] previous = sortedQueries;
-        for (SearchQueryRecord record : previous) {
-            if (!currentTasks.containsKey(record.getId())) {
-                finishedQueriesCache.addFinishedQuery(record);
-            }
-        }
     }
 
     public List<SearchQueryRecord> getCurrentQueries() {

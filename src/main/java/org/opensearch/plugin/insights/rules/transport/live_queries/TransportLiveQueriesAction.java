@@ -160,7 +160,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
                         .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
                         .toList();
-                    listener.onResponse(new LiveQueriesResponse(finalRecords));
+
+                    List<SearchQueryRecord> finishedRecords = request.includeFinished()
+                        ? queryInsightsService.getFinishedQueriesCache().getFinishedQueries()
+                        : List.of();
+
+                    listener.onResponse(new LiveQueriesResponse(finalRecords, finishedRecords, request.includeFinished()));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);

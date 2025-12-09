@@ -26,8 +26,7 @@ public class LiveQueriesCacheTests extends OpenSearchTestCase {
         threadPool = new TestThreadPool("test");
         Client client = mock(Client.class);
         TransportService transportService = mock(TransportService.class);
-        FinishedQueriesCache finishedQueriesCache = new FinishedQueriesCache();
-        cache = new LiveQueriesCache(client, threadPool, transportService, finishedQueriesCache);
+        cache = new LiveQueriesCache(client, threadPool, transportService);
     }
 
     @After
