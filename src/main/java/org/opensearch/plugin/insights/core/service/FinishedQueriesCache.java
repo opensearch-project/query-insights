@@ -49,7 +49,11 @@ public class FinishedQueriesCache {
             while (!finishedQueries.isEmpty() && (lastAccessTime - finishedQueries.peek().finishTime) > FINISHED_QUERY_RETENTION_MS) {
                 finishedQueries.poll();
             }
-            return finishedQueries.stream().sorted((a, b) -> Long.compare(b.finishTime, a.finishTime)).limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
+            return finishedQueries.stream()
+                .sorted((a, b) -> Long.compare(b.finishTime, a.finishTime))
+                .limit(MAX_RETURNED_QUERIES)
+                .map(fq -> fq.record)
+                .toList();
         }
     }
 
