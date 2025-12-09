@@ -5,6 +5,7 @@
 package org.opensearch.plugin.insights.core.service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -16,7 +17,10 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
-import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.Scheduler;
@@ -32,7 +36,7 @@ public class LiveQueriesCache {
     private static final Logger logger = LogManager.getLogger(LiveQueriesCache.class);
     private static final int MAX_CACHE_SIZE = 100;
     private static final String SEARCH_ACTION = "indices:data/read/search";
-    private volatile CachedQueryRecord[] sortedQueries = new CachedQueryRecord[0];
+    private volatile SearchQueryRecord[] sortedQueries = new SearchQueryRecord[0];
     private final FinishedQueriesCache finishedQueriesCache;
     private final Client client;
     private final ThreadPool threadPool;
@@ -103,9 +107,12 @@ public class LiveQueriesCache {
                     try {
                         logger.info("LiveQueriesCache polling found {} total tasks", response.getTasks().size());
                         Map<String, TaskInfo> currentTasks = new java.util.HashMap<>();
-                        java.util.PriorityQueue<CachedQueryRecord> topQueries = new java.util.PriorityQueue<>(
+                        java.util.PriorityQueue<SearchQueryRecord> topQueries = new java.util.PriorityQueue<>(
                             MAX_CACHE_SIZE + 1,
-                            java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos)
+                            (a, b) -> Long.compare(
+                                ((Number) a.getMeasurement(MetricType.LATENCY)).longValue(),
+                                ((Number) b.getMeasurement(MetricType.LATENCY)).longValue()
+                            )
                         );
 
                         int searchTasks = 0;
@@ -113,7 +120,7 @@ public class LiveQueriesCache {
                             if (task.getAction().equals(SEARCH_ACTION)) {
                                 searchTasks++;
                                 currentTasks.put(task.getTaskId().toString(), task);
-                                CachedQueryRecord record = createCachedRecordFromTask(task);
+                                SearchQueryRecord record = createRecordFromTask(task);
                                 topQueries.offer(record);
                                 if (topQueries.size() > MAX_CACHE_SIZE) {
                                     topQueries.poll();
@@ -125,9 +132,14 @@ public class LiveQueriesCache {
 
                         logger.info("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
 
-                        List<CachedQueryRecord> sorted = new ArrayList<>(topQueries);
-                        sorted.sort(java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos).reversed());
-                        sortedQueries = sorted.toArray(new CachedQueryRecord[0]);
+                        List<SearchQueryRecord> sorted = new ArrayList<>(topQueries);
+                        sorted.sort(
+                            (a, b) -> Long.compare(
+                                ((Number) b.getMeasurement(MetricType.LATENCY)).longValue(),
+                                ((Number) a.getMeasurement(MetricType.LATENCY)).longValue()
+                            )
+                        );
+                        sortedQueries = sorted.toArray(new SearchQueryRecord[0]);
                     } catch (Throwable e) {
                         logger.error("Error processing live queries response: {}", e.getMessage());
                     }
@@ -143,7 +155,7 @@ public class LiveQueriesCache {
         }
     }
 
-    private CachedQueryRecord createCachedRecordFromTask(TaskInfo task) {
+    private SearchQueryRecord createRecordFromTask(TaskInfo task) {
         long cpuNanos = 0L;
         long memBytes = 0L;
         TaskResourceStats stats = task.getResourceStats();
@@ -173,30 +185,30 @@ public class LiveQueriesCache {
             }
         }
 
-        String searchType = task.getAction().contains("msearch") ? "multi_search" : "search";
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(task.getRunningTimeNanos()));
+        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
+        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
 
-        return new CachedQueryRecord(
-            task.getStartTime(),
-            task.getTaskId().toString(),
-            task.getTaskId().getNodeId(),
-            task.getRunningTimeNanos(),
-            cpuNanos,
-            memBytes,
-            workloadGroup,
-            searchType
-        );
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.NODE_ID, task.getTaskId().getNodeId());
+        if (workloadGroup != null) {
+            attributes.put(Attribute.WLM_GROUP_ID, workloadGroup);
+        }
+
+        return new SearchQueryRecord(task.getStartTime(), measurements, attributes, task.getTaskId().toString());
     }
 
     private void detectFinishedQueries(Map<String, TaskInfo> currentTasks) {
-        CachedQueryRecord[] previous = sortedQueries;
-        for (CachedQueryRecord record : previous) {
-            if (!currentTasks.containsKey(record.taskId)) {
+        SearchQueryRecord[] previous = sortedQueries;
+        for (SearchQueryRecord record : previous) {
+            if (!currentTasks.containsKey(record.getId())) {
                 finishedQueriesCache.addFinishedQuery(record);
             }
         }
     }
 
-    public List<CachedQueryRecord> getCurrentQueries() {
+    public List<SearchQueryRecord> getCurrentQueries() {
         logger.info("LiveQueriesCache returning {} cached queries", sortedQueries.length);
         return java.util.Arrays.asList(sortedQueries);
     }

@@ -9,7 +9,7 @@ import static org.mockito.Mockito.mock;
 import java.util.List;
 import org.junit.After;
 import org.junit.Before;
-import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
@@ -37,7 +37,7 @@ public class LiveQueriesCacheTests extends OpenSearchTestCase {
     }
 
     public void testLiveQueriesCache() {
-        List<CachedQueryRecord> live = cache.getCurrentQueries();
+        List<SearchQueryRecord> live = cache.getCurrentQueries();
         assertNotNull(live);
         assertEquals(0, live.size());
     }

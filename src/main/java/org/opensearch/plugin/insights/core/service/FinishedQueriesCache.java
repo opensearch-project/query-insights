@@ -6,7 +6,7 @@ package org.opensearch.plugin.insights.core.service;
 
 import java.util.List;
 import java.util.PriorityQueue;
-import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Cache for recently finished queries
@@ -21,16 +21,16 @@ public class FinishedQueriesCache {
     private volatile long lastAccessTime = 0;
 
     private static class FinishedQuery {
-        final CachedQueryRecord record;
+        final SearchQueryRecord record;
         final long finishTime;
 
-        FinishedQuery(CachedQueryRecord record, long finishTime) {
+        FinishedQuery(SearchQueryRecord record, long finishTime) {
             this.record = record;
             this.finishTime = finishTime;
         }
     }
 
-    public void addFinishedQuery(CachedQueryRecord record) {
+    public void addFinishedQuery(SearchQueryRecord record) {
         if (System.currentTimeMillis() - lastAccessTime > TRACKING_INACTIVITY_MS) {
             return;
         }
@@ -42,7 +42,7 @@ public class FinishedQueriesCache {
         }
     }
 
-    public List<CachedQueryRecord> getFinishedQueries() {
+    public List<SearchQueryRecord> getFinishedQueries() {
         lastAccessTime = System.currentTimeMillis();
         synchronized (finishedQueries) {
             while (!finishedQueries.isEmpty() && (lastAccessTime - finishedQueries.peek().finishTime) > FINISHED_QUERY_RETENTION_MS) {

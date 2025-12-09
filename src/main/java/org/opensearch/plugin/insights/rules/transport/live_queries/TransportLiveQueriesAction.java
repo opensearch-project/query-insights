@@ -27,7 +27,6 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesActio
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.CachedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -66,11 +65,9 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
         if (request.isCached()) {
             try {
-                List<SearchQueryRecord> liveRecords = convertToSearchQueryRecords(
-                    queryInsightsService.getLiveQueriesCache().getCurrentQueries()
-                );
+                List<SearchQueryRecord> liveRecords = queryInsightsService.getLiveQueriesCache().getCurrentQueries();
                 List<SearchQueryRecord> finishedRecords = request.includeFinished()
-                    ? convertToSearchQueryRecords(queryInsightsService.getFinishedQueriesCache().getFinishedQueries())
+                    ? queryInsightsService.getFinishedQueriesCache().getFinishedQueries()
                     : List.of();
 
                 listener.onResponse(new LiveQueriesResponse(liveRecords, finishedRecords, request.includeFinished()));
@@ -178,22 +175,4 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         });
     }
 
-    private List<SearchQueryRecord> convertToSearchQueryRecords(List<CachedQueryRecord> cachedRecords) {
-        List<SearchQueryRecord> records = new ArrayList<>();
-        for (CachedQueryRecord cached : cachedRecords) {
-            Map<MetricType, Measurement> measurements = new HashMap<>();
-            measurements.put(MetricType.LATENCY, new Measurement(cached.getLatencyNanos()));
-            measurements.put(MetricType.CPU, new Measurement(cached.cpuNanos));
-            measurements.put(MetricType.MEMORY, new Measurement(cached.memoryBytes));
-
-            Map<Attribute, Object> attributes = new HashMap<>();
-            attributes.put(Attribute.NODE_ID, cached.nodeId);
-            if (cached.workloadGroup != null) {
-                attributes.put(Attribute.WLM_GROUP_ID, cached.workloadGroup);
-            }
-
-            records.add(new SearchQueryRecord(cached.timestamp, measurements, attributes, cached.taskId));
-        }
-        return records;
-    }
 }
