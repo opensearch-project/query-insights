@@ -31,6 +31,7 @@ public class LiveQueriesRequest extends ActionRequest {
     private String wlmGroupId;
     private boolean cached = false;
     private String taskId;
+    private boolean includeFinished = false;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -127,6 +128,14 @@ public class LiveQueriesRequest extends ActionRequest {
 
     public void setTaskId(String taskId) {
         this.taskId = taskId;
+    }
+
+    public boolean includeFinished() {
+        return includeFinished;
+    }
+
+    public void setIncludeFinished(boolean includeFinished) {
+        this.includeFinished = includeFinished;
     }
 
     @Override

@@ -56,9 +56,11 @@ public class RestLiveQueriesAction extends BaseRestHandler {
     @Override
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) {
         final boolean useCached = request.paramAsBoolean("cached", false);
+        final boolean includeFinished = request.paramAsBoolean("include_finished", false);
 
         final LiveQueriesRequest liveQueriesRequest = prepareRequest(request);
         liveQueriesRequest.setCached(useCached);
+        liveQueriesRequest.setIncludeFinished(includeFinished);
 
         if (useCached) {
             return channel -> client.execute(LiveQueriesAction.INSTANCE, liveQueriesRequest, new RestResponseListener<>(channel) {

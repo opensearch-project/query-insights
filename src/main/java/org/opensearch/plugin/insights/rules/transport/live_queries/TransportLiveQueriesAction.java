@@ -66,28 +66,17 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
         if (request.isCached()) {
             try {
-                List<CachedQueryRecord> cachedQueries = queryInsightsService.getLiveQueriesCache().getCurrentQueries();
-                List<SearchQueryRecord> searchRecords = new ArrayList<>();
+                List<SearchQueryRecord> liveRecords = convertToSearchQueryRecords(
+                    queryInsightsService.getLiveQueriesCache().getCurrentQueries()
+                );
+                List<SearchQueryRecord> finishedRecords = request.includeFinished()
+                    ? convertToSearchQueryRecords(queryInsightsService.getFinishedQueriesCache().getFinishedQueries())
+                    : List.of();
 
-                for (CachedQueryRecord cached : cachedQueries) {
-                    Map<MetricType, Measurement> measurements = new HashMap<>();
-                    measurements.put(MetricType.LATENCY, new Measurement(cached.getLatencyNanos()));
-                    measurements.put(MetricType.CPU, new Measurement(cached.cpuNanos));
-                    measurements.put(MetricType.MEMORY, new Measurement(cached.memoryBytes));
-
-                    Map<Attribute, Object> attributes = new HashMap<>();
-                    attributes.put(Attribute.NODE_ID, cached.nodeId);
-                    if (cached.workloadGroup != null) {
-                        attributes.put(Attribute.WLM_GROUP_ID, cached.workloadGroup);
-                    }
-
-                    searchRecords.add(new SearchQueryRecord(cached.timestamp, measurements, attributes, cached.taskId));
-                }
-
-                listener.onResponse(new LiveQueriesResponse(searchRecords));
+                listener.onResponse(new LiveQueriesResponse(liveRecords, finishedRecords, request.includeFinished()));
                 return;
             } catch (Exception ex) {
-                logger.error("Failed to retrieve live queries from cache", ex);
+                logger.error("Failed to retrieve queries from cache", ex);
                 listener.onFailure(ex);
                 return;
             }
@@ -187,5 +176,24 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 listener.onFailure(e);
             }
         });
+    }
+
+    private List<SearchQueryRecord> convertToSearchQueryRecords(List<CachedQueryRecord> cachedRecords) {
+        List<SearchQueryRecord> records = new ArrayList<>();
+        for (CachedQueryRecord cached : cachedRecords) {
+            Map<MetricType, Measurement> measurements = new HashMap<>();
+            measurements.put(MetricType.LATENCY, new Measurement(cached.getLatencyNanos()));
+            measurements.put(MetricType.CPU, new Measurement(cached.cpuNanos));
+            measurements.put(MetricType.MEMORY, new Measurement(cached.memoryBytes));
+
+            Map<Attribute, Object> attributes = new HashMap<>();
+            attributes.put(Attribute.NODE_ID, cached.nodeId);
+            if (cached.workloadGroup != null) {
+                attributes.put(Attribute.WLM_GROUP_ID, cached.workloadGroup);
+            }
+
+            records.add(new SearchQueryRecord(cached.timestamp, measurements, attributes, cached.taskId));
+        }
+        return records;
     }
 }

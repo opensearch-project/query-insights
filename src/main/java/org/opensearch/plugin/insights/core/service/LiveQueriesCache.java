@@ -30,18 +30,25 @@ import org.opensearch.transport.client.Client;
 public class LiveQueriesCache {
 
     private static final Logger logger = LogManager.getLogger(LiveQueriesCache.class);
-    private static final int MAX_CACHE_SIZE = 100; // Keep only top 100 longest running
+    private static final int MAX_CACHE_SIZE = 100;
     private static final String SEARCH_ACTION = "indices:data/read/search";
     private volatile CachedQueryRecord[] sortedQueries = new CachedQueryRecord[0];
+    private final FinishedQueriesCache finishedQueriesCache;
     private final Client client;
     private final ThreadPool threadPool;
     private final TransportService transportService;
     private Scheduler.Cancellable pollingTask;
 
-    public LiveQueriesCache(Client client, ThreadPool threadPool, TransportService transportService) {
+    public LiveQueriesCache(
+        Client client,
+        ThreadPool threadPool,
+        TransportService transportService,
+        FinishedQueriesCache finishedQueriesCache
+    ) {
         this.client = client;
         this.threadPool = threadPool;
         this.transportService = transportService;
+        this.finishedQueriesCache = finishedQueriesCache;
     }
 
     public void start() {
@@ -95,7 +102,7 @@ public class LiveQueriesCache {
                 public void onResponse(ListTasksResponse response) {
                     try {
                         logger.info("LiveQueriesCache polling found {} total tasks", response.getTasks().size());
-                        // Use priority queue to keep only top N longest running queries
+                        Map<String, TaskInfo> currentTasks = new java.util.HashMap<>();
                         java.util.PriorityQueue<CachedQueryRecord> topQueries = new java.util.PriorityQueue<>(
                             MAX_CACHE_SIZE + 1,
                             java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos)
@@ -105,17 +112,19 @@ public class LiveQueriesCache {
                         for (TaskInfo task : response.getTasks()) {
                             if (task.getAction().equals(SEARCH_ACTION)) {
                                 searchTasks++;
+                                currentTasks.put(task.getTaskId().toString(), task);
                                 CachedQueryRecord record = createCachedRecordFromTask(task);
                                 topQueries.offer(record);
                                 if (topQueries.size() > MAX_CACHE_SIZE) {
-                                    topQueries.poll(); // Remove shortest running
+                                    topQueries.poll();
                                 }
                             }
                         }
 
+                        detectFinishedQueries(currentTasks);
+
                         logger.info("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
 
-                        // Convert to sorted array (longest first)
                         List<CachedQueryRecord> sorted = new ArrayList<>(topQueries);
                         sorted.sort(java.util.Comparator.comparingLong(CachedQueryRecord::getLatencyNanos).reversed());
                         sortedQueries = sorted.toArray(new CachedQueryRecord[0]);
@@ -178,8 +187,18 @@ public class LiveQueriesCache {
         );
     }
 
+    private void detectFinishedQueries(Map<String, TaskInfo> currentTasks) {
+        CachedQueryRecord[] previous = sortedQueries;
+        for (CachedQueryRecord record : previous) {
+            if (!currentTasks.containsKey(record.taskId)) {
+                finishedQueriesCache.addFinishedQuery(record);
+            }
+        }
+    }
+
     public List<CachedQueryRecord> getCurrentQueries() {
         logger.info("LiveQueriesCache returning {} cached queries", sortedQueries.length);
         return java.util.Arrays.asList(sortedQueries);
     }
+
 }

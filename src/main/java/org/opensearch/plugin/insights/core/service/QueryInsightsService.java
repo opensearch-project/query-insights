@@ -125,6 +125,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     final QueryInsightsReaderFactory queryInsightsReaderFactory;
 
     private LiveQueriesCache liveQueriesCache;
+    private FinishedQueriesCache finishedQueriesCache;
     private volatile boolean liveQueriesCacheStarted = false;
     private volatile long lastAccessTime = 0;
     private org.opensearch.threadpool.Scheduler.Cancellable idleCheckTask;
@@ -205,7 +206,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
-        this.liveQueriesCache = new LiveQueriesCache(client, threadPool, null);
+        this.finishedQueriesCache = new FinishedQueriesCache();
+        this.liveQueriesCache = new LiveQueriesCache(client, threadPool, null, finishedQueriesCache);
     }
 
     /**
@@ -741,6 +743,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
         this.queryShapeGenerator = queryShapeGenerator;
+    }
+
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        return finishedQueriesCache;
     }
 
     public LiveQueriesCache getLiveQueriesCache() {
