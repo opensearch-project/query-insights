@@ -9,12 +9,14 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,9 +44,15 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.TaskId;
+import org.opensearch.core.xcontent.DeprecationHandler;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.index.query.MatchQueryBuilder;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -54,6 +62,9 @@ import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
@@ -141,7 +152,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
-        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
+        assertEquals(searchSourceBuilder.toString(), generatedRecord.getAttributes().get(Attribute.SOURCE));
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
     }
@@ -518,6 +529,122 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             queryInsightsListener.validateExcludedIndices(validIndicesList);
         } catch (Exception e) {
             fail("Expect no exception when valid excluded indices is set.");
+        }
+    }
+
+    public void testSourceTruncation() {
+        // Initialize OperationalMetricsCounter for this test
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        Counter mockCounter = mock(Counter.class);
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenReturn(mockCounter);
+        OperationalMetricsCounter.initialize("test-cluster", metricsRegistry);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.setMaxSourceSize(50);
+
+        SearchSourceBuilder longSource = new SearchSourceBuilder();
+        // Create a source that will definitely exceed 50 bytes
+        longSource.query(
+            new MatchQueryBuilder(
+                "very_long_field_name_that_definitely_exceeds_fifty_bytes_limit",
+                "very_long_value_that_also_definitely_exceeds_the_fifty_byte_character_limit_we_set_for_this_test_case"
+            )
+        );
+
+        SearchTask task = new SearchTask(0, "n/a", "n/a", () -> "test", TaskId.EMPTY_TASK_ID, Collections.emptyMap());
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(longSource);
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequestContext.phaseTookMap()).thenReturn(Collections.emptyMap());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(Collections.emptySet());
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+
+        String source = (String) record.getAttributes().get(Attribute.SOURCE);
+        Boolean truncated = (Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED);
+
+        // The source should be truncated since it exceeds 50 bytes
+        assertTrue(source.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 50);
+        assertTrue(truncated);
+
+        // Verify that the operational metrics counter was incremented for truncation
+        verify(mockCounter, times(1)).add(eq(1.0), any(Tags.class));
+    }
+
+    public void testSourceTruncationWithNullSource() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.setMaxSourceSize(100);
+
+        SearchTask task = new SearchTask(0, "n/a", "n/a", () -> "test", TaskId.EMPTY_TASK_ID, Collections.emptyMap());
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(null);
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequestContext.phaseTookMap()).thenReturn(Collections.emptyMap());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(Collections.emptySet());
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+        assertFalse((Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testTruncateJsonWithValidStructure() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener.setMaxSourceSize(30);
+
+        // Test with valid JSON that needs truncation
+        String longJson = "{\"query\":{\"match\":{\"field\":\"very_long_value_that_exceeds_limit\"}}}";
+        String truncated = queryInsightsListener.truncateJsonWithValidStructure(longJson);
+
+        assertTrue(truncated.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 30);
+        // Verify it's valid JSON by parsing with XContentParser
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.IGNORE_DEPRECATIONS,
+                truncated
+            )
+        ) {
+            // Parser created successfully, JSON is valid
+            assertNotNull(parser);
+        } catch (IOException e) {
+            fail("Truncated JSON should be valid: " + e.getMessage());
+        }
+
+        // Test with JSON that has arrays
+        String jsonWithArray = "{\"aggs\":[{\"terms\":{\"field\":\"very_long_field_name\"}},{\"more\":\"data\"}]}";
+        String truncatedArray = queryInsightsListener.truncateJsonWithValidStructure(jsonWithArray);
+
+        assertTrue(truncatedArray.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 30);
+        // Verify it's valid JSON by parsing with XContentParser
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.IGNORE_DEPRECATIONS,
+                truncatedArray
+            )
+        ) {
+            JsonXContent.jsonXContent.createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS, truncatedArray);
+        } catch (IOException e) {
+            fail("Truncated JSON should be valid: " + e.getMessage());
         }
     }
 }

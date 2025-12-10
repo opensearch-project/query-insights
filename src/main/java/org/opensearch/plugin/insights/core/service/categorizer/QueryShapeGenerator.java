@@ -159,11 +159,16 @@ public class QueryShapeGenerator implements ClusterStateListener {
 
     private Map<String, Object> getPropertiesMapForIndex(Index index) {
         IndexMetadata indexMetadata = clusterService.state().metadata().index(index);
-        if (indexMetadata == null) {
+        if (indexMetadata == null || indexMetadata.mapping() == null) {
             return Collections.emptyMap();
         }
 
-        Map<String, Object> propertiesMap = (Map<String, Object>) indexMetadata.mapping().getSourceAsMap().get("properties");
+        Map<String, Object> sourceAsMap = indexMetadata.mapping().getSourceAsMap();
+        if (sourceAsMap == null) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Object> propertiesMap = (Map<String, Object>) sourceAsMap.get("properties");
         if (propertiesMap == null) {
             return Collections.emptyMap();
         }
