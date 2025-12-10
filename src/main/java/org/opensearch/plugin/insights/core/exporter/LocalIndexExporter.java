@@ -19,6 +19,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import org.apache.logging.log4j.LogManager;
@@ -28,6 +29,8 @@ import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest;
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsResponse;
 import org.opensearch.action.admin.indices.template.get.GetComposableIndexTemplateAction;
 import org.opensearch.action.admin.indices.template.put.PutComposableIndexTemplateAction;
 import org.opensearch.action.bulk.BulkRequestBuilder;
@@ -36,6 +39,7 @@ import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.ComposableIndexTemplate;
+import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.compress.CompressedXContent;
 import org.opensearch.common.settings.Settings;
@@ -157,10 +161,10 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                     }
                 });
             } else {
-                // Index already exists, proceed with bulk export
-                bulk(indexName, records);
+                // Index already exists, check mapping compatibility before bulk export
+                checkMappingAndBulk(indexName, records);
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.error("Unable to export query insights data:", e);
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
         }
@@ -189,7 +193,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                 if (createIndexResponse.isAcknowledged()) {
                     try {
                         bulk(indexName, records);
-                    } catch (IOException e) {
+                    } catch (Exception e) {
                         OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
                         logger.error("Unable to index query insights data: ", e);
                     }
@@ -202,7 +206,7 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                 if (cause instanceof ResourceAlreadyExistsException) {
                     try {
                         bulk(indexName, records);
-                    } catch (IOException ioe) {
+                    } catch (Exception ioe) {
                         OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
                         logger.error("Unable to index query insights data: ", ioe);
                     }
@@ -214,12 +218,64 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         });
     }
 
+    /**
+     * Check mapping compatibility and perform bulk export with appropriate format
+     */
+    void checkMappingAndBulk(String indexName, List<SearchQueryRecord> records) {
+        GetMappingsRequest request = new GetMappingsRequest().indices(indexName);
+
+        client.admin().indices().getMappings(request, new ActionListener<GetMappingsResponse>() {
+            @Override
+            public void onResponse(GetMappingsResponse response) {
+                boolean isObjectType = false;
+                try {
+                    MappingMetadata mappingMetadata = response.getMappings().get(indexName);
+                    if (mappingMetadata != null) {
+                        Map<String, Object> sourceMap = mappingMetadata.getSourceAsMap();
+                        Map<String, Object> properties = (Map<String, Object>) sourceMap.get("properties");
+                        if (properties != null && properties.containsKey("source")) {
+                            Map<String, Object> sourceField = (Map<String, Object>) properties.get("source");
+                            String type = (String) sourceField.get("type");
+                            isObjectType = !"text".equals(type);
+                        } else {
+                            // No explicit source mapping means dynamic mapping treats it as object
+                            isObjectType = true;
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Error checking source field mapping: {}", e.getMessage());
+                }
+
+                try {
+                    bulk(indexName, records, isObjectType);
+                } catch (Exception e) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
+                    logger.error("Unable to index query insights data: ", e);
+                }
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                try {
+                    bulk(indexName, records, false);
+                } catch (Exception ex) {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
+                    logger.error("Unable to index query insights data: ", ex);
+                }
+            }
+        });
+    }
+
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
+        bulk(indexName, records, false);
+    }
+
+    void bulk(final String indexName, final List<SearchQueryRecord> records, boolean useObjectSource) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS, useObjectSource))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {

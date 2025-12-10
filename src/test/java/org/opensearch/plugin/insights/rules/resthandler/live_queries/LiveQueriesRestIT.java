@@ -464,10 +464,27 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             + "  }\n"
             + "}";
 
+        try {
+            // Try to delete the index first if it exists
+            Request deleteRequest = new Request("DELETE", "/" + TEST_INDEX);
+            client().performRequest(deleteRequest);
+        } catch (ResponseException e) {
+            // Index doesn't exist, which is fine
+        }
+
         Request createIndexRequest = new Request("PUT", "/" + TEST_INDEX);
         createIndexRequest.setJsonEntity(mappingJson);
-        Response response = client().performRequest(createIndexRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        try {
+            Response response = client().performRequest(createIndexRequest);
+            assertEquals(200, response.getStatusLine().getStatusCode());
+        } catch (ResponseException e) {
+            if (e.getResponse().getStatusLine().getStatusCode() == 400 && e.getMessage().contains("resource_already_exists_exception")) {
+                // Index already exists, continue with existing index
+                logger.info("Index {} already exists, using existing index", TEST_INDEX);
+            } else {
+                throw e;
+            }
+        }
         logger.info("Created test index with proper mapping");
     }
 

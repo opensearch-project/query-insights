@@ -201,9 +201,12 @@ public class MinMaxQueryGrouperBySimilarityIT extends QueryInsightsRestTestCase 
 
                     // Validate other attributes
                     assertTrue("Query should have source", query.containsKey("source"));
-                    Map<String, Object> source = (Map<String, Object>) query.get("source");
-                    assertNotNull("Source should not be null", source);
-                    assertTrue("Source should contain query", source.containsKey("query"));
+                    Object sourceObj = query.get("source");
+                    assertNotNull("Source should not be null", sourceObj);
+                    if (sourceObj instanceof Map) {
+                        Map<String, Object> source = (Map<String, Object>) sourceObj;
+                        assertTrue("Source should contain query", source.containsKey("query"));
+                    }
                     assertEquals(
                         "aggregationType should be AVERAGE for grouped queries",
                         AggregationType.AVERAGE.toString(),
