@@ -22,6 +22,7 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -45,16 +46,39 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
+        if (request.isCached()) {
+            try {
+                List<SearchQueryRecord> liveRecords = queryInsightsService.getLiveQueriesCache().getCurrentQueries();
+                List<SearchQueryRecord> finishedRecords = request.includeFinished()
+                    ? queryInsightsService.getFinishedQueriesCache().getFinishedQueries()
+                    : List.of();
+
+                listener.onResponse(new LiveQueriesResponse(liveRecords, finishedRecords, request.includeFinished()));
+                return;
+            } catch (Exception ex) {
+                logger.error("Failed to retrieve queries from cache", ex);
+                listener.onFailure(ex);
+                return;
+            }
+        }
+
         ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search");
 
         // Set nodes filter if provided in the request
@@ -71,6 +95,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
                         if (!taskInfo.getAction().equals("indices:data/read/search")) {
+                            continue;
+                        }
+                        // Filter by specific task ID if provided
+                        if (request.getTaskId() != null && !taskInfo.getTaskId().toString().equals(request.getTaskId())) {
                             continue;
                         }
                         long timestamp = taskInfo.getStartTime();
@@ -132,7 +160,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
                         .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
                         .toList();
-                    listener.onResponse(new LiveQueriesResponse(finalRecords));
+
+                    List<SearchQueryRecord> finishedRecords = request.includeFinished()
+                        ? queryInsightsService.getFinishedQueriesCache().getFinishedQueries()
+                        : List.of();
+
+                    listener.onResponse(new LiveQueriesResponse(finalRecords, finishedRecords, request.includeFinished()));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -146,4 +179,5 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             }
         });
     }
+
 }

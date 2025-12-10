@@ -124,6 +124,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     final QueryInsightsReaderFactory queryInsightsReaderFactory;
 
+    private LiveQueriesCache liveQueriesCache;
+    private FinishedQueriesCache finishedQueriesCache;
+    private volatile boolean liveQueriesCacheStarted = false;
+    private volatile long lastAccessTime = 0;
+    private org.opensearch.threadpool.Scheduler.Cancellable idleCheckTask;
+
     /**
      * Flags for enabling insight data grouping for different metric types
      */
@@ -200,6 +206,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+        this.finishedQueriesCache = new FinishedQueriesCache();
+        this.liveQueriesCache = new LiveQueriesCache(client, threadPool, null);
     }
 
     /**
@@ -630,6 +638,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStop() {
+        if (liveQueriesCacheStarted) {
+            liveQueriesCache.stop();
+        }
+        if (idleCheckTask != null) {
+            idleCheckTask.cancel();
+        }
         if (scheduledFutures != null) {
             for (Scheduler.Cancellable cancellable : scheduledFutures) {
                 if (cancellable != null) {
@@ -729,5 +743,39 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
         this.queryShapeGenerator = queryShapeGenerator;
+    }
+
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        return finishedQueriesCache;
+    }
+
+    public LiveQueriesCache getLiveQueriesCache() {
+        lastAccessTime = System.currentTimeMillis();
+        if (!liveQueriesCacheStarted) {
+            synchronized (this) {
+                if (!liveQueriesCacheStarted) {
+                    liveQueriesCache.start();
+                    liveQueriesCacheStarted = true;
+                    startIdleCheck();
+                }
+            }
+        }
+        return liveQueriesCache;
+    }
+
+    private void startIdleCheck() {
+        idleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+            if (System.currentTimeMillis() - lastAccessTime > 300000) { // 5 minutes
+                synchronized (this) {
+                    if (liveQueriesCacheStarted) {
+                        liveQueriesCache.stop();
+                        liveQueriesCacheStarted = false;
+                        if (idleCheckTask != null) {
+                            idleCheckTask.cancel();
+                        }
+                    }
+                }
+            }
+        }, new TimeValue(60, TimeUnit.SECONDS), QUERY_INSIGHTS_EXECUTOR);
     }
 }
