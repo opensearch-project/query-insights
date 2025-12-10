@@ -310,6 +310,8 @@ integTest {
     // Exclude the ITs when security is enabled, because they executed in another task (:integTestWithSecurity)
     exclude 'org/opensearch/plugin/insights/**/*IT.class'
   }
+  // Exclude QueryInsightsClusterIT from withoutSecurity scenarios
+  exclude 'org/opensearch/plugin/insights/QueryInsightsClusterIT.class'
 }
 
 tasks.named("integTest").configure {
