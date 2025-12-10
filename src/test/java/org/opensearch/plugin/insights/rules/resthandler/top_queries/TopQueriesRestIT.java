@@ -224,6 +224,13 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     }
 
     public void testExcludedIndices() throws IOException, InterruptedException {
+        // Disable all features first to clear any existing queries
+        updateClusterSettings(this::disableTopQueriesSettings);
+        waitForEmptyTopQueriesResponse();
+
+        // Enable only Top N Queries by latency feature
+        updateClusterSettings(this::defaultTopQueriesSettings);
+
         prepareExcludedIndices();
 
         // Exclude the first index
@@ -231,19 +238,25 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         doSearch(2, "exclude-me-index-01");
         assertTopQueriesCount(0, "latency", "exclude-me-index-01");
 
-        doSearch(2, "dont-exclude-me-index-02");
-        assertTopQueriesCount(2, "latency", "exclude-me-index-01");
+        doSearch(2, "exclude-me-index-01,dont-exclude-me-index-03");
+        assertTopQueriesCount(0, "latency", "exclude-me-index-01");
+        assertTopQueriesCount(0, "latency", "dont-exclude-me-index-03");
+
+        doSearch(2, "dont-exclude-me-index-03");
+        assertTopQueriesCount(2, "latency", "dont-exclude-me-index-03");
+        assertTopQueriesCount(0, "latency", "exclude-me-index-01");
 
         // Exclude indices using wildcard
         updateClusterSettings(() -> excludedIndicesSettings("exclude-me*"));
         doSearch(2, "exclude-me-index-01");
         doSearch(2, "exclude-me-index-02");
-        assertTopQueriesCount(2, "latency", "exclude-me-index-01");
+        assertTopQueriesCount(0, "latency", "exclude-me-index-01");
+        assertTopQueriesCount(0, "latency", "exclude-me-index-02");
 
         // Reset excluded indices
         updateClusterSettings(() -> excludedIndicesSettings(null));
         doSearch(2, "exclude-me-index-01");
-        assertTopQueriesCount(4, "latency", "exclude-me-index-01");
+        assertTopQueriesCount(2, "latency", "exclude-me-index-01");
     }
 
     private void prepareExcludedIndices() throws IOException {
@@ -257,7 +270,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
         Response secondResponse = client().performRequest(secondExcludedIndex);
         Assert.assertEquals(201, secondResponse.getStatusLine().getStatusCode());
 
-        Request thirdIndex = new Request("POST", "/dont-exclude-me-index-02/_doc");
+        Request thirdIndex = new Request("POST", "/dont-exclude-me-index-03/_doc");
         thirdIndex.setJsonEntity(createDocumentsBody());
         Response thirdResponse = client().performRequest(thirdIndex);
         Assert.assertEquals(201, thirdResponse.getStatusLine().getStatusCode());
