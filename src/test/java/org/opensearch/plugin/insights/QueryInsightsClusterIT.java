@@ -26,8 +26,6 @@ import org.opensearch.core.xcontent.XContentParser;
 /**
  * Multi-Node & Cluster Integration Tests for Query Insights Plugin
  *
- * @see <a href="https://github.com/opensearch-project/query-insights/issues/XXX">Issue #XXX</a>
- *
  * This test suite covers:
  * - Plugin functionality across multiple nodes
  * - Data aggregation from multiple nodes
