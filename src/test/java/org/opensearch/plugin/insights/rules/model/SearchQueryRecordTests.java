@@ -21,6 +21,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -100,6 +101,36 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("Test should not throw exceptions when parsing search query record");
         }
+    }
+
+    public void testFromXContentWithSearchSourceBuilderObject() throws IOException {
+        // Test backward compatibility: existing Local Index data may have SearchSourceBuilder objects
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(10);
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        builder.field("timestamp", 1706574180000L);
+        builder.field("id", "test-id");
+        builder.field("source");
+        sourceBuilder.toXContent(builder, null); // Store as object (old format)
+        builder.startObject("measurements");
+        builder.startObject("latency");
+        builder.field("number", 1L);
+        builder.field("count", 1);
+        builder.field("aggregationType", "NONE");
+        builder.endObject();
+        builder.endObject();
+        builder.endObject();
+
+        String json = builder.toString();
+        XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
+        SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
+
+        // Verify SOURCE maintains its original format (SearchSourceBuilder) for backward compatibility
+        // but can be converted to string when needed
+        Object sourceValue = parsedRecord.getAttributes().get(Attribute.SOURCE);
+        assertTrue("SOURCE should maintain SearchSourceBuilder format for old data", sourceValue instanceof SearchSourceBuilder);
+        assertEquals("SOURCE content should match when converted to string", sourceBuilder.toString(), sourceValue.toString());
     }
 
     /**

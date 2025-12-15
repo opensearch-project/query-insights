@@ -39,14 +39,17 @@ public final class SearchQueryCategorizer {
 
     final SearchQueryAggregationCategorizer searchQueryAggregationCategorizer;
     private static SearchQueryCategorizer instance;
+    private static org.opensearch.core.xcontent.NamedXContentRegistry namedXContentRegistry;
 
     /**
      * Constructor for SearchQueryCategorizor
      * @param metricsRegistry opentelemetry metrics registry
+     * @param xContentRegistry NamedXContentRegistry for parsing
      */
-    private SearchQueryCategorizer(MetricsRegistry metricsRegistry) {
+    private SearchQueryCategorizer(MetricsRegistry metricsRegistry, org.opensearch.core.xcontent.NamedXContentRegistry xContentRegistry) {
         searchQueryCounters = new SearchQueryCounters(metricsRegistry);
         searchQueryAggregationCategorizer = new SearchQueryAggregationCategorizer(searchQueryCounters);
+        namedXContentRegistry = xContentRegistry;
     }
 
     /**
@@ -55,10 +58,23 @@ public final class SearchQueryCategorizer {
      * @return singleton instance
      */
     public static SearchQueryCategorizer getInstance(MetricsRegistry metricsRegistry) {
+        return getInstance(metricsRegistry, org.opensearch.core.xcontent.NamedXContentRegistry.EMPTY);
+    }
+
+    /**
+     * Get singleton instance of SearchQueryCategorizer
+     * @param metricsRegistry metric registry
+     * @param xContentRegistry NamedXContentRegistry for parsing
+     * @return singleton instance
+     */
+    public static SearchQueryCategorizer getInstance(
+        MetricsRegistry metricsRegistry,
+        org.opensearch.core.xcontent.NamedXContentRegistry xContentRegistry
+    ) {
         if (instance == null) {
             synchronized (SearchQueryCategorizer.class) {
                 if (instance == null) {
-                    instance = new SearchQueryCategorizer(metricsRegistry);
+                    instance = new SearchQueryCategorizer(metricsRegistry, xContentRegistry);
                 }
             }
         }
@@ -81,7 +97,39 @@ public final class SearchQueryCategorizer {
      * @param record search query record
      */
     public void categorize(SearchQueryRecord record) {
-        SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
+        Object sourceObj = record.getAttributes().get(Attribute.SOURCE);
+        if (sourceObj == null) {
+            return;
+        }
+
+        SearchSourceBuilder source;
+        if (sourceObj instanceof String) {
+            // Parse string back to SearchSourceBuilder for categorization
+            String sourceString = (String) sourceObj;
+
+            // Check if source was previously truncated - skip parsing if so
+            Boolean isTruncated = (Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED);
+            if (Boolean.TRUE.equals(isTruncated)) {
+                logger.debug("Skipping categorization for truncated source string");
+                return;
+            }
+
+            try {
+                source = SearchSourceBuilder.fromXContent(
+                    org.opensearch.common.xcontent.json.JsonXContent.jsonXContent.createParser(
+                        namedXContentRegistry,
+                        org.opensearch.core.xcontent.DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        sourceString
+                    )
+                );
+            } catch (Exception e) {
+                logger.warn("Failed to parse SOURCE string for categorization: {} - Source: {}", e.getMessage(), sourceString);
+                return;
+            }
+        } else {
+            source = (SearchSourceBuilder) sourceObj;
+        }
+
         Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);
@@ -128,6 +176,7 @@ public final class SearchQueryCategorizer {
     public void reset() {
         synchronized (SearchQueryCategorizer.class) {
             instance = null;
+            namedXContentRegistry = null;
         }
     }
 }
