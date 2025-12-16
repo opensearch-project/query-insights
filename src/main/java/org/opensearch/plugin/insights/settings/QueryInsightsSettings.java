@@ -266,7 +266,7 @@ public class QueryInsightsSettings {
     /**
      * Minimum Top N local indices retention period in days
      */
-    public static final int MIN_DELETE_AFTER_VALUE = 1;
+    public static final int MIN_DELETE_AFTER_VALUE = 0;
     /**
      * Maximum Top N local indices retention period in days
      */

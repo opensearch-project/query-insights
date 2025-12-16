@@ -14,11 +14,13 @@ import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -39,17 +41,23 @@ import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
+import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
+import org.opensearch.transport.client.ClusterAdminClient;
 
 public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     private QueryInsightsPlugin queryInsightsPlugin;
 
-    private final Client client = mock(Client.class);
+    private final Client client = mock(Client.class, org.mockito.Answers.RETURNS_DEEP_STUBS);
     private ClusterService clusterService;
-    private final ThreadPool threadPool = mock(ThreadPool.class);
-    private MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+    private final ThreadPool threadPool = new TestThreadPool(
+        "QueryInsightsPluginTests",
+        new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
+    );
+    private final MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
 
     @Before
     public void setup() {
@@ -63,6 +71,18 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
             invocation -> mock(Counter.class)
         );
+
+        // Mock the client administrative calls
+        AdminClient adminClient = mock(AdminClient.class);
+        ClusterAdminClient clusterAdminClient = mock(ClusterAdminClient.class);
+        when(client.admin()).thenReturn(adminClient);
+        when(adminClient.cluster()).thenReturn(clusterAdminClient);
+    }
+
+    @Override
+    public void tearDown() throws Exception {
+        ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
+        super.tearDown();
     }
 
     public void testGetSettings() {

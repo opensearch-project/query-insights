@@ -8,8 +8,6 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE;
-
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.time.ZoneOffset;
@@ -23,11 +21,9 @@ import org.opensearch.ExceptionsHelper;
 import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
-import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
-import org.opensearch.action.support.clustermanager.AcknowledgedResponse;
 import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
@@ -35,7 +31,6 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.index.IndexNotFoundException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -54,7 +49,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     private final ClusterService clusterService;
     private final String indexMapping;
     private DateTimeFormatter indexPattern;
-    private int deleteAfter;
     private final String id;
     private static final int DEFAULT_NUMBER_OF_SHARDS = 1;
     private static final String DEFAULT_AUTO_EXPAND_REPLICAS = "0-2";
@@ -80,7 +74,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         this.indexPattern = indexPattern;
         this.indexMapping = indexMapping;
         this.id = id;
-        this.deleteAfter = DEFAULT_DELETE_AFTER_VALUE;
     }
 
     /**
@@ -223,48 +216,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     String buildLocalIndexName() {
         ZonedDateTime currentTime = ZonedDateTime.now(ZoneOffset.UTC);
         return IndexDiscoveryHelper.buildLocalIndexName(indexPattern, currentTime);
-    }
-
-    /**
-     * Set local index exporter data retention period
-     *
-     * @param deleteAfter the number of days after which Top N local indices should be deleted
-     */
-    public void setDeleteAfter(final int deleteAfter) {
-        this.deleteAfter = deleteAfter;
-    }
-
-    /**
-     * Get local index exporter data retention period
-     *
-     * @return the number of days after which Top N local indices should be deleted
-     */
-    public int getDeleteAfter() {
-        return deleteAfter;
-    }
-
-    /**
-     * Deletes the specified index and logs any failure that occurs during the operation.
-     *
-     * @param indexName The name of the index to delete.
-     * @param client    The OpenSearch client used to perform the deletion.
-     */
-    public void deleteSingleIndex(String indexName, Client client) {
-        Logger logger = LogManager.getLogger();
-        client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
-            @Override
-            public void onResponse(AcknowledgedResponse acknowledgedResponse) {}
-
-            @Override
-            public void onFailure(Exception e) {
-                Throwable cause = ExceptionsHelper.unwrapCause(e);
-                if (cause instanceof IndexNotFoundException) {
-                    return;
-                }
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_DELETE_FAILURES);
-                logger.error("Failed to delete index '{}': ", indexName, e);
-            }
-        });
     }
 
     /**
