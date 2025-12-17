@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,6 +46,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -68,6 +70,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     private final SearchRequest searchRequest = mock(SearchRequest.class);
     private final QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
     private final TopQueriesService topQueriesService = mock(TopQueriesService.class);
+    private final FinishedQueriesCache finishedQueriesCache = mock(FinishedQueriesCache.class);
     private final ThreadPool threadPool = new TestThreadPool("QueryInsightsThreadPool");
     private ClusterService clusterService;
     private final String WILDCARD_EXCLUDED_PREFIX = "wildcard-excluded-";
@@ -84,6 +87,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         ClusterServiceUtils.setState(clusterService, state);
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
         when(queryInsightsService.getTopQueriesService(MetricType.LATENCY)).thenReturn(topQueriesService);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+        doNothing().when(finishedQueriesCache).addFinishedQuery(any());
         when(searchRequestContext.getRequest()).thenReturn(searchRequest);
         ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
         threadPool.getThreadContext().setHeaders(new Tuple<>(Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel"), new HashMap<>()));
@@ -420,6 +425,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
     public void testExcludeInternalIndex() {
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
+        FinishedQueriesCache finishedQueriesCache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+        doNothing().when(finishedQueriesCache).addFinishedQuery(any());
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
         // Search request having internal index
@@ -433,6 +441,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search top_queries* index along with other indices
         queryInsightsService = mock(QueryInsightsService.class);
+        finishedQueriesCache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+        doNothing().when(finishedQueriesCache).addFinishedQuery(any());
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(2);
@@ -458,6 +469,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test when request indices is null
         queryInsightsService = mock(QueryInsightsService.class);
+        finishedQueriesCache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+        doNothing().when(finishedQueriesCache).addFinishedQuery(any());
         when(searchRequest.indices()).thenReturn(null);
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
@@ -465,6 +479,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search with empty indices array should not skip
         queryInsightsService = mock(QueryInsightsService.class);
+        finishedQueriesCache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+        doNothing().when(finishedQueriesCache).addFinishedQuery(any());
         when(searchRequest.indices()).thenReturn(new String[0]);
         when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
             new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("index-2", "uuid-2")))

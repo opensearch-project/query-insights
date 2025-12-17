@@ -40,6 +40,7 @@ import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.tasks.resourcetracker.TaskThreadUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -71,6 +72,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     private ActionFilters actionFilters;
     private AdminClient adminClient;
     private ClusterAdminClient clusterAdminClient;
+    private QueryInsightsService queryInsightsService;
 
     @Before
     public void setup() {
@@ -102,7 +104,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.cluster()).thenReturn(clusterAdminClient);
 
-        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters);
+        queryInsightsService = mock(QueryInsightsService.class);
+
+        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
     }
 
     private TaskInfo createTaskInfo(
