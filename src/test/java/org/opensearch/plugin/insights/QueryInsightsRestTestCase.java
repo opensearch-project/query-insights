@@ -437,6 +437,20 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
+    protected int countOccurrences(String fullString, String subString) {
+        if (subString == null || subString.isEmpty()) return 0;
+
+        int count = 0;
+        int index = 0;
+
+        while ((index = fullString.indexOf(subString, index)) != -1) {
+            count++;
+            index += subString.length(); // move past the match
+        }
+
+        return count;
+    }
+
     protected int countTopQueries(String json, String keyword) {
         // Basic pattern to match JSON array elements in `top_queries`
         Pattern pattern = Pattern.compile("\\{\\s*\"" + keyword + "\"");
@@ -479,18 +493,23 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
     }
 
     protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
-        assertTopQueriesCount(expectedTopQueriesCount, type, DEFAULT_KEYWORD);
+        assertTopQueriesCount(expectedTopQueriesCount, type, null);
     }
 
-    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type, String index) throws IOException, InterruptedException {
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type, String subString) throws IOException,
+        InterruptedException {
         // Ensure records are drained to the top queries service
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        int topNArraySize = 0;
 
         // run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
             String responseBody = getTopQueries(type);
-
-            int topNArraySize = countTopQueries(responseBody, index);
+            if (subString != null) {
+                topNArraySize = countOccurrences(responseBody, subString);
+            } else {
+                topNArraySize = countTopQueries(responseBody, DEFAULT_KEYWORD);
+            }
 
             if (topNArraySize < expectedTopQueriesCount) {
                 // Ensure records are drained to the top queries service
@@ -500,7 +519,10 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             // Validate that all queries are listed separately (no grouping)
             Assert.assertEquals(expectedTopQueriesCount, topNArraySize);
+            return;
         }
+
+        fail(String.format(Locale.ROOT, "Top N queries count [%s] is not equal to expected [%s]", topNArraySize, expectedTopQueriesCount));
     }
 
     protected String getTopQueries(String type) throws IOException {
