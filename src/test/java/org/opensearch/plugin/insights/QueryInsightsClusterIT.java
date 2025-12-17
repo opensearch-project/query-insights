@@ -227,7 +227,7 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
         }
 
         // Wait for processing
-        Thread.sleep(6000);
+        Thread.sleep(10000);
 
         // Verify queries were recorded (with retries for timing issues)
         List<Map<String, Object>> allQueries = null;

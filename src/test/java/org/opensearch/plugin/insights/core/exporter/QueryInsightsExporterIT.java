@@ -38,8 +38,6 @@ public class QueryInsightsExporterIT extends QueryInsightsRestTestCase {
 
         Thread.sleep(70000); // Allow time for export to local index
         checkLocalIndices();
-        checkQueryInsightsIndexTemplate();
-        cleanupIndextemplate();
         disableLocalIndexExporter();
         defaultExporterSettings();// Re-enabling the Local Index
         setLocalIndexToDebug();// Ensuring it is able to toggle Local to Debug

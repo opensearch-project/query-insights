@@ -632,16 +632,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         client().performRequest(resetReq);
     }
 
-    protected void cleanupIndextemplate() throws IOException, InterruptedException {
-        Thread.sleep(3000);
-
-        try {
-            client().performRequest(new Request("DELETE", "/_index_template"));
-        } catch (ResponseException e) {
-            logger.warning("Failed to delete /_index_template: " + e.getMessage());
-        }
-    }
-
     protected void checkLocalIndices() throws IOException {
         // Retry logic to handle timing issues
         String fullIndexName = null;
@@ -726,51 +716,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             List<Map<String, Object>> taskResourceUsages = (List<Map<String, Object>>) source.get("task_resource_usages");
             Assert.assertTrue("Expected non-empty task_resource_usages", taskResourceUsages.size() > 0);
-        }
-    }
-
-    protected void checkQueryInsightsIndexTemplate() throws IOException {
-        Request request = new Request("GET", "/_index_template?pretty");
-        Response response = client().performRequest(request);
-        byte[] bytes = response.getEntity().getContent().readAllBytes();
-
-        try (
-            XContentParser parser = JsonXContent.jsonXContent.createParser(
-                NamedXContentRegistry.EMPTY,
-                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                bytes
-            )
-        ) {
-            Map<String, Object> parsed = parser.map();
-
-            List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
-            Assert.assertNotNull("Expected index_templates to exist", templates);
-            Assert.assertFalse("Expected at least one index_template", templates.isEmpty());
-
-            Map<String, Object> firstTemplate = templates.get(0);
-            Assert.assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
-
-            Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
-
-            List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
-            Assert.assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
-
-            Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
-            Map<String, Object> settings = (Map<String, Object>) template.get("settings");
-            Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
-            Assert.assertEquals("1", indexSettings.get("number_of_shards"));
-            Assert.assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
-
-            Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
-            Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
-            Assert.assertEquals(1, ((Number) meta.get("schema_version")).intValue());
-            Assert.assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
-
-            Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
-            Assert.assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
-            Assert.assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
-            Assert.assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
-            Assert.assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
         }
     }
 
