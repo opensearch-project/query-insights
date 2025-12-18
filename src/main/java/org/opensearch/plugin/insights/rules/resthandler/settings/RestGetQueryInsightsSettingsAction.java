@@ -49,18 +49,49 @@ public class RestGetQueryInsightsSettingsAction extends BaseRestHandler {
 
     @Override
     protected RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) {
-        final String metricType = request.param("metric_type", null);
-        final GetQueryInsightsSettingsRequest getRequest = new GetQueryInsightsSettingsRequest(metricType);
+        final GetQueryInsightsSettingsRequest getRequest = prepareRequest(request);
 
         return channel -> client.execute(GetQueryInsightsSettingsAction.INSTANCE, getRequest, getSettingsResponse(channel));
     }
 
-    private RestResponseListener<GetQueryInsightsSettingsResponse> getSettingsResponse(final RestChannel channel) {
+    /**
+     * Prepare the request from the REST request parameters.
+     * Package-private for testing.
+     *
+     * @param request the REST request
+     * @return the GetQueryInsightsSettingsRequest
+     */
+    static GetQueryInsightsSettingsRequest prepareRequest(final RestRequest request) {
+        final String metricType = request.param("metric_type", null);
+        return new GetQueryInsightsSettingsRequest(metricType);
+    }
+
+    /**
+     * Creates a RestResponseListener for GetQueryInsightsSettingsResponse.
+     * Package-private for testing.
+     *
+     * @param channel the REST channel
+     * @return the response listener
+     */
+    RestResponseListener<GetQueryInsightsSettingsResponse> getSettingsResponse(final RestChannel channel) {
         return new RestResponseListener<>(channel) {
             @Override
             public RestResponse buildResponse(final GetQueryInsightsSettingsResponse response) throws Exception {
-                return new BytesRestResponse(RestStatus.OK, response.toXContent(channel.newBuilder(), ToXContent.EMPTY_PARAMS));
+                return buildRestResponse(channel, response);
             }
         };
+    }
+
+    /**
+     * Builds a REST response from the settings response.
+     * Package-private for testing.
+     *
+     * @param channel the REST channel
+     * @param response the settings response
+     * @return the REST response
+     * @throws Exception if an error occurs during response building
+     */
+    static RestResponse buildRestResponse(final RestChannel channel, final GetQueryInsightsSettingsResponse response) throws Exception {
+        return new BytesRestResponse(RestStatus.OK, response.toXContent(channel.newBuilder(), ToXContent.EMPTY_PARAMS));
     }
 }

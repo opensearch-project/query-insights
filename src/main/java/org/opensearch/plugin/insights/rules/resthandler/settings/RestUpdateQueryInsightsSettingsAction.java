@@ -49,6 +49,20 @@ public class RestUpdateQueryInsightsSettingsAction extends BaseRestHandler {
 
     @Override
     protected RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
+        final UpdateQueryInsightsSettingsRequest updateRequest = prepareRequest(request);
+
+        return channel -> client.execute(UpdateQueryInsightsSettingsAction.INSTANCE, updateRequest, updateSettingsResponse(channel));
+    }
+
+    /**
+     * Prepare the request from the REST request body.
+     * Package-private for testing.
+     *
+     * @param request the REST request
+     * @return the UpdateQueryInsightsSettingsRequest
+     * @throws IOException if the request body cannot be parsed
+     */
+    static UpdateQueryInsightsSettingsRequest prepareRequest(final RestRequest request) throws IOException {
         final UpdateQueryInsightsSettingsRequest updateRequest = new UpdateQueryInsightsSettingsRequest();
 
         // Parse request body to extract settings
@@ -59,15 +73,35 @@ public class RestUpdateQueryInsightsSettingsAction extends BaseRestHandler {
             }
         }
 
-        return channel -> client.execute(UpdateQueryInsightsSettingsAction.INSTANCE, updateRequest, updateSettingsResponse(channel));
+        return updateRequest;
     }
 
-    private RestResponseListener<UpdateQueryInsightsSettingsResponse> updateSettingsResponse(final RestChannel channel) {
+    /**
+     * Creates a RestResponseListener for UpdateQueryInsightsSettingsResponse.
+     * Package-private for testing.
+     *
+     * @param channel the REST channel
+     * @return the response listener
+     */
+    RestResponseListener<UpdateQueryInsightsSettingsResponse> updateSettingsResponse(final RestChannel channel) {
         return new RestResponseListener<>(channel) {
             @Override
             public RestResponse buildResponse(final UpdateQueryInsightsSettingsResponse response) throws Exception {
-                return new BytesRestResponse(RestStatus.OK, response.toXContent(channel.newBuilder(), ToXContent.EMPTY_PARAMS));
+                return buildRestResponse(channel, response);
             }
         };
+    }
+
+    /**
+     * Builds a REST response from the update settings response.
+     * Package-private for testing.
+     *
+     * @param channel the REST channel
+     * @param response the update settings response
+     * @return the REST response
+     * @throws Exception if an error occurs during response building
+     */
+    static RestResponse buildRestResponse(final RestChannel channel, final UpdateQueryInsightsSettingsResponse response) throws Exception {
+        return new BytesRestResponse(RestStatus.OK, response.toXContent(channel.newBuilder(), ToXContent.EMPTY_PARAMS));
     }
 }
