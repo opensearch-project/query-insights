@@ -90,7 +90,7 @@ public class TransportUpdateQueryInsightsSettingsAction extends HandledTransport
      * @param persistentSettings The builder to add mapped settings to
      */
     @SuppressWarnings("unchecked")
-    private void mapSettings(final Map<String, Object> requestedSettings, final Settings.Builder persistentSettings) {
+    void mapSettings(final Map<String, Object> requestedSettings, final Settings.Builder persistentSettings) {
         // Handle nested settings structure
         if (requestedSettings.containsKey("persistent")) {
             Map<String, Object> persistent = (Map<String, Object>) requestedSettings.get("persistent");
@@ -104,7 +104,7 @@ public class TransportUpdateQueryInsightsSettingsAction extends HandledTransport
      * Process settings and map them to actual setting keys
      */
     @SuppressWarnings("unchecked")
-    private void processSettings(final Map<String, Object> settings, final Settings.Builder builder) {
+    void processSettings(final Map<String, Object> settings, final Settings.Builder builder) {
         // Process metric-specific settings
         for (String metricType : new String[] { "latency", "cpu", "memory" }) {
             if (settings.containsKey(metricType)) {
@@ -136,7 +136,7 @@ public class TransportUpdateQueryInsightsSettingsAction extends HandledTransport
     /**
      * Process settings for a specific metric type
      */
-    private void processMetricSettings(final String metricType, final Map<String, Object> metricSettings, final Settings.Builder builder) {
+    void processMetricSettings(final String metricType, final Map<String, Object> metricSettings, final Settings.Builder builder) {
         if (metricSettings.containsKey("enabled")) {
             builder.put("search.insights.top_queries." + metricType + ".enabled", metricSettings.get("enabled").toString());
         }
