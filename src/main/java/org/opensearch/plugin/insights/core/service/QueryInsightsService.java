@@ -185,7 +185,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
-        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
+        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry, namedXContentRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
     }
