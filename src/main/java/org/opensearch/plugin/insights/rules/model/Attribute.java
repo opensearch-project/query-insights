@@ -82,7 +82,17 @@ public enum Attribute {
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED;
+    IS_CANCELLED,
+
+    /**
+     * The username who initiated the search query.
+     */
+    USERNAME,
+
+    /**
+     * The roles of the user who initiated the search query.
+     */
+    USER_ROLES;
 
     /**
      * Read an Attribute from a StreamInput
@@ -116,7 +126,12 @@ public enum Attribute {
     @SuppressWarnings("unchecked")
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {
         if (attributeValue instanceof List) {
-            out.writeList((List<? extends Writeable>) attributeValue);
+            List<?> list = (List<?>) attributeValue;
+            if (!list.isEmpty() && list.get(0) instanceof String) {
+                out.writeStringCollection((List<String>) attributeValue);
+            } else {
+                out.writeList((List<? extends Writeable>) attributeValue);
+            }
         } else if (attributeValue instanceof SearchSourceBuilder) {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
         } else if (attributeValue instanceof GroupingType) {
@@ -142,6 +157,8 @@ public enum Attribute {
             return builder;
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        } else if (attribute == Attribute.USER_ROLES) {
+            return in.readStringList();
         } else {
             return in.readGenericValue();
         }

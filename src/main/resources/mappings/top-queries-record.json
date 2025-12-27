@@ -17,6 +17,12 @@
         }
       }
     },
+    "username" : {
+      "type" : "keyword"
+    },
+    "user_roles" : {
+      "type" : "keyword"
+    },
     "timestamp" : {
       "type" : "long"
     },
