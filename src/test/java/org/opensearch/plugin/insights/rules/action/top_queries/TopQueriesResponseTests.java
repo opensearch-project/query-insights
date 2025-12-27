@@ -71,6 +71,8 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
             + "}"
             + "}],"
             + "\"search_type\":\"query_then_fetch\","
+            + "\"username\":\"testuser\","
+            + "\"user_roles\":[\"admin\",\"user\"],"
             + "\"measurements\":{"
             + "\"latency\":{"
             + "\"number\":1,"

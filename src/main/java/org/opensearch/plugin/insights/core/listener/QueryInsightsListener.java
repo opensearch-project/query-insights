@@ -40,6 +40,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -51,6 +52,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
+import org.opensearch.threadpool.ThreadPool;
 import reactor.util.annotation.NonNull;
 
 /**
@@ -68,16 +70,22 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
+    private final PrincipalExtractor principalExtractor;
 
     /**
      * Constructor for QueryInsightsListener
      *
      * @param clusterService       The Node's cluster service.
      * @param queryInsightsService The topQueriesByLatencyService associated with this listener
+     * @param threadPool          The thread pool for principal extraction
      */
     @Inject
-    public QueryInsightsListener(final ClusterService clusterService, final QueryInsightsService queryInsightsService) {
-        this(clusterService, queryInsightsService, false);
+    public QueryInsightsListener(
+        final ClusterService clusterService,
+        final QueryInsightsService queryInsightsService,
+        final ThreadPool threadPool
+    ) {
+        this(clusterService, queryInsightsService, threadPool, false);
         groupingFieldNameEnabled = false;
         groupingFieldTypeEnabled = false;
     }
@@ -87,17 +95,20 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
      *
      * @param clusterService       The Node's cluster service.
      * @param queryInsightsService The topQueriesByLatencyService associated with this listener
+     * @param threadPool          The thread pool for principal extraction
      * @param initiallyEnabled Is the listener initially enabled/disabled
      */
     public QueryInsightsListener(
         final ClusterService clusterService,
         final QueryInsightsService queryInsightsService,
+        final ThreadPool threadPool,
         boolean initiallyEnabled
     ) {
         super(initiallyEnabled);
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
         this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
+        this.principalExtractor = threadPool != null ? new PrincipalExtractor(threadPool) : null;
         queryInsightsService.setQueryShapeGenerator(queryShapeGenerator);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
@@ -358,6 +369,20 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
             }
             attributes.put(Attribute.LABELS, labels);
+
+            // Extract username and roles from thread context if security plugin is available
+            if (principalExtractor != null) {
+                PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
+                if (userInfo != null) {
+                    if (userInfo.getUserName() != null) {
+                        attributes.put(Attribute.USERNAME, userInfo.getUserName());
+                    }
+                    if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
+                        attributes.put(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                    }
+                }
+            }
+
             // construct SearchQueryRecord from attributes and measurements
             SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
             queryInsightsService.addRecord(record);
