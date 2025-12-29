@@ -48,9 +48,11 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -185,7 +187,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
-        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry, namedXContentRegistry);
+        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
     }
@@ -225,6 +227,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         final List<SearchQueryRecord> records = new ArrayList<>();
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+
+        // Set SOURCE attribute asynchronously to avoid slowing down search requests
+        for (SearchQueryRecord record : records) {
+            if (record.getSearchSourceBuilder() != null && record.getAttributes().get(Attribute.SOURCE) == null) {
+                record.addAttribute(Attribute.SOURCE, new SourceString(record.getSearchSourceBuilder().toString()));
+            }
+        }
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
                 // ingest the records into topQueriesService
