@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -39,17 +38,14 @@ public final class SearchQueryCategorizer {
 
     final SearchQueryAggregationCategorizer searchQueryAggregationCategorizer;
     private static SearchQueryCategorizer instance;
-    private static NamedXContentRegistry namedXContentRegistry;
 
     /**
      * Constructor for SearchQueryCategorizor
      * @param metricsRegistry opentelemetry metrics registry
-     * @param xContentRegistry NamedXContentRegistry for parsing
      */
-    private SearchQueryCategorizer(MetricsRegistry metricsRegistry, NamedXContentRegistry xContentRegistry) {
+    private SearchQueryCategorizer(MetricsRegistry metricsRegistry) {
         searchQueryCounters = new SearchQueryCounters(metricsRegistry);
         searchQueryAggregationCategorizer = new SearchQueryAggregationCategorizer(searchQueryCounters);
-        namedXContentRegistry = xContentRegistry;
     }
 
     /**
@@ -58,20 +54,10 @@ public final class SearchQueryCategorizer {
      * @return singleton instance
      */
     public static SearchQueryCategorizer getInstance(MetricsRegistry metricsRegistry) {
-        return getInstance(metricsRegistry, NamedXContentRegistry.EMPTY);
-    }
-
-    /**
-     * Get singleton instance of SearchQueryCategorizer
-     * @param metricsRegistry metric registry
-     * @param xContentRegistry NamedXContentRegistry for parsing
-     * @return singleton instance
-     */
-    public static SearchQueryCategorizer getInstance(MetricsRegistry metricsRegistry, NamedXContentRegistry xContentRegistry) {
         if (instance == null) {
             synchronized (SearchQueryCategorizer.class) {
                 if (instance == null) {
-                    instance = new SearchQueryCategorizer(metricsRegistry, xContentRegistry);
+                    instance = new SearchQueryCategorizer(metricsRegistry);
                 }
             }
         }
@@ -141,7 +127,6 @@ public final class SearchQueryCategorizer {
     public void reset() {
         synchronized (SearchQueryCategorizer.class) {
             instance = null;
-            namedXContentRegistry = null;
         }
     }
 }

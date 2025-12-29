@@ -71,12 +71,16 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
@@ -679,6 +683,70 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Queue should still NOT be cleared
         healthStats = queryInsightsService.getHealthStats();
         assertEquals(5, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testDrainRecordsUpdatesSourceAttribute() {
+        // Create a SearchSourceBuilder with some content
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        // Create a record with SearchSourceBuilder but no SOURCE attribute
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+        // Note: SOURCE attribute is not set initially
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,  // Pass SearchSourceBuilder for async processing
+            "test-id"
+        );
+
+        // Verify SOURCE attribute is null initially
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+
+        // Add record to service
+        assertTrue(queryInsightsService.addRecord(record));
+
+        // Drain records - this should populate the SOURCE attribute
+        queryInsightsService.drainRecords();
+
+        // Verify SOURCE attribute is now populated with the SearchSourceBuilder string
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
+    }
+
+    public void testDrainRecordsSkipsRecordsWithoutSearchSourceBuilder() {
+        // Create a record without SearchSourceBuilder
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            null,  // No SearchSourceBuilder
+            "test-id"
+        );
+
+        // Add record to service
+        assertTrue(queryInsightsService.addRecord(record));
+
+        // Drain records
+        queryInsightsService.drainRecords();
+
+        // Verify SOURCE attribute remains null
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
     }
 
     // Util functions
