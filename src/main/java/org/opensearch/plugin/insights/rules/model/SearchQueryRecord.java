@@ -256,7 +256,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
         String id = null;
-        SearchSourceBuilder searchSourceBuilder = null;
 
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -287,14 +286,13 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
-                        // Always store as string for consistent in-memory representation
+                        // Always store as SourceString for consistent in-memory representation
                         if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
-                            attributes.put(Attribute.SOURCE, parser.text());
+                            attributes.put(Attribute.SOURCE, new SourceString(parser.text()));
                         } else {
-                            // Convert old SearchSourceBuilder format to string and store SearchSourceBuilder for categorization
+                            // Convert old SearchSourceBuilder format to string
                             XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
-                            searchSourceBuilder = SearchSourceBuilder.fromXContent(parser, false);
-                            attributes.put(Attribute.SOURCE, searchSourceBuilder.toString());
+                            attributes.put(Attribute.SOURCE, new SourceString(SearchSourceBuilder.fromXContent(parser, false).toString()));
                         }
                         break;
                     case TOTAL_SHARDS:
@@ -391,7 +389,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, null, id);
     }
 
     /**
@@ -567,7 +565,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 if (searchSourceBuilder != null) {
                     builder.field(entry.getKey().toString(), searchSourceBuilder);
                 } else {
-                    String sourceStr = (String) entry.getValue();
+                    SourceString sourceString = (SourceString) entry.getValue();
+                    String sourceStr = sourceString.getValue();
                     if (sourceStr != null && !sourceStr.isEmpty()) {
                         try (
                             XContentParser parser = XContentType.JSON.xContent()
@@ -662,8 +661,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             Object otherValue = other.getAttributes().get(key);
 
             if (key == Attribute.SOURCE) {
-                // SOURCE is always stored as string now
-                if (!Objects.equals(value, otherValue)) {
+                // SOURCE is stored as a SourceString now
+                String source1 = ((SourceString) value).getValue();
+                String source2 = ((SourceString) otherValue).getValue();
+                if (!Objects.equals(source1, source2)) {
                     return false;
                 }
             } else if (value instanceof Object[] && otherValue instanceof Object[]) {
@@ -684,8 +685,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Map<Attribute, Object> attributesForHash = new HashMap<>();
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.SOURCE) {
-                // SOURCE is already a string
-                attributesForHash.put(entry.getKey(), entry.getValue());
+                SourceString sourceString = (SourceString) entry.getValue();
+                attributesForHash.put(entry.getKey(), sourceString.getValue());
             } else if (entry.getValue() instanceof Object[]) {
                 attributesForHash.put(entry.getKey(), Arrays.deepHashCode((Object[]) entry.getValue()));
             } else {

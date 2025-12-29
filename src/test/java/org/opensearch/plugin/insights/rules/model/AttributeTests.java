@@ -26,18 +26,19 @@ public class AttributeTests extends OpenSearchTestCase {
      */
     public void testSourceAttributeSameNewVersion() throws IOException {
         String sourceString = "{\"size\":5,\"query\":{\"term\":{\"field\":\"value\"}}}";
+        SourceString sourceStringObj = new SourceString(sourceString);
 
         // Both write and read with 3.5+ version
         BytesStreamOutput out = new BytesStreamOutput();
         out.setVersion(Version.fromString("3.5.0"));
-        Attribute.writeValueTo(out, sourceString);
+        Attribute.writeValueTo(out, sourceStringObj);
 
         StreamInput in = out.bytes().streamInput();
         in.setVersion(Version.fromString("3.5.0"));
         Object result = Attribute.readAttributeValue(in, Attribute.SOURCE);
 
-        assertTrue("Should remain as string", result instanceof String);
-        assertEquals("String content should match", sourceString, result.toString());
+        assertTrue("Should remain as SourceString", result instanceof SourceString);
+        assertEquals("String content should match", sourceString, ((SourceString) result).getValue());
     }
 
     /**
@@ -45,18 +46,19 @@ public class AttributeTests extends OpenSearchTestCase {
      */
     public void testVersionBoundaryConditions() throws IOException {
         String sourceString = "{\"query\":{\"match_all\":{}}}";
+        SourceString sourceStringObj = new SourceString(sourceString);
 
         // Test exactly at version boundary
         BytesStreamOutput out = new BytesStreamOutput();
         out.setVersion(Version.V_3_5_0);
-        Attribute.writeValueTo(out, sourceString);
+        Attribute.writeValueTo(out, sourceStringObj);
 
         StreamInput in = out.bytes().streamInput();
         in.setVersion(Version.V_3_5_0);
         Object result = Attribute.readAttributeValue(in, Attribute.SOURCE);
 
-        assertTrue("Should handle V_3_5_0 as string", result instanceof String);
-        assertEquals("Content should match", sourceString, result);
+        assertTrue("Should handle V_3_5_0 as SourceString", result instanceof SourceString);
+        assertEquals("Content should match", sourceString, ((SourceString) result).getValue());
     }
 
     /**
@@ -78,13 +80,61 @@ public class AttributeTests extends OpenSearchTestCase {
         in.setVersion(Version.fromString("3.3.0")); // This is key - version reflects the data format
         Object result = Attribute.readAttributeValue(in, Attribute.SOURCE);
 
-        // Result should be a string (converted from SearchSourceBuilder)
-        assertTrue("Should read as string", result instanceof String);
+        // Result should be a SourceString (converted from SearchSourceBuilder)
+        assertTrue("Should read as SourceString", result instanceof SourceString);
         assertNotNull("Result should not be null", result);
 
         // Verify the string contains the original query information
-        String resultString = result.toString();
-        assertTrue("Result should contain size parameter", resultString.contains("100"));
+        String resultString = ((SourceString) result).getValue();
+        assertTrue("Should contain \"size\":100", resultString.contains("100"));
+    }
+
+    /**
+     * Test 3.5+ node writing to old node (< 3.5)
+     * SourceString should be converted to SearchSourceBuilder object
+     */
+    public void testNewNodeWriteToOldNode() throws IOException {
+        // Use a SearchSourceBuilder directly to ensure size is preserved
+        SearchSourceBuilder originalBuilder = new SearchSourceBuilder().size(10);
+        String sourceString = originalBuilder.toString();
+        SourceString sourceStringObj = new SourceString(sourceString);
+
+        // 3.5+ node writing to 3.3 node
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.setVersion(Version.fromString("3.3.0"));
+        Attribute.writeValueTo(out, sourceStringObj);
+
+        // Old node reading - should get SearchSourceBuilder object
+        StreamInput in = out.bytes().streamInput();
+        in.setVersion(Version.fromString("3.3.0"));
+        Object result = Attribute.readAttributeValue(in, Attribute.SOURCE);
+
+        assertTrue("Should convert to SourceString", result instanceof SourceString);
+        String resultString = ((SourceString) result).getValue();
+        assertNotNull("Result string should not be null", resultString);
+        assertTrue("Should contain \"size\":10", resultString.contains("\"size\":10"));
+    }
+
+    /**
+     * Test 3.5+ node writing to old node with invalid JSON
+     * Should fallback to dummy SearchSourceBuilder
+     */
+    public void testNewNodeWriteToOldNodeInvalidJson() throws IOException {
+        String invalidJson = "invalid json string";
+        SourceString sourceStringObj = new SourceString(invalidJson);
+
+        // 3.5+ node writing to 3.3 node with invalid JSON
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.setVersion(Version.fromString("3.3.0"));
+        Attribute.writeValueTo(out, sourceStringObj);
+
+        // Should not throw exception, should write dummy object
+        StreamInput in = out.bytes().streamInput();
+        in.setVersion(Version.fromString("3.3.0"));
+        Object result = Attribute.readAttributeValue(in, Attribute.SOURCE);
+
+        assertTrue("Should handle invalid JSON gracefully", result instanceof SourceString);
+        assertNotNull("Should not be null", result);
     }
 
 }
