@@ -185,7 +185,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
-        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry, namedXContentRegistry);
+        this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
     }
@@ -225,6 +225,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         final List<SearchQueryRecord> records = new ArrayList<>();
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
                 // ingest the records into topQueriesService

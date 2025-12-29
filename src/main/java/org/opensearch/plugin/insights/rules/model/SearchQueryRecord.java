@@ -22,8 +22,6 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
-import org.opensearch.common.xcontent.LoggingDeprecationHandler;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -31,7 +29,6 @@ import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
-import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
@@ -184,17 +181,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param timestamp The timestamp of the query.
      * @param measurements A list of Measurement associated with this query
      * @param attributes A list of Attributes associated with this query
-     */
-    public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
-        this(timestamp, measurements, attributes, UUID.randomUUID().toString());
-    }
-
-    /**
-     * Constructor of SearchQueryRecord
-     *
-     * @param timestamp The timestamp of the query.
-     * @param measurements A list of Measurement associated with this query
-     * @param attributes A list of Attributes associated with this query
      * @param id unique id for a search query record
      */
     public SearchQueryRecord(
@@ -264,7 +250,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Map<MetricType, Measurement> measurements = new HashMap<>();
         Map<Attribute, Object> attributes = new HashMap<>();
         String id = null;
-        SearchSourceBuilder searchSourceBuilder = null;
 
         parser.nextToken();
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -295,14 +280,13 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
-                        // Always store as string for consistent in-memory representation
+                        // Always store as SourceString for consistent in-memory representation
                         if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
-                            attributes.put(Attribute.SOURCE, parser.text());
+                            attributes.put(Attribute.SOURCE, new SourceString(parser.text()));
                         } else {
-                            // Convert old SearchSourceBuilder format to string and store SearchSourceBuilder for categorization
+                            // Convert old SearchSourceBuilder format to string
                             XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
-                            searchSourceBuilder = SearchSourceBuilder.fromXContent(parser, false);
-                            attributes.put(Attribute.SOURCE, searchSourceBuilder.toString());
+                            attributes.put(Attribute.SOURCE, new SourceString(SearchSourceBuilder.fromXContent(parser, false).toString()));
                         }
                         break;
                     case TOTAL_SHARDS:
@@ -411,7 +395,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, null, id);
     }
 
     /**
@@ -576,6 +560,19 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         return toXContentForExport(builder, params, false);
     }
 
+    /**
+     * Serializes this object into an {@link XContentBuilder} for external export with optional object source formatting.
+     * <p>
+     * Unlike {@link #toXContent}, this method includes all attributes, including {@code Attribute.TOP_N_QUERY}.
+     * It also serializes all {@link Measurement} objects under the "measurements" field using their own {@code toXContent} method.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @param useObjectSource If true, serializes the SOURCE attribute as a {@link SearchSourceBuilder} object;
+     *                       if false, serializes it as a string representation {@link SourceString}.
+     * @return The updated {@link XContentBuilder} with this object's full content.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
     public XContentBuilder toXContentForExport(final XContentBuilder builder, final Params params, boolean useObjectSource)
         throws IOException {
         builder.startObject();
@@ -584,24 +581,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.SOURCE && useObjectSource) {
-                if (searchSourceBuilder != null) {
-                    builder.field(entry.getKey().toString(), searchSourceBuilder);
-                } else {
-                    String sourceStr = (String) entry.getValue();
-                    if (sourceStr != null && !sourceStr.isEmpty()) {
-                        try (
-                            XContentParser parser = XContentType.JSON.xContent()
-                                .createParser(NamedXContentRegistry.EMPTY, LoggingDeprecationHandler.INSTANCE, sourceStr)
-                        ) {
-                            SearchSourceBuilder ssb = SearchSourceBuilder.fromXContent(parser, false);
-                            builder.field(entry.getKey().toString(), ssb);
-                        } catch (Exception e) {
-                            builder.field(entry.getKey().toString(), sourceStr);
-                        }
-                    } else {
-                        builder.field(entry.getKey().toString(), entry.getValue());
-                    }
-                }
+                builder.field(entry.getKey().toString(), searchSourceBuilder);
             } else {
                 builder.field(entry.getKey().toString(), entry.getValue());
             }
@@ -670,49 +650,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             return false;
         }
         final SearchQueryRecord other = (SearchQueryRecord) o;
-        if (timestamp != other.getTimestamp()
-            || !measurements.equals(other.getMeasurements())
-            || attributes.size() != other.getAttributes().size()) {
-            return false;
-        }
-
-        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
-            Attribute key = entry.getKey();
-            Object value = entry.getValue();
-            Object otherValue = other.getAttributes().get(key);
-
-            if (key == Attribute.SOURCE) {
-                // SOURCE is always stored as string now
-                if (!Objects.equals(value, otherValue)) {
-                    return false;
-                }
-            } else if (value instanceof Object[] && otherValue instanceof Object[]) {
-                if (!Arrays.deepEquals((Object[]) value, (Object[]) otherValue)) {
-                    return false;
-                }
-            } else {
-                if (!Objects.equals(value, otherValue)) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return timestamp == other.getTimestamp()
+            && measurements.equals(other.getMeasurements())
+            && attributes.size() == other.getAttributes().size();
     }
 
     @Override
     public int hashCode() {
-        Map<Attribute, Object> attributesForHash = new HashMap<>();
-        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
-            if (entry.getKey() == Attribute.SOURCE) {
-                // SOURCE is already a string
-                attributesForHash.put(entry.getKey(), entry.getValue());
-            } else if (entry.getValue() instanceof Object[]) {
-                attributesForHash.put(entry.getKey(), Arrays.deepHashCode((Object[]) entry.getValue()));
-            } else {
-                attributesForHash.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return Objects.hash(timestamp, measurements, attributesForHash);
+        return Objects.hash(timestamp, measurements, attributes);
     }
 
     @Override

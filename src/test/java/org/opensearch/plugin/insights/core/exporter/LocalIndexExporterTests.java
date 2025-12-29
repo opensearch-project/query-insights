@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.core.exporter;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -19,6 +18,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,26 +29,25 @@ import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.exists.indices.IndicesExistsRequest;
-import org.opensearch.action.admin.indices.mapping.get.GetMappingsResponse;
 import org.opensearch.action.bulk.BulkAction;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.action.support.replication.ClusterStateCreationUtils;
 import org.opensearch.cluster.ClusterState;
-import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.index.mapper.MapperException;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -134,14 +133,14 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         doReturn(true).when(exporterSpy).checkIndexExists(anyString());
         // Mock the bulk method to track calls
-        doAnswer(invocation -> null).when(exporterSpy).checkMappingAndBulk(anyString(), any());
+        doAnswer(invocation -> null).when(exporterSpy).bulk(anyString(), any());
 
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(3);
 
         exporterSpy.export(records);
 
-        // checkMappingAndBulk was called (to add records to existing index)
-        verify(exporterSpy).checkMappingAndBulk(anyString(), eq(records));
+        // bulk was called directly (to add records to existing index)
+        verify(exporterSpy).bulk(anyString(), eq(records));
 
         // createIndexAndBulk was NOT called
         verify(exporterSpy, never()).createIndexAndBulk(anyString(), any());
@@ -163,8 +162,8 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // createIndexAndBulk was called
         verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
-        // checkMappingAndBulk was NOT called directly (it's called when index exists)
-        verify(exporterSpy, never()).checkMappingAndBulk(anyString(), any());
+        // bulk was NOT called directly (it's called directly when index exists)
+        verify(exporterSpy, never()).bulk(anyString(), any());
     }
 
     @SuppressWarnings("unchecked")
@@ -333,76 +332,51 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
     }
 
-    public void testCheckMappingCompatibilityWithTextType() throws Exception {
-        Client mockClient = mock(Client.class);
-        AdminClient mockAdminClient = mock(AdminClient.class);
-        IndicesAdminClient mockIndicesClient = mock(IndicesAdminClient.class);
-
-        when(mockClient.admin()).thenReturn(mockAdminClient);
-        when(mockAdminClient.indices()).thenReturn(mockIndicesClient);
-
-        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, clusterService, format, "{}", "id");
-        LocalIndexExporter exporterSpy = spy(exporter);
-
-        // Mock mapping response with text type source field
-        doAnswer(invocation -> {
-            ActionListener listener = invocation.getArgument(1);
-
-            GetMappingsResponse mockResponse = mock(GetMappingsResponse.class);
-            MappingMetadata mockMetadata = mock(MappingMetadata.class);
-
-            Map<String, Object> sourceField = Map.of("type", "text");
-            Map<String, Object> properties = Map.of("source", sourceField);
-            Map<String, Object> sourceMap = Map.of("properties", properties);
-
-            when(mockMetadata.getSourceAsMap()).thenReturn(sourceMap);
-            when(mockResponse.getMappings()).thenReturn(Map.of("test-index", mockMetadata));
-
-            listener.onResponse(mockResponse);
-            return null;
-        }).when(mockIndicesClient).getMappings(any(), any());
-
-        doNothing().when(exporterSpy).bulk(anyString(), any(), anyBoolean());
+    public void testBulkStartsWithTextFormat() throws IOException {
+        LocalIndexExporter exporterSpy = spy(new LocalIndexExporter(client, clusterService, format, "{}", "id"));
+        doNothing().when(exporterSpy).bulk(anyString(), any());
 
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
-        exporterSpy.checkMappingAndBulk("test-index", records);
 
-        verify(exporterSpy).bulk(eq("test-index"), eq(records), eq(false));
+        // Simulate the export flow for existing index
+        doReturn(true).when(exporterSpy).checkIndexExists(anyString());
+        exporterSpy.export(records);
+
+        // Verify it starts with useObjectSource = false (text format)
+        verify(exporterSpy).bulk(anyString(), eq(records));
     }
 
-    public void testCheckMappingCompatibilityWithNoSourceMapping() throws Exception {
-        Client mockClient = mock(Client.class);
-        AdminClient mockAdminClient = mock(AdminClient.class);
-        IndicesAdminClient mockIndicesClient = mock(IndicesAdminClient.class);
+    public void testBulkRetryOnMapperException() throws IOException {
+        // Create a real BulkRequestBuilder with the client and action
+        BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
+        when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
 
-        when(mockClient.admin()).thenReturn(mockAdminClient);
-        when(mockAdminClient.indices()).thenReturn(mockIndicesClient);
+        // Track the number of execute calls to verify retry
+        AtomicInteger executeCallCount = new AtomicInteger(0);
 
-        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, clusterService, format, "{}", "id");
-        LocalIndexExporter exporterSpy = spy(exporter);
-
-        // Mock mapping response without source field (older indices)
+        // Mock execute to fail first time with MapperException, succeed second time
         doAnswer(invocation -> {
-            ActionListener listener = invocation.getArgument(1);
+            ActionListener<BulkResponse> listener = invocation.getArgument(0);
+            int callNumber = executeCallCount.incrementAndGet();
 
-            GetMappingsResponse mockResponse = mock(GetMappingsResponse.class);
-            MappingMetadata mockMetadata = mock(MappingMetadata.class);
-
-            Map<String, Object> properties = Map.of("timestamp", Map.of("type", "long"));
-            Map<String, Object> sourceMap = Map.of("properties", properties);
-
-            when(mockMetadata.getSourceAsMap()).thenReturn(sourceMap);
-            when(mockResponse.getMappings()).thenReturn(Map.of("test-index", mockMetadata));
-
-            listener.onResponse(mockResponse);
+            if (callNumber == 1) {
+                // First call fails with MapperException
+                listener.onFailure(new MapperException("test mapper exception"));
+            } else {
+                // Second call succeeds
+                listener.onResponse(mock(BulkResponse.class));
+            }
             return null;
-        }).when(mockIndicesClient).getMappings(any(), any());
+        }).when(bulkRequestBuilder).execute(any());
 
-        doNothing().when(exporterSpy).bulk(anyString(), any(), anyBoolean());
-
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
-        exporterSpy.checkMappingAndBulk("test-index", records);
 
-        verify(exporterSpy).bulk(eq("test-index"), eq(records), eq(true));
+        // Call bulk with useObjectSource=false, should retry with useObjectSource=true
+        exporter.bulk("test-index", records, false);
+
+        // Verify execute was called twice (original + retry)
+        assertEquals(2, executeCallCount.get());
+        verify(bulkRequestBuilder, times(2)).execute(any());
     }
 }

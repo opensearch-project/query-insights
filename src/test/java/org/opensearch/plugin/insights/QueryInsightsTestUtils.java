@@ -48,6 +48,7 @@ import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -99,8 +100,8 @@ final public class QueryInsightsTestUtils {
                 baseRecord.getId()
             );
 
-            // Update SOURCE attribute to string
-            recordWithSource.getAttributes().put(Attribute.SOURCE, searchSourceBuilder.toString());
+            // Update SOURCE attribute to SourceString
+            recordWithSource.getAttributes().put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
             records.add(recordWithSource);
         }
         return records;
@@ -157,7 +158,7 @@ final public class QueryInsightsTestUtils {
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, searchSourceBuilder.toString());
+            attributes.put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
@@ -187,7 +188,7 @@ final public class QueryInsightsTestUtils {
                 )
             );
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id));
+            records.add(new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id));
             timestamp += interval;
         }
         return records;
@@ -335,8 +336,9 @@ final public class QueryInsightsTestUtils {
             Object value1 = entry.getValue();
             Object value2 = attributes2.get(key);
             if (key == Attribute.SOURCE) {
-                String source1 = value1 != null ? value1.toString() : null;
-                String source2 = value2 != null ? value2.toString() : null;
+                // Both values should be SourceString
+                String source1 = value1 instanceof SourceString ? ((SourceString) value1).getValue() : null;
+                String source2 = value2 instanceof SourceString ? ((SourceString) value2).getValue() : null;
                 if (!Objects.equals(source1, source2)) {
                     return false;
                 }
