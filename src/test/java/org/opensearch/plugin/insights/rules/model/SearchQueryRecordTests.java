@@ -127,13 +127,13 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, json);
         SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
 
-        // Verify SOURCE is converted to string format for consistency
+        // Verify SOURCE is converted to SourceString format for consistency
         Object sourceValue = parsedRecord.getAttributes().get(Attribute.SOURCE);
-        assertTrue("SOURCE should be converted to string format", sourceValue instanceof String);
-        assertEquals("SOURCE content should match original", sourceBuilder.toString(), sourceValue.toString());
+        assertTrue("SOURCE should be converted to SourceString format", sourceValue instanceof SourceString);
+        assertEquals("SOURCE content should match original", sourceBuilder.toString(), ((SourceString) sourceValue).getValue());
 
-        // Verify SearchSourceBuilder is available for categorization
-        assertNotNull("SearchSourceBuilder should be available for categorization", parsedRecord.getSearchSourceBuilder());
+        // SearchSourceBuilder is null when parsing from persisted data
+        assertNull("SearchSourceBuilder should be null when parsing from persisted data", parsedRecord.getSearchSourceBuilder());
     }
 
     public void testBackwardCompatibilityWithMatchAllQuery() throws IOException {
@@ -161,11 +161,11 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
 
         Object source = record.getAttributes().get(Attribute.SOURCE);
         assertNotNull("Source should not be null", source);
-        assertTrue("SOURCE should be converted to string format", source instanceof String);
-        assertTrue("Source should contain size parameter", source.toString().contains("size"));
+        assertTrue("SOURCE should be converted to SourceString format", source instanceof SourceString);
+        assertTrue("Source should contain size parameter", ((SourceString) source).getValue().contains("size"));
 
-        // Verify SearchSourceBuilder is available for categorization
-        assertNotNull("SearchSourceBuilder should be available for categorization", record.getSearchSourceBuilder());
+        // SearchSourceBuilder is null when parsing from persisted data
+        assertNull("SearchSourceBuilder should be null when parsing from persisted data", record.getSearchSourceBuilder());
     }
 
     public void testToXContentForExportWithObjectSource() throws IOException {
@@ -174,7 +174,7 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         java.util.Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
         measurements.put(MetricType.LATENCY, new Measurement(100.0));
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
-        attributes.put(Attribute.SOURCE, sourceBuilder.toString());
+        attributes.put(Attribute.SOURCE, new SourceString(sourceBuilder.toString()));
 
         SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, sourceBuilder, "test-id");
 
@@ -189,7 +189,7 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
 
     public void testToXContentForExportWithObjectSource_InvalidJson() throws IOException {
         SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("test-id");
-        record.getAttributes().put(Attribute.SOURCE, "invalid-json-string");
+        record.getAttributes().put(Attribute.SOURCE, new SourceString("invalid-json-string"));
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
         record.toXContentForExport(builder, null, true);
