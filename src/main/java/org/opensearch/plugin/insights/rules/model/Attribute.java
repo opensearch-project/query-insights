@@ -82,7 +82,17 @@ public enum Attribute {
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED;
+    IS_CANCELLED,
+
+    /**
+     * The username who initiated the search query.
+     */
+    USERNAME,
+
+    /**
+     * The roles of the user who initiated the search query.
+     */
+    USER_ROLES;
 
     /**
      * Read an Attribute from a StreamInput

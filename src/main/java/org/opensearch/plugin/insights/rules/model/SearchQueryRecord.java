@@ -117,6 +117,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String WLM_GROUP_ID = "wlm_group_id";
     /**
+     * The username who initiated the search query
+     */
+    public static final String USERNAME = "username";
+    /**
+     * The roles of the user who initiated the search query
+     */
+    public static final String USER_ROLES = "user_roles";
+    /**
      * Default, immutable `top_n_query` map. All values initialized to {@code false}
      */
     public static final Map<String, Boolean> DEFAULT_TOP_N_QUERY_MAP = Collections.unmodifiableMap(
@@ -291,6 +299,18 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case WLM_GROUP_ID:
                         attributes.put(Attribute.WLM_GROUP_ID, parser.text());
+                        break;
+                    case USERNAME:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.VALUE_STRING, parser.currentToken(), parser);
+                        attributes.put(Attribute.USERNAME, parser.text());
+                        break;
+                    case USER_ROLES:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
+                        List<String> userRoles = new ArrayList<>();
+                        while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
+                            userRoles.add(parser.text());
+                        }
+                        attributes.put(Attribute.USER_ROLES, userRoles.toArray(new String[0]));
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
