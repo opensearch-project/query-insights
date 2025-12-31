@@ -50,6 +50,7 @@ import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -141,7 +142,12 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
-        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
+        Object sourceValue = generatedRecord.getAttributes().get(Attribute.SOURCE);
+        if (sourceValue instanceof SourceString) {
+            assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
+        } else {
+            assertEquals(searchSourceBuilder.toString(), sourceValue);
+        }
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
     }
