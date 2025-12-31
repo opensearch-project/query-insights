@@ -31,6 +31,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.index.mapper.MapperException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -181,11 +182,15 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     }
 
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
+        bulk(indexName, records, false);
+    }
+
+    void bulk(final String indexName, final List<SearchQueryRecord> records, boolean useObjectSource) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS, useObjectSource))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
@@ -194,10 +199,25 @@ public class LocalIndexExporter implements QueryInsightsExporter {
 
             @Override
             public void onFailure(Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
-                logger.error("Failed to execute bulk operation for query insights data: ", e);
+                if (!useObjectSource && isMapperException(e)) {
+                    logger.debug("Bulk failed with mapper exception, retrying with object source");
+                    try {
+                        bulk(indexName, records, true);
+                    } catch (IOException ioe) {
+                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                        logger.error("Failed to retry bulk operation: ", ioe);
+                    }
+                } else {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                    logger.error("Failed to execute bulk operation: ", e);
+                }
             }
         });
+    }
+
+    private boolean isMapperException(Exception e) {
+        Throwable cause = ExceptionsHelper.unwrapCause(e);
+        return cause instanceof MapperException;
     }
 
     /**
