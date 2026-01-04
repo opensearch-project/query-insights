@@ -26,6 +26,8 @@ import org.opensearch.core.xcontent.XContentParser;
 /**
  * Multi-Node & Cluster Integration Tests for Query Insights Plugin
  *
+ * @see <a href="https://github.com/opensearch-project/opensearch-build/issues/5868">Issue #5868</a>
+ *
  * This test suite covers:
  * - Plugin functionality across multiple nodes
  * - Data aggregation from multiple nodes
@@ -225,7 +227,7 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
         }
 
         // Wait for processing
-        Thread.sleep(6000);
+        Thread.sleep(10000);
 
         // Verify queries were recorded (with retries for timing issues)
         List<Map<String, Object>> allQueries = null;
