@@ -239,12 +239,18 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext);
+        if (record != null) {
+            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(record);
+        }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext);
+        if (record != null) {
+            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(record);
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -281,9 +287,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private SearchQueryRecord constructSearchQueryRecord(
+        final SearchPhaseContext context,
+        final SearchRequestContext searchRequestContext
+    ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return;
+            return null;
         }
 
         SearchTask searchTask = context.getTask();
@@ -361,9 +370,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             // construct SearchQueryRecord from attributes and measurements
             SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
             queryInsightsService.addRecord(record);
+            return record;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
+            return null;
         }
     }
 
