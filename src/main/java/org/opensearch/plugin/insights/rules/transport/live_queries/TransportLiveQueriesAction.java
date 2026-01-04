@@ -70,6 +70,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     ? queryInsightsService.getFinishedQueriesCache().getFinishedQueries()
                     : List.of();
 
+                // Filter by task_id if provided
+                if (request.getTaskId() != null && !request.getTaskId().isEmpty()) {
+                    liveRecords = liveRecords.stream().filter(record -> request.getTaskId().equals(record.getId())).toList();
+                    finishedRecords = finishedRecords.stream().filter(record -> request.getTaskId().equals(record.getId())).toList();
+                }
+
                 listener.onResponse(new LiveQueriesResponse(liveRecords, finishedRecords, request.includeFinished()));
                 return;
             } catch (Exception ex) {

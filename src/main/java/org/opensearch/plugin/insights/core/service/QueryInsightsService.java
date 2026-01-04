@@ -70,6 +70,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 
 /**
@@ -129,6 +130,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private volatile boolean liveQueriesCacheStarted = false;
     private volatile long lastAccessTime = 0;
     private org.opensearch.threadpool.Scheduler.Cancellable idleCheckTask;
+    private TransportService transportService;
 
     /**
      * Flags for enabling insight data grouping for different metric types
@@ -207,7 +209,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
         this.finishedQueriesCache = new FinishedQueriesCache();
-        this.liveQueriesCache = new LiveQueriesCache(client, threadPool, null);
+        // LiveQueriesCache will be created later when TransportService is available
     }
 
     /**
@@ -754,6 +756,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (!liveQueriesCacheStarted) {
             synchronized (this) {
                 if (!liveQueriesCacheStarted) {
+                    // Create LiveQueriesCache with TransportService if available
+                    if (liveQueriesCache == null) {
+                        liveQueriesCache = new LiveQueriesCache(client, threadPool, transportService);
+                    }
                     liveQueriesCache.start();
                     liveQueriesCacheStarted = true;
                     startIdleCheck();
@@ -761,6 +767,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             }
         }
         return liveQueriesCache;
+    }
+
+    /**
+     * Set TransportService for WLM group detection
+     */
+    @Inject
+    public void setTransportService(TransportService transportService) {
+        this.transportService = transportService;
     }
 
     private void startIdleCheck() {

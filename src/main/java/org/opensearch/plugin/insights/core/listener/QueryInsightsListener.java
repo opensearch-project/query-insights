@@ -229,7 +229,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onPhaseStart(SearchPhaseContext context) {}
 
     @Override
-    public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {}
+    public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
     @Override
     public void onPhaseFailure(SearchPhaseContext context, Throwable cause) {}
@@ -241,7 +247,16 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext);
         if (record != null) {
-            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(record);
+            // Create separate record with task ID for finished queries
+            SearchTask searchTask = context.getTask();
+            String taskId = clusterService.localNode().getId() + ":" + searchTask.getId();
+            SearchQueryRecord finishedRecord = new SearchQueryRecord(
+                record.getTimestamp(),
+                record.getMeasurements(),
+                record.getAttributes(),
+                taskId
+            );
+            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(finishedRecord);
         }
     }
 
@@ -249,7 +264,16 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext);
         if (record != null) {
-            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(record);
+            // Create separate record with task ID for finished queries
+            SearchTask searchTask = context.getTask();
+            String taskId = clusterService.localNode().getId() + ":" + searchTask.getId();
+            SearchQueryRecord finishedRecord = new SearchQueryRecord(
+                record.getTimestamp(),
+                record.getMeasurements(),
+                record.getAttributes(),
+                taskId
+            );
+            queryInsightsService.getFinishedQueriesCache().addFinishedQuery(finishedRecord);
         }
     }
 
@@ -339,6 +363,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
             attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
+            long endTimeMillis = System.currentTimeMillis();
+            long latencyMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos());
+            attributes.put(Attribute.START_TIME, endTimeMillis - latencyMillis);
+            attributes.put(Attribute.END_TIME, endTimeMillis);
+            attributes.put(Attribute.IS_CANCELLED, searchTask.isCancelled());
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(
@@ -367,7 +396,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
             }
             attributes.put(Attribute.LABELS, labels);
-            // construct SearchQueryRecord from attributes and measurements
+            // construct SearchQueryRecord with auto-generated UUID for Top N queries
             SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
             queryInsightsService.addRecord(record);
             return record;

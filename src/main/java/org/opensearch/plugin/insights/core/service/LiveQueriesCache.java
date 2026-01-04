@@ -5,9 +5,11 @@
 package org.opensearch.plugin.insights.core.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -37,6 +39,7 @@ public class LiveQueriesCache {
     private static final int MAX_CACHE_SIZE = 1000;
     private static final int MAX_RETURNED_QUERIES = 100;
     private static final String SEARCH_ACTION = "indices:data/read/search";
+    private static final int POLLING_INTERVAL_MS = 500;
     private volatile SearchQueryRecord[] sortedQueries = new SearchQueryRecord[0];
     private final Client client;
     private final ThreadPool threadPool;
@@ -55,33 +58,14 @@ public class LiveQueriesCache {
     }
 
     private void startPolling() {
-        try {
-            // Check if cluster is ready before starting polling
-            client.admin().cluster().listTasks(new ListTasksRequest(), new ActionListener<ListTasksResponse>() {
-                @Override
-                public void onResponse(ListTasksResponse response) {
-                    // Cluster is ready, start polling
-                    pollingTask = threadPool.scheduleWithFixedDelay(
-                        LiveQueriesCache.this::pollRunningTasks,
-                        new TimeValue(100, TimeUnit.MILLISECONDS),
-                        ThreadPool.Names.GENERIC
-                    );
-                }
-
-                @Override
-                public void onFailure(Exception e) {
-                    // Retry after 1 second if cluster not ready
-                    pollingTask = threadPool.schedule(
-                        LiveQueriesCache.this::startPolling,
-                        new TimeValue(1, TimeUnit.SECONDS),
-                        ThreadPool.Names.GENERIC
-                    );
-                }
-            });
-        } catch (Exception e) {
-            // Retry after 1 second if any error
-            pollingTask = threadPool.schedule(this::startPolling, new TimeValue(1, TimeUnit.SECONDS), ThreadPool.Names.GENERIC);
-        }
+        // Start recurring polling task
+        pollingTask = threadPool.scheduleWithFixedDelay(
+            this::pollRunningTasks,
+            new TimeValue(POLLING_INTERVAL_MS, TimeUnit.MILLISECONDS),
+            ThreadPool.Names.GENERIC
+        );
+        // Do initial poll
+        pollRunningTasks();
     }
 
     public void stop() {
@@ -94,20 +78,21 @@ public class LiveQueriesCache {
         try {
             ListTasksRequest request = new ListTasksRequest();
             request.setActions(SEARCH_ACTION);
+            request.setDetailed(true); // Request detailed task information
 
             client.admin().cluster().listTasks(request, new ActionListener<ListTasksResponse>() {
                 @Override
                 public void onResponse(ListTasksResponse response) {
                     try {
-                        logger.info("LiveQueriesCache polling found {} total tasks", response.getTasks().size());
-                        Map<String, TaskInfo> currentTasks = new java.util.HashMap<>();
-                        java.util.PriorityQueue<SearchQueryRecord> topQueries = new java.util.PriorityQueue<>(
-                            MAX_CACHE_SIZE + 1,
-                            (a, b) -> Long.compare(
-                                ((Number) a.getMeasurement(MetricType.LATENCY)).longValue(),
-                                ((Number) b.getMeasurement(MetricType.LATENCY)).longValue()
-                            )
-                        );
+                        logger.debug("LiveQueriesCache polling found {} total tasks", response.getTasks().size());
+                        Map<String, TaskInfo> currentTasks = new HashMap<>();
+                        TreeSet<SearchQueryRecord> topQueries = new TreeSet<>((a, b) -> {
+                            int latencyCompare = Long.compare(
+                                ((Number) b.getMeasurement(MetricType.LATENCY)).longValue(),
+                                ((Number) a.getMeasurement(MetricType.LATENCY)).longValue()
+                            );
+                            return latencyCompare != 0 ? latencyCompare : a.hashCode() - b.hashCode();
+                        });
 
                         int searchTasks = 0;
                         for (TaskInfo task : response.getTasks()) {
@@ -115,23 +100,16 @@ public class LiveQueriesCache {
                                 searchTasks++;
                                 currentTasks.put(task.getTaskId().toString(), task);
                                 SearchQueryRecord record = createRecordFromTask(task);
-                                topQueries.offer(record);
+                                topQueries.add(record);
                                 if (topQueries.size() > MAX_CACHE_SIZE) {
-                                    topQueries.poll();
+                                    topQueries.pollLast();
                                 }
                             }
                         }
 
-                        logger.info("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
+                        logger.debug("LiveQueriesCache found {} search tasks, keeping top {}", searchTasks, topQueries.size());
 
-                        List<SearchQueryRecord> sorted = new ArrayList<>(topQueries);
-                        sorted.sort(
-                            (a, b) -> Long.compare(
-                                ((Number) b.getMeasurement(MetricType.LATENCY)).longValue(),
-                                ((Number) a.getMeasurement(MetricType.LATENCY)).longValue()
-                            )
-                        );
-                        sortedQueries = sorted.stream().limit(MAX_RETURNED_QUERIES).toArray(SearchQueryRecord[]::new);
+                        sortedQueries = topQueries.stream().limit(MAX_RETURNED_QUERIES).toArray(SearchQueryRecord[]::new);
                     } catch (Throwable e) {
                         logger.error("Error processing live queries response: {}", e.getMessage());
                     }
@@ -184,16 +162,37 @@ public class LiveQueriesCache {
 
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.NODE_ID, task.getTaskId().getNodeId());
-        if (workloadGroup != null) {
-            attributes.put(Attribute.WLM_GROUP_ID, workloadGroup);
+        attributes.put(Attribute.START_TIME, task.getStartTime());
+        attributes.put(Attribute.END_TIME, null); // null for running queries
+
+        // Always include description and cancellation status
+        attributes.put(Attribute.DESCRIPTION, task.getDescription());
+        attributes.put(Attribute.IS_CANCELLED, task.isCancelled());
+
+        // Add task resource usage info
+        if (stats != null) {
+            List<org.opensearch.core.tasks.resourcetracker.TaskResourceInfo> taskResourceUsages = new ArrayList<>();
+            taskResourceUsages.add(
+                new org.opensearch.core.tasks.resourcetracker.TaskResourceInfo(
+                    task.getAction(),
+                    task.getId(),
+                    task.getParentTaskId().getId(),
+                    task.getTaskId().getNodeId(),
+                    stats.getResourceUsageInfo().get("total")
+                )
+            );
+            attributes.put(Attribute.TASK_RESOURCE_USAGES, taskResourceUsages);
         }
+
+        // Always include WLM group ID (even if null)
+        attributes.put(Attribute.WLM_GROUP_ID, workloadGroup);
 
         return new SearchQueryRecord(task.getStartTime(), measurements, attributes, task.getTaskId().toString());
     }
 
     public List<SearchQueryRecord> getCurrentQueries() {
-        logger.info("LiveQueriesCache returning {} cached queries", sortedQueries.length);
-        return java.util.Arrays.asList(sortedQueries);
+        logger.debug("LiveQueriesCache returning {} cached queries", sortedQueries.length);
+        return Arrays.asList(sortedQueries);
     }
 
 }

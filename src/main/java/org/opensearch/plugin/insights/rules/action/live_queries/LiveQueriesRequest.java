@@ -48,6 +48,11 @@ public class LiveQueriesRequest extends ActionRequest {
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
         }
+        if (in.getVersion().onOrAfter(Version.V_3_5_0)) {
+            this.cached = in.readBoolean();
+            this.taskId = in.readOptionalString();
+            this.includeFinished = in.readBoolean();
+        }
     }
 
     /**
@@ -147,6 +152,11 @@ public class LiveQueriesRequest extends ActionRequest {
         out.writeStringArray(nodeIds);
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
+        }
+        if (out.getVersion().onOrAfter(Version.V_3_5_0)) {
+            out.writeBoolean(cached);
+            out.writeOptionalString(taskId);
+            out.writeBoolean(includeFinished);
         }
     }
 
