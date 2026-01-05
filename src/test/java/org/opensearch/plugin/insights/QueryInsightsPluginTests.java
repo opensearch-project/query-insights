@@ -26,9 +26,13 @@ import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
+import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
+import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
 import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryInsightsSettingsAction;
+import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
@@ -142,18 +146,22 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetRestHandlers() {
         List<RestHandler> components = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
-        assertEquals(3, components.size());
+        assertEquals(5, components.size());
         assertTrue(components.get(0) instanceof RestTopQueriesAction);
         assertTrue(components.get(1) instanceof RestHealthStatsAction);
         assertTrue(components.get(2) instanceof RestLiveQueriesAction);
+        assertTrue(components.get(3) instanceof RestGetQueryInsightsSettingsAction);
+        assertTrue(components.get(4) instanceof RestUpdateQueryInsightsSettingsAction);
     }
 
     public void testGetActions() {
         List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> components = queryInsightsPlugin.getActions();
-        assertEquals(3, components.size());
+        assertEquals(5, components.size());
         assertTrue(components.get(0).getAction() instanceof TopQueriesAction);
         assertTrue(components.get(1).getAction() instanceof HealthStatsAction);
         assertTrue(components.get(2).getAction() instanceof LiveQueriesAction);
+        assertTrue(components.get(3).getAction() instanceof GetQueryInsightsSettingsAction);
+        assertTrue(components.get(4).getAction() instanceof UpdateQueryInsightsSettingsAction);
     }
 
     public void testLiveQueriesActionRegistration() {
