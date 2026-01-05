@@ -158,6 +158,8 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(Attribute.NODE_ID, "node_for_top_queries_test");
             attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
+            attributes.put(Attribute.USERNAME, randomAlphaOfLengthBetween(5, 10));
+            attributes.put(Attribute.USER_ROLES, new String[] { randomAlphaOfLengthBetween(4, 8), randomAlphaOfLengthBetween(4, 8) });
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -274,6 +276,8 @@ final public class QueryInsightsTestUtils {
             )
         );
         attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
+        attributes.put(Attribute.USERNAME, "testuser");
+        attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
 
         return new SearchQueryRecord(timestamp, measurements, attributes, id);
     }
