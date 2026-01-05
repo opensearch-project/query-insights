@@ -3,7 +3,7 @@
 ## Introduction
 OpenSearch stands as a versatile, scalable, open-source solution designed for diverse data exploration needs, ranging from interactive log analytics to real-time application monitoring. Despite its capabilities, OpenSearch users and administrators often encounter challenges in ensuring optimal search performance due to limited expertise or OpenSearch's current constraints in providing comprehensive data points on query executions. Common questions include:
 
-* “What are the top queries with highest latency/CPU usages in the last 1 hour” (Identification of top queries by certain resource usages within a specific timeframe).
+* “What are the top queries with the highest latency/CPU usages in the last 1 hour” (Identification of top queries by certain resource usages within a specific timeframe).
 * “How do I associate queries to users” (Profiling users with the highest search query volumes).
 * “Why my search queries are so slow” (Concerns about slow search queries).
 * “Why there was a spike in my search latency chart” (Spikes in query latency).
@@ -15,7 +15,9 @@ Query Insights and this plugin project was originally proposed in the [OpenSearc
 ## Get Started
 ### Installing the Plugin
 
-To get started, install the plugin into OpenSearch with the following command:
+Starting with version 2.16, the Query Insights plugin is bundled with the OpenSearch distribution and available by default.
+
+For earlier versions, you can install the plugin manually using the following command:
 
 ```
 bin/opensearch-plugin install query-insights
