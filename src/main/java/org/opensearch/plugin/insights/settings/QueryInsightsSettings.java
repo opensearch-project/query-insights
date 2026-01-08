@@ -95,6 +95,36 @@ public class QueryInsightsSettings {
     public static final int DEFAULT_LIVE_QUERIES_SIZE = 100;
 
     /**
+     * Boolean setting for enabling finished queries cache.
+     */
+    public static final Setting<Boolean> FINISHED_QUERIES_CACHE_ENABLED = Setting.boolSetting(
+        "search.insights.live_queries.finished_queries_cache_enabled",
+        false,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Tracking inactivity timeout in milliseconds (5 minutes) - fixed value
+     */
+    public static final long TRACKING_INACTIVITY_MS = 300_000L;
+
+    /**
+     * Default retention period for finished queries cache
+     */
+    public static final TimeValue DEFAULT_FINISHED_QUERIES_RETENTION = new TimeValue(5, TimeUnit.MINUTES);
+
+    /**
+     * Minimum retention period for finished queries cache
+     */
+    public static final TimeValue MIN_FINISHED_QUERIES_RETENTION = new TimeValue(1, TimeUnit.MINUTES);
+
+    /**
+     * Maximum retention period for finished queries cache
+     */
+    public static final TimeValue MAX_FINISHED_QUERIES_RETENTION = new TimeValue(1, TimeUnit.HOURS);
+
+    /**
      * Default timeout for search requests in query insights operations
      */
     public static final TimeValue DEFAULT_SEARCH_REQUEST_TIMEOUT = new TimeValue(10, TimeUnit.SECONDS);
@@ -329,6 +359,18 @@ public class QueryInsightsSettings {
         DEFAULT_MAX_SOURCE_LENGTH,
         0, // Empty source
         MAX_SOURCE_LENGTH,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Setting for retention period of finished queries in the cache.
+     */
+    public static final Setting<TimeValue> FINISHED_QUERIES_RETENTION_PERIOD = Setting.positiveTimeSetting(
+        "search.insights.live_queries.finished_queries_retention",
+        DEFAULT_FINISHED_QUERIES_RETENTION,
+        MIN_FINISHED_QUERIES_RETENTION,
+        MAX_FINISHED_QUERIES_RETENTION,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );

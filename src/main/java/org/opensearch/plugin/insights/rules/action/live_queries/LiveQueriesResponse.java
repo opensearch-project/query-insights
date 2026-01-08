@@ -24,6 +24,8 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
     private final List<SearchQueryRecord> liveQueries;
+    private final List<SearchQueryRecord> finishedQueries;
+    private final boolean includeFinished;
 
     /**
      * Constructor for LiveQueriesResponse.
@@ -33,6 +35,8 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
      */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         this.liveQueries = in.readList(SearchQueryRecord::new);
+        this.includeFinished = in.readBoolean();
+        this.finishedQueries = includeFinished ? in.readList(SearchQueryRecord::new) : List.of();
     }
 
     /**
@@ -42,6 +46,21 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
      */
     public LiveQueriesResponse(final List<SearchQueryRecord> liveQueries) {
         this.liveQueries = liveQueries;
+        this.finishedQueries = List.of();
+        this.includeFinished = false;
+    }
+
+    /**
+     * Constructor for LiveQueriesResponse with finished queries
+     */
+    public LiveQueriesResponse(
+        final List<SearchQueryRecord> liveQueries,
+        final List<SearchQueryRecord> finishedQueries,
+        boolean includeFinished
+    ) {
+        this.liveQueries = liveQueries;
+        this.finishedQueries = finishedQueries;
+        this.includeFinished = includeFinished;
     }
 
     /**
@@ -55,17 +74,27 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeList(liveQueries);
+        out.writeBoolean(includeFinished);
+        if (includeFinished) {
+            out.writeList(finishedQueries);
+        }
     }
 
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
         builder.startObject();
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
-
         for (SearchQueryRecord query : liveQueries) {
             query.toXContent(builder, params);
         }
         builder.endArray();
+        if (includeFinished) {
+            builder.startArray("finished_queries");
+            for (SearchQueryRecord query : finishedQueries) {
+                query.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
         builder.endObject();
         return builder;
     }

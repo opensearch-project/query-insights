@@ -28,6 +28,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.listener.FinishedQueriesListener;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
@@ -101,7 +102,11 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsExporterFactory(client, clusterService),
             new QueryInsightsReaderFactory(client)
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        FinishedQueriesListener finishedQueriesListener = new FinishedQueriesListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsService.setQueryInsightsListener(queryInsightsListener);
+        queryInsightsService.setFinishedQueriesListener(finishedQueriesListener);
+        return List.of(queryInsightsService, queryInsightsListener, finishedQueriesListener);
     }
 
     @Override
@@ -168,6 +173,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
             QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
             QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
+            QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED,
+            QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD,
             QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
         );
     }

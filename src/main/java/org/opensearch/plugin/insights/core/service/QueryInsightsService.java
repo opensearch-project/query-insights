@@ -42,6 +42,8 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.core.listener.FinishedQueriesListener;
+import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -129,6 +131,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private volatile FinishedQueriesCache finishedQueriesCache;
+    private volatile boolean finishedQueriesCacheStarted = false;
+    private volatile long finishedQueriesLastAccessTime = 0;
+    private volatile Scheduler.Cancellable finishedQueriesIdleCheckTask;
+    private QueryInsightsListener queryInsightsListener;
+    private FinishedQueriesListener finishedQueriesListener;
+    private volatile LiveQueriesCache liveQueriesCache;
+    private volatile boolean liveQueriesCacheStarted = false;
+    private volatile long lastAccessTime = 0;
+    private volatile Scheduler.Cancellable idleCheckTask;
+    private volatile Object transportService;
+
+    private static final long IDLE_TIMEOUT_MS = 300000; // 5 minutes
+    private static final TimeValue IDLE_CHECK_INTERVAL = new TimeValue(60, TimeUnit.SECONDS);
+
     SinkType sinkType;
 
     /**
@@ -188,6 +205,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = null; // Will be created lazily with default settings
+        this.liveQueriesCache = null; // Will be created lazily
+
+        // Add settings consumer for finished queries cache
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED, this::setFinishedQueriesCacheEnabled);
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD, this::setFinishedQueriesRetention);
     }
 
     /**
@@ -540,6 +567,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 )
             );
         }
+
+        // Live queries cache will be started lazily when first accessed
+
         if (threadPool.scheduler() != null) {
             deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
                 try {
@@ -566,6 +596,29 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        // Stop caches
+        synchronized (this) {
+            if (finishedQueriesCache != null && finishedQueriesCacheStarted) {
+                finishedQueriesCacheStarted = false;
+                if (finishedQueriesListener != null) {
+                    finishedQueriesListener.disable();
+                }
+            }
+            if (finishedQueriesIdleCheckTask != null) {
+                finishedQueriesIdleCheckTask.cancel();
+                finishedQueriesIdleCheckTask = null;
+            }
+            if (liveQueriesCache != null && liveQueriesCacheStarted) {
+                liveQueriesCache.stop();
+                liveQueriesCacheStarted = false;
+            }
+            if (idleCheckTask != null) {
+                idleCheckTask.cancel();
+                idleCheckTask = null;
+            }
+        }
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -625,5 +678,161 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
+    }
+
+    /**
+     * Get the finished queries cache, starts it if not already started
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        if (!clusterService.getClusterSettings().get(QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED)) {
+            return null;
+        }
+        synchronized (this) {
+            if (finishedQueriesCache != null && finishedQueriesCache.isExpired()) {
+                finishedQueriesCacheStarted = false;
+                if (finishedQueriesListener != null) {
+                    finishedQueriesListener.disable();
+                }
+                finishedQueriesCache = null;
+                return null;
+            }
+
+            if (!finishedQueriesCacheStarted) {
+                if (finishedQueriesCache == null) {
+                    long retentionMs = clusterService.getClusterSettings()
+                        .get(QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD)
+                        .getMillis();
+                    finishedQueriesCache = new FinishedQueriesCache(retentionMs);
+                }
+                finishedQueriesCacheStarted = true;
+                if (finishedQueriesListener != null) {
+                    finishedQueriesListener.enable();
+                }
+                startFinishedQueriesIdleCheck();
+            }
+        }
+        return finishedQueriesCache;
+    }
+
+    private void setFinishedQueriesCacheEnabled(boolean enabled) {
+        synchronized (this) {
+            if (!enabled && finishedQueriesCacheStarted) {
+                finishedQueriesCacheStarted = false;
+                if (finishedQueriesListener != null) {
+                    finishedQueriesListener.disable();
+                }
+                if (finishedQueriesCache != null) {
+                    finishedQueriesCache.clear();
+                    finishedQueriesCache = null;
+                }
+                if (finishedQueriesIdleCheckTask != null) {
+                    finishedQueriesIdleCheckTask.cancel();
+                    finishedQueriesIdleCheckTask = null;
+                }
+            }
+        }
+    }
+
+    private void setFinishedQueriesRetention(TimeValue retentionPeriod) {
+        synchronized (this) {
+            if (finishedQueriesCache != null && finishedQueriesCacheStarted) {
+                finishedQueriesCache.setRetentionPeriod(retentionPeriod.getMillis());
+            }
+        }
+    }
+
+    public FinishedQueriesCache getFinishedQueriesCacheForAPI() {
+        synchronized (this) {
+            // Don't update service-level access time - let cache handle its own expiration
+            return getFinishedQueriesCache();
+        }
+    }
+
+    /**
+     * Check if finished queries cache has been started
+     * @return boolean
+     */
+    public boolean isFinishedQueriesCacheStarted() {
+        return finishedQueriesCacheStarted;
+    }
+
+    /**
+     * Get the live queries cache
+     * @return LiveQueriesCache
+     */
+    public LiveQueriesCache getLiveQueriesCache() {
+        synchronized (this) {
+            lastAccessTime = System.currentTimeMillis();
+            if (!liveQueriesCacheStarted) {
+                if (liveQueriesCache == null) {
+                    liveQueriesCache = new LiveQueriesCache(null, threadPool, null); // client and transportService will be set later
+                }
+                liveQueriesCache.start();
+                liveQueriesCacheStarted = true;
+                startIdleCheck();
+            }
+        }
+        return liveQueriesCache;
+    }
+
+    /**
+     * Set TransportService for WLM group detection
+     */
+    @Inject
+    public void setTransportService(Object transportService) {
+        if (transportService != null) {
+            this.transportService = transportService;
+        }
+    }
+
+    public void setQueryInsightsListener(QueryInsightsListener queryInsightsListener) {
+        this.queryInsightsListener = queryInsightsListener;
+    }
+
+    public void setFinishedQueriesListener(FinishedQueriesListener finishedQueriesListener) {
+        this.finishedQueriesListener = finishedQueriesListener;
+    }
+
+    private void startFinishedQueriesIdleCheck() {
+        if (finishedQueriesIdleCheckTask != null) {
+            finishedQueriesIdleCheckTask.cancel();
+        }
+        finishedQueriesIdleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+            synchronized (this) {
+                if (finishedQueriesCacheStarted && System.currentTimeMillis() - finishedQueriesLastAccessTime > IDLE_TIMEOUT_MS) {
+                    finishedQueriesCacheStarted = false;
+                    finishedQueriesLastAccessTime = 0;
+                    finishedQueriesCache = null;
+                    if (finishedQueriesListener != null) {
+                        finishedQueriesListener.disable();
+                    }
+                    if (finishedQueriesIdleCheckTask != null) {
+                        finishedQueriesIdleCheckTask.cancel();
+                        finishedQueriesIdleCheckTask = null;
+                    }
+                }
+            }
+        }, IDLE_CHECK_INTERVAL, QUERY_INSIGHTS_EXECUTOR);
+    }
+
+    private void startIdleCheck() {
+        if (idleCheckTask != null) {
+            idleCheckTask.cancel();
+        }
+        idleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+            synchronized (this) {
+                if (liveQueriesCacheStarted && System.currentTimeMillis() - lastAccessTime > IDLE_TIMEOUT_MS) {
+                    liveQueriesCache.stop();
+                    liveQueriesCacheStarted = false;
+                    lastAccessTime = 0;
+                    liveQueriesCache = null; // Clear cache to free memory
+                    if (idleCheckTask != null) {
+                        idleCheckTask.cancel();
+                        idleCheckTask = null;
+                    }
+                }
+            }
+        }, IDLE_CHECK_INTERVAL, QUERY_INSIGHTS_EXECUTOR);
     }
 }

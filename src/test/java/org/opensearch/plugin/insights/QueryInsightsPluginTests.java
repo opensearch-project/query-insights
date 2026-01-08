@@ -132,7 +132,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             metricsRegistry
         );
-        assertEquals(2, components.size());
+        assertEquals(3, components.size());
         assertTrue(components.get(0) instanceof QueryInsightsService);
         assertTrue(components.get(1) instanceof QueryInsightsListener);
     }

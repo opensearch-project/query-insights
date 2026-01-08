@@ -143,7 +143,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
         // SOURCE attribute should be null initially (set asynchronously in drainRecords)
         assertNull(generatedRecord.getAttributes().get(Attribute.SOURCE));
-        // But SearchSourceBuilder should be available for async processing
+        // SearchSourceBuilder should be available for async processing
+        assertNotNull(generatedRecord.getSearchSourceBuilder());
         assertEquals(searchSourceBuilder.toString(), generatedRecord.getSearchSourceBuilder().toString());
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));

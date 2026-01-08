@@ -63,8 +63,11 @@ public class RestLiveQueriesAction extends BaseRestHandler {
     static LiveQueriesRequest prepareRequest(final RestRequest request) {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final boolean verbose = request.paramAsBoolean("verbose", true);
+        final boolean cached = request.paramAsBoolean("cached", false);
+        final boolean includeFinished = request.paramAsBoolean("include_finished", false);
         final String sortParam = request.param("sort", MetricType.LATENCY.toString());
         final String wlmGroupId = request.param("wlmGroupId", null);
+        final String taskId = request.param("task_id", null);
 
         if (!ALLOWED_METRICS.contains(sortParam)) {
             throw new IllegalArgumentException(
@@ -78,7 +81,7 @@ public class RestLiveQueriesAction extends BaseRestHandler {
                 String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
             );
         }
-        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId);
+        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId, taskId, cached, includeFinished);
     }
 
     @Override

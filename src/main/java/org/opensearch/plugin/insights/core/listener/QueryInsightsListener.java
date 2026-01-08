@@ -72,6 +72,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final PrincipalExtractor principalExtractor;
+    private static final ThreadLocal<String> recordIdThreadLocal = new ThreadLocal<>();
 
     /**
      * Constructor for QueryInsightsListener
@@ -222,17 +223,19 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     /**
      * Update the query insights service state based on the enabled features.
-     * If any feature is enabled, it starts the service. If no features are enabled, it stops the service.
+     * Listener is enabled/disabled based on whether any features are enabled.
+     * QueryInsightsService is started/stopped based on top queries and search metrics features.
      */
     private void updateQueryInsightsState() {
         boolean anyFeatureEnabled = queryInsightsService.isAnyFeatureEnabled();
 
-        if (anyFeatureEnabled && !super.isEnabled()) {
-            super.setEnabled(true);
-            queryInsightsService.stop(); // Ensures a clean restart
+        // Enable/disable listener based on feature state
+        super.setEnabled(anyFeatureEnabled);
+
+        if (anyFeatureEnabled) {
+            queryInsightsService.stop();
             queryInsightsService.start();
-        } else if (!anyFeatureEnabled && super.isEnabled()) {
-            super.setEnabled(false);
+        } else {
             queryInsightsService.stop();
         }
     }
@@ -256,12 +259,28 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        try {
+            constructSearchQueryRecord(context, searchRequestContext, recordId);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        try {
+            constructSearchQueryRecord(context, searchRequestContext, recordId);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -298,7 +317,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private void constructSearchQueryRecord(
+        final SearchPhaseContext context,
+        final SearchRequestContext searchRequestContext,
+        final String recordId
+    ) {
         if (skipSearchRequest(searchRequestContext)) {
             return;
         }
@@ -394,7 +417,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 measurements,
                 attributes,
                 request.source(),
-                null
+                recordId
             );
             queryInsightsService.addRecord(record);
         } catch (Exception e) {
@@ -419,6 +442,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 throw new IllegalArgumentException("Index name must be lowercase.");
             }
         }
+    }
+
+    public static String getRecordId() {
+        return recordIdThreadLocal.get();
+    }
+
+    public static void removeRecordId() {
+        recordIdThreadLocal.remove();
     }
 
 }
