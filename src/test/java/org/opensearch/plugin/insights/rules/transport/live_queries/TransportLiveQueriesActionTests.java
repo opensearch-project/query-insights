@@ -40,6 +40,7 @@ import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.tasks.resourcetracker.TaskThreadUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -71,6 +72,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     private ActionFilters actionFilters;
     private AdminClient adminClient;
     private ClusterAdminClient clusterAdminClient;
+    private QueryInsightsService queryInsightsService;
 
     @Before
     public void setup() {
@@ -102,7 +104,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.cluster()).thenReturn(clusterAdminClient);
 
-        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters);
+        queryInsightsService = mock(QueryInsightsService.class);
+
+        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
     }
 
     private TaskInfo createTaskInfo(
@@ -177,10 +181,10 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         LiveQueriesResponse clusterResponse = futureResponse.actionGet();
         List<SearchQueryRecord> records = clusterResponse.getLiveQueries();
 
-        // Verify listTasks was called and DID NOT have node filter set
+        // Verify listTasks was called and was set to fan out to all nodes
         ArgumentCaptor<ListTasksRequest> captor = ArgumentCaptor.forClass(ListTasksRequest.class);
         verify(clusterAdminClient).listTasks(captor.capture(), any(ActionListener.class));
-        assertEquals(0, captor.getValue().getNodes().length);
+        assertArrayEquals(new String[] { "_all" }, captor.getValue().getNodes());
 
         // Verify results - should have 2 search tasks in the flat list
         assertEquals(2, records.size());
@@ -302,7 +306,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, null, false);
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo highCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000L, "high", 200L, 200L);
@@ -425,5 +429,123 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         SearchQueryRecord rec = response.getLiveQueries().get(0);
         assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
         assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+    }
+
+    public void testShardTaskResourceUsagesIncluded() throws IOException {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo parentTask = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "parent", 100L, 200L);
+        TaskId parentTaskId = parentTask.getTaskId();
+
+        // Create shard-level child tasks
+        TaskInfo shardTask1 = createChildTaskInfo(
+            node1,
+            "indices:data/read/search[phase/query]",
+            System.currentTimeMillis(),
+            500000L,
+            "shard1",
+            50L,
+            100L,
+            parentTaskId
+        );
+        TaskInfo shardTask2 = createChildTaskInfo(
+            node1,
+            "indices:data/read/search[phase/query]",
+            System.currentTimeMillis(),
+            600000L,
+            "shard2",
+            60L,
+            120L,
+            parentTaskId
+        );
+
+        List<TaskInfo> tasks = List.of(parentTask, shardTask1, shardTask2);
+        ListTasksResponse listTasksResponse = new ListTasksResponse(tasks, emptyList(), emptyList());
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+        List<SearchQueryRecord> records = response.getLiveQueries();
+
+        assertEquals(1, records.size());
+        SearchQueryRecord record = records.get(0);
+
+        // Verify aggregated CPU and memory include child tasks
+        assertEquals(210L, record.getMeasurements().get(MetricType.CPU).getMeasurement().longValue()); // 100 + 50 + 60
+        assertEquals(420L, record.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue()); // 200 + 100 + 120
+
+        // Verify task_resource_usages includes parent and child tasks
+        @SuppressWarnings("unchecked")
+        List<org.opensearch.core.tasks.resourcetracker.TaskResourceInfo> taskResourceUsages = (List<
+            org.opensearch.core.tasks.resourcetracker.TaskResourceInfo>) record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES);
+        assertNotNull(taskResourceUsages);
+        assertEquals(3, taskResourceUsages.size()); // parent + 2 shards
+
+        // Verify all tasks are present - order may vary due to processing
+        assertEquals(3, taskResourceUsages.size());
+
+        // Find tasks by their actions and CPU values
+        org.opensearch.core.tasks.resourcetracker.TaskResourceInfo parentInfo = null;
+        org.opensearch.core.tasks.resourcetracker.TaskResourceInfo shard1Info = null;
+        org.opensearch.core.tasks.resourcetracker.TaskResourceInfo shard2Info = null;
+
+        for (org.opensearch.core.tasks.resourcetracker.TaskResourceInfo info : taskResourceUsages) {
+            if (info.getAction().equals("indices:data/read/search") && info.getTaskResourceUsage().getCpuTimeInNanos() == 100L) {
+                parentInfo = info;
+            } else if (info.getAction().equals("indices:data/read/search[phase/query]")) {
+                if (info.getTaskResourceUsage().getCpuTimeInNanos() == 50L) {
+                    shard1Info = info;
+                } else if (info.getTaskResourceUsage().getCpuTimeInNanos() == 60L) {
+                    shard2Info = info;
+                }
+            }
+        }
+
+        assertNotNull("Should find parent task with 100L CPU", parentInfo);
+        assertNotNull("Should find shard task with 50L CPU", shard1Info);
+        assertNotNull("Should find shard task with 60L CPU", shard2Info);
+
+        assertEquals(200L, parentInfo.getTaskResourceUsage().getMemoryInBytes());
+        assertEquals(100L, shard1Info.getTaskResourceUsage().getMemoryInBytes());
+        assertEquals(120L, shard2Info.getTaskResourceUsage().getMemoryInBytes());
+    }
+
+    private TaskInfo createChildTaskInfo(
+        DiscoveryNode node,
+        String action,
+        long startTime,
+        long runningTimeNanos,
+        String description,
+        long cpuNanos,
+        long memoryBytes,
+        TaskId parentTaskId
+    ) throws IOException {
+        TaskId taskId = new TaskId(node.getId(), randomLong());
+
+        Map<String, TaskResourceUsage> resourceUsageInfoMap = new HashMap<>();
+        TaskResourceUsage totalUsage = new TaskResourceUsage(cpuNanos, memoryBytes);
+        resourceUsageInfoMap.put("total", totalUsage);
+
+        TaskResourceStats resourceStats = new TaskResourceStats(resourceUsageInfoMap, new TaskThreadUsage(0, 0));
+
+        return new TaskInfo(
+            taskId,
+            "test_type",
+            action,
+            description,
+            null,
+            startTime,
+            runningTimeNanos,
+            true,
+            false,
+            parentTaskId,
+            Collections.singletonMap("foo", "bar"),
+            resourceStats
+        );
     }
 }

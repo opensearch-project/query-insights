@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.resthandler.live_queries;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -123,7 +124,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         String nodeId = nodes.keySet().iterator().next();
 
         String[] params = new String[] { "?size=1", "", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
-        Map<String, Boolean> foundParams = new java.util.HashMap<>();
+        Map<String, Boolean> foundParams = new HashMap<>();
         for (String param : params) {
             foundParams.put(param, false);
         }

@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -192,9 +193,9 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
     public void testToXContentForExportWithObjectSource() throws IOException {
         // Create record with SearchSourceBuilder for object source test
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder().size(10);
-        java.util.Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
+        Map<MetricType, Measurement> measurements = new HashMap<>();
         measurements.put(MetricType.LATENCY, new Measurement(100.0));
-        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.SOURCE, new SourceString(sourceBuilder.toString()));
 
         SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, sourceBuilder, "test-id");

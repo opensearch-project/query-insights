@@ -687,7 +687,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
                 .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
                 .toList();
-            listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
+            listener.onResponse(new ArrayList<>(recordsToReturn));
             return null;
         }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
 
@@ -751,7 +751,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         doAnswer(invocation -> {
             ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
-            listener.onResponse(new java.util.ArrayList<>());
+            listener.onResponse(new ArrayList<>());
             return null;
         }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
 

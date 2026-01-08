@@ -410,6 +410,7 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH);
+        clusterSettings.registerSetting(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
     }
 

@@ -76,6 +76,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private final ThreadPool threadPool;
 
     /**
+     * The internal OpenSearch client
+     */
+    private final Client client;
+
+    /**
      * Map of {@link MetricType} to associated {@link TopQueriesService}
      */
     private final Map<MetricType, TopQueriesService> topQueriesServices;
@@ -129,6 +134,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private volatile long idleTimeoutMs;
+
     SinkType sinkType;
 
     /**
@@ -154,6 +161,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         enableCollect = new HashMap<>();
         queryRecordsQueue = new LinkedBlockingQueue<>(QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY);
         this.threadPool = threadPool;
+        this.client = client;
         this.queryInsightsExporterFactory = queryInsightsExporterFactory;
         this.queryInsightsReaderFactory = queryInsightsReaderFactory;
         this.namedXContentRegistry = namedXContentRegistry;
@@ -184,10 +192,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (localIndexLifecycleManager::validateDeleteAfter)
             );
 
+        this.idleTimeoutMs = clusterService.getClusterSettings().get(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT).millis();
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, this::setIdleTimeout);
+
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
     }
 
     /**
@@ -540,6 +553,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 )
             );
         }
+
         if (threadPool.scheduler() != null) {
             deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
                 try {
@@ -566,6 +580,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        // Stop caches
+        LiveQueriesCache.stopInstance();
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -626,4 +644,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
     }
+
+    /**
+     * Get the live queries cache
+     * @return LiveQueriesCache
+     */
+    public LiveQueriesCache getLiveQueriesCache() {
+        return LiveQueriesCache.getInstance(client, threadPool, null, idleTimeoutMs);
+    }
+
+    private void setIdleTimeout(TimeValue timeout) {
+        this.idleTimeoutMs = timeout.millis();
+    }
+
 }
