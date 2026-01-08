@@ -22,6 +22,9 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
+import org.opensearch.plugin.insights.core.service.LiveQueriesCache;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -42,20 +45,28 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private static final Logger logger = LogManager.getLogger(TransportLiveQueriesAction.class);
     private static final String TOTAL = "total";
+    private static final String SEARCH_ACTION = "indices:data/read/search";
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
-        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search");
+        ListTasksRequest listTasksRequest = new ListTasksRequest().setActions(SEARCH_ACTION);
 
         // Set nodes filter if provided in the request
         String[] requestedNodeIds = request.nodesIds();
@@ -70,7 +81,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 try {
                     List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
                     for (TaskInfo taskInfo : taskResponse.getTasks()) {
-                        if (!taskInfo.getAction().equals("indices:data/read/search")) {
+                        if (!taskInfo.getAction().equals(SEARCH_ACTION)) {
                             continue;
                         }
                         long timestamp = taskInfo.getStartTime();
@@ -99,7 +110,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         Map<Attribute, Object> attributes = new HashMap<>();
                         attributes.put(Attribute.NODE_ID, nodeId);
                         if (request.isVerbose()) {
-                            attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
+                            attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription() != null ? taskInfo.getDescription() : "");
                             attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
                         }
                         Task runningTask = null;
@@ -125,14 +136,38 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         );
 
                         allFilteredRecords.add(record);
+
+                        // Add to finished queries cache for live queries
+                        queryInsightsService.getFinishedQueriesCache().addFinishedQuery(record);
                     }
 
-                    // Sort descending by the requested metric and apply size limit in one pass
-                    List<SearchQueryRecord> finalRecords = allFilteredRecords.stream()
+                    List<SearchQueryRecord> liveRecords = new ArrayList<>();
+                    List<SearchQueryRecord> finishedRecords = new ArrayList<>();
+
+                    // Add cached/finished queries if requested
+                    if (request.isCached()) {
+                        FinishedQueriesCache finishedCache = queryInsightsService.getFinishedQueriesCache();
+                        finishedRecords.addAll(finishedCache.getFinishedQueries());
+                    }
+                    if (request.isIncludeFinished()) {
+                        LiveQueriesCache liveCache = queryInsightsService.getLiveQueriesCache();
+                        liveRecords.addAll(liveCache.getCurrentQueries());
+                    }
+
+                    liveRecords.addAll(allFilteredRecords);
+
+                    // Sort and limit results
+                    List<SearchQueryRecord> finalLiveRecords = liveRecords.stream()
                         .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
                         .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
                         .toList();
-                    listener.onResponse(new LiveQueriesResponse(finalRecords));
+
+                    List<SearchQueryRecord> finalFinishedRecords = finishedRecords.stream()
+                        .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
+                        .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
+                        .toList();
+
+                    listener.onResponse(new LiveQueriesResponse(finalLiveRecords, finalFinishedRecords, request.isIncludeFinished()));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);

@@ -29,6 +29,8 @@ public class LiveQueriesRequest extends ActionRequest {
     // Node IDs to filter queries by
     private final String[] nodeIds;
     private String wlmGroupId;
+    private final boolean cached;
+    private final boolean includeFinished;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -44,6 +46,11 @@ public class LiveQueriesRequest extends ActionRequest {
         this.nodeIds = in.readStringArray();
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
+            this.cached = in.readBoolean();
+            this.includeFinished = in.readBoolean();
+        } else {
+            this.cached = false;
+            this.includeFinished = false;
         }
     }
 
@@ -56,12 +63,22 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param size maximum number of results
      * @param nodeIds The node IDs specified in the request
      */
-    public LiveQueriesRequest(final boolean verbose, final MetricType sortBy, final int size, final String[] nodeIds, String wlmGroupId) {
+    public LiveQueriesRequest(
+        final boolean verbose,
+        final MetricType sortBy,
+        final int size,
+        final String[] nodeIds,
+        String wlmGroupId,
+        boolean cached,
+        boolean includeFinished
+    ) {
         this.verbose = verbose;
         this.sortBy = sortBy;
         this.size = size;
         this.nodeIds = nodeIds;
         this.wlmGroupId = wlmGroupId;
+        this.cached = cached;
+        this.includeFinished = includeFinished;
     }
 
     /**
@@ -70,7 +87,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds the node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final String... nodeIds) {
-        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null);
+        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, false, false);
     }
 
     /**
@@ -111,6 +128,22 @@ public class LiveQueriesRequest extends ActionRequest {
         return wlmGroupId;
     }
 
+    /**
+     * Get whether to use cached results
+     * @return boolean indicating whether to use cached results
+     */
+    public boolean isCached() {
+        return cached;
+    }
+
+    /**
+     * Get whether to include finished queries
+     * @return boolean indicating whether to include finished queries
+     */
+    public boolean isIncludeFinished() {
+        return includeFinished;
+    }
+
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -120,6 +153,8 @@ public class LiveQueriesRequest extends ActionRequest {
         out.writeStringArray(nodeIds);
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
+            out.writeBoolean(cached);
+            out.writeBoolean(includeFinished);
         }
     }
 
