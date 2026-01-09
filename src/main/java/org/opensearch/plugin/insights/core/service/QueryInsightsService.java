@@ -129,6 +129,19 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private volatile FinishedQueriesCache finishedQueriesCache;
+    private volatile boolean finishedQueriesCacheStarted = false;
+    private volatile long finishedCacheLastAccessTime = 0;
+    private volatile Scheduler.Cancellable finishedCacheIdleCheckTask;
+    private volatile LiveQueriesCache liveQueriesCache;
+    private volatile boolean liveQueriesCacheStarted = false;
+    private volatile long lastAccessTime = 0;
+    private volatile Scheduler.Cancellable idleCheckTask;
+    private volatile Object transportService;
+
+    private static final long IDLE_TIMEOUT_MS = 300000; // 5 minutes
+    private static final TimeValue IDLE_CHECK_INTERVAL = new TimeValue(60, TimeUnit.SECONDS);
+
     SinkType sinkType;
 
     /**
@@ -188,6 +201,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = null; // Will be created lazily
+        this.liveQueriesCache = null; // Will be created lazily
     }
 
     /**
@@ -528,6 +545,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 )
             );
         }
+
+        // Live queries cache will be started lazily when first accessed
+
         if (threadPool.scheduler() != null) {
             deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
                 try {
@@ -537,7 +557,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                         localIndexLifecycleManager.deleteExpiredTopNIndices();
                     }
                 } catch (Exception e) {
-                    logger.error("Error occurred while deleting expired indices:", e);
+                    logger.debug("Error occurred while deleting expired indices (expected during startup): {}", e.getMessage());
                 }
             }, getInitialDelay(Instant.now()) + Duration.ofMinutes(5).toMillis(), Duration.ofDays(1).toMillis(), TimeUnit.MILLISECONDS);
         } else {
@@ -554,6 +574,26 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        // Stop caches
+        synchronized (this) {
+            if (finishedQueriesCache != null && finishedQueriesCacheStarted) {
+                finishedQueriesCacheStarted = false;
+            }
+            if (finishedCacheIdleCheckTask != null) {
+                finishedCacheIdleCheckTask.cancel();
+                finishedCacheIdleCheckTask = null;
+            }
+            if (liveQueriesCache != null && liveQueriesCacheStarted) {
+                liveQueriesCache.stop();
+                liveQueriesCacheStarted = false;
+            }
+            if (idleCheckTask != null) {
+                idleCheckTask.cancel();
+                idleCheckTask = null;
+            }
+        }
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -613,5 +653,93 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
+    }
+
+    /**
+     * Get the finished queries cache
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        synchronized (this) {
+            finishedCacheLastAccessTime = System.currentTimeMillis();
+            if (!finishedQueriesCacheStarted) {
+                if (finishedQueriesCache == null) {
+                    finishedQueriesCache = new FinishedQueriesCache();
+                }
+                finishedQueriesCacheStarted = true;
+                startFinishedCacheIdleCheck();
+            }
+        }
+        return finishedQueriesCache;
+    }
+
+    /**
+     * Get the live queries cache
+     * @return LiveQueriesCache
+     */
+    public LiveQueriesCache getLiveQueriesCache() {
+        synchronized (this) {
+            lastAccessTime = System.currentTimeMillis();
+            if (!liveQueriesCacheStarted) {
+                if (liveQueriesCache == null) {
+                    liveQueriesCache = new LiveQueriesCache(null, threadPool, null); // client and transportService will be set later
+                }
+                liveQueriesCache.start();
+                liveQueriesCacheStarted = true;
+                startIdleCheck();
+            }
+        }
+        return liveQueriesCache;
+    }
+
+    /**
+     * Set TransportService for WLM group detection
+     */
+    @Inject
+    public void setTransportService(Object transportService) {
+        if (transportService != null) {
+            this.transportService = transportService;
+        }
+    }
+
+    private void startIdleCheck() {
+        if (idleCheckTask != null) {
+            idleCheckTask.cancel();
+        }
+        idleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+            if (System.currentTimeMillis() - lastAccessTime > IDLE_TIMEOUT_MS) {
+                synchronized (this) {
+                    if (liveQueriesCacheStarted && System.currentTimeMillis() - lastAccessTime > IDLE_TIMEOUT_MS) {
+                        liveQueriesCache.stop();
+                        liveQueriesCacheStarted = false;
+                        lastAccessTime = 0;
+                        if (idleCheckTask != null) {
+                            idleCheckTask.cancel();
+                            idleCheckTask = null;
+                        }
+                    }
+                }
+            }
+        }, IDLE_CHECK_INTERVAL, QUERY_INSIGHTS_EXECUTOR);
+    }
+
+    private void startFinishedCacheIdleCheck() {
+        if (finishedCacheIdleCheckTask != null) {
+            finishedCacheIdleCheckTask.cancel();
+        }
+        finishedCacheIdleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+            if (System.currentTimeMillis() - finishedCacheLastAccessTime > IDLE_TIMEOUT_MS) {
+                synchronized (this) {
+                    if (finishedQueriesCacheStarted && System.currentTimeMillis() - finishedCacheLastAccessTime > IDLE_TIMEOUT_MS) {
+                        finishedQueriesCacheStarted = false;
+                        finishedCacheLastAccessTime = 0;
+                        if (finishedCacheIdleCheckTask != null) {
+                            finishedCacheIdleCheckTask.cancel();
+                            finishedCacheIdleCheckTask = null;
+                        }
+                    }
+                }
+            }
+        }, IDLE_CHECK_INTERVAL, QUERY_INSIGHTS_EXECUTOR);
     }
 }

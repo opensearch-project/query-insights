@@ -92,7 +92,17 @@ public enum Attribute {
     /**
      * The roles of the user who initiated the search query.
      */
-    USER_ROLES;
+    USER_ROLES,
+
+    /**
+     * The start time of the search query.
+     */
+    START_TIME,
+
+    /**
+     * The end time of the search query.
+     */
+    END_TIME;
 
     /**
      * Read an Attribute from a StreamInput

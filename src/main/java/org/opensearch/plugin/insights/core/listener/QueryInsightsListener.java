@@ -56,9 +56,8 @@ import org.opensearch.threadpool.ThreadPool;
 import reactor.util.annotation.NonNull;
 
 /**
- * The listener for query insights services.
- * It forwards query-related data to the appropriate query insights stores,
- * either for each request or for each phase.
+ * The listener for top N query insights services.
+ * It forwards query-related data to the top N queries stores.
  */
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
 
@@ -71,6 +70,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final PrincipalExtractor principalExtractor;
+    private final FinishedQueriesListener finishedQueriesListener;
 
     /**
      * Constructor for QueryInsightsListener
@@ -109,6 +109,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         this.queryInsightsService = queryInsightsService;
         this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
         this.principalExtractor = threadPool != null ? new PrincipalExtractor(threadPool) : null;
+        this.finishedQueriesListener = new FinishedQueriesListener(queryInsightsService);
         queryInsightsService.setQueryShapeGenerator(queryShapeGenerator);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
@@ -223,10 +224,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         if (anyFeatureEnabled && !super.isEnabled()) {
             super.setEnabled(true);
+            finishedQueriesListener.enableListener(true);
             queryInsightsService.stop(); // Ensures a clean restart
             queryInsightsService.start();
         } else if (!anyFeatureEnabled && super.isEnabled()) {
             super.setEnabled(false);
+            finishedQueriesListener.enableListener(false);
             queryInsightsService.stop();
         }
     }
@@ -387,7 +390,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
             queryInsightsService.addRecord(record);
         } catch (Exception e) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
+            try {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
+            } catch (IllegalStateException ignored) {
+                // OperationalMetricsCounter not initialized in tests
+            }
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
         }
     }
