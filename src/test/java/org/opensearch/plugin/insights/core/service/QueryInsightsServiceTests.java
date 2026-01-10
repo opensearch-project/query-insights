@@ -29,6 +29,7 @@ import static org.opensearch.plugin.insights.core.service.categorizer.QueryShape
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.MISS_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.SIZE_IN_BYTES;
 import static org.opensearch.plugin.insights.core.utils.ExporterReaderUtils.generateLocalIndexDateHash;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -71,12 +72,16 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
@@ -679,6 +684,154 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Queue should still NOT be cleared
         healthStats = queryInsightsService.getHealthStats();
         assertEquals(5, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testDrainRecordsUpdatesSourceAttribute() {
+        // Set max source length to default value to avoid truncation
+        queryInsightsService.setMaxSourceLength(DEFAULT_MAX_SOURCE_LENGTH);
+
+        // Create a SearchSourceBuilder with some content
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        // Create a record with SearchSourceBuilder but no SOURCE attribute
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+        // Note: SOURCE attribute is not set initially
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,  // Pass SearchSourceBuilder for async processing
+            "test-id"
+        );
+
+        // Verify SOURCE attribute is null initially
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+
+        // Add record to service
+        assertTrue(queryInsightsService.addRecord(record));
+
+        // Drain records - this should populate the SOURCE attribute
+        queryInsightsService.drainRecords();
+
+        // Verify SOURCE attribute is now populated with the SearchSourceBuilder string
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
+    }
+
+    public void testDrainRecordsSkipsRecordsWithoutSearchSourceBuilder() {
+        // Create a record without SearchSourceBuilder
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            null,  // No SearchSourceBuilder
+            "test-id"
+        );
+
+        // Add record to service
+        assertTrue(queryInsightsService.addRecord(record));
+
+        // Drain records
+        queryInsightsService.drainRecords();
+
+        // Verify SOURCE attribute remains null
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+    }
+
+    public void testDrainRecordsSourceTruncation() {
+        // Set max source length to 50
+        queryInsightsService.setMaxSourceLength(50);
+
+        // Create a SearchSourceBuilder with long content
+        SearchSourceBuilder longSource = new SearchSourceBuilder();
+        longSource.query(
+            new org.opensearch.index.query.MatchQueryBuilder(
+                "very_long_field_name_that_definitely_exceeds_fifty_character_limit",
+                "very_long_value_that_also_definitely_exceeds_the_fifty_character_limit_we_set_for_this_test_case"
+            )
+        );
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, longSource, "test-id");
+
+        // Add record and drain
+        assertTrue(queryInsightsService.addRecord(record));
+        queryInsightsService.drainRecords();
+
+        // Verify truncation
+        SourceString sourceString = (SourceString) record.getAttributes().get(Attribute.SOURCE);
+        assertEquals(50, sourceString.getValue().length());
+        assertTrue((Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testDrainRecordsSourceTruncationWithShortSource() {
+        // Set max source length higher than actual source
+        queryInsightsService.setMaxSourceLength(DEFAULT_MAX_SOURCE_LENGTH);
+
+        SearchSourceBuilder shortSource = new SearchSourceBuilder();
+        shortSource.query(new org.opensearch.index.query.MatchQueryBuilder("field", "value"));
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, shortSource, "test-id");
+
+        // Add record and drain
+        assertTrue(queryInsightsService.addRecord(record));
+        queryInsightsService.drainRecords();
+
+        // Verify no truncation
+        SourceString sourceString = (SourceString) record.getAttributes().get(Attribute.SOURCE);
+        assertEquals(shortSource.toString(), sourceString.getValue());
+        assertFalse((Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testDrainRecordsSourceTruncationWithZeroLength() {
+        // Set max source length to 0 (empty source)
+        queryInsightsService.setMaxSourceLength(0);
+
+        SearchSourceBuilder source = new SearchSourceBuilder();
+        source.query(new org.opensearch.index.query.MatchQueryBuilder("field", "value"));
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, source, "test-id");
+
+        // Add record and drain
+        assertTrue(queryInsightsService.addRecord(record));
+        queryInsightsService.drainRecords();
+
+        // Verify empty source and truncation flag
+        SourceString sourceString = (SourceString) record.getAttributes().get(Attribute.SOURCE);
+        assertEquals("", sourceString.getValue());
+        assertTrue((Boolean) record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
     // Util functions

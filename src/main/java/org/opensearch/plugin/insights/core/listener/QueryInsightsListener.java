@@ -15,6 +15,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNEnabledSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNSizeSetting;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.getTopNWindowSizeSetting;
@@ -175,6 +176,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(SEARCH_QUERY_METRICS_ENABLED_SETTING, this::setSearchQueryMetricsEnabled);
         setSearchQueryMetricsEnabled(clusterService.getClusterSettings().get(SEARCH_QUERY_METRICS_ENABLED_SETTING));
+
+        // Setting for max source length
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
+        this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -332,7 +338,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source());
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
@@ -384,7 +389,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
 
             // construct SearchQueryRecord from attributes and measurements
-            SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
+            SearchQueryRecord record = new SearchQueryRecord(
+                request.getOrCreateAbsoluteStartMillis(),
+                measurements,
+                attributes,
+                request.source(),
+                null
+            );
             queryInsightsService.addRecord(record);
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);

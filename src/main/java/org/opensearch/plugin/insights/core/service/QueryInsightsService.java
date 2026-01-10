@@ -48,9 +48,11 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -130,6 +132,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     SinkType sinkType;
+
+    private int maxSourceLength;
 
     /**
      * Constructor of the QueryInsightsService
@@ -219,12 +223,42 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set the maximum source length before truncation
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
+    }
+
+    /**
      * Drain the queryRecordsQueue into internal stores and services
      */
     public void drainRecords() {
         final List<SearchQueryRecord> records = new ArrayList<>();
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+
+        // Set SOURCE attribute and handle truncation asynchronously to avoid slowing down search requests
+        for (SearchQueryRecord record : records) {
+            if (record.getSearchSourceBuilder() != null && record.getAttributes().get(Attribute.SOURCE) == null) {
+                String sourceString = record.getSearchSourceBuilder().toString();
+                if (maxSourceLength == 0) {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(""));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+                } else if (maxSourceLength > 0 && sourceString.length() > maxSourceLength) {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(sourceString.substring(0, maxSourceLength)));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+                } else {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+                }
+            } else if (record.getSearchSourceBuilder() == null) {
+                record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+            }
+        }
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
                 // ingest the records into topQueriesService
