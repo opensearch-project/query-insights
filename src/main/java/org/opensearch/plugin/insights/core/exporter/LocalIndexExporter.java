@@ -31,6 +31,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.index.mapper.MapperException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -180,12 +181,33 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         });
     }
 
+    /**
+     * Bulk index records to the specified index with default string source serialization.
+     * This method defaults useObjectSource to false.
+     *
+     * @param indexName Name of the index to bulk records to
+     * @param records List of {@link SearchQueryRecord} to index
+     * @throws IOException If there's an error during bulk indexing
+     */
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
+        bulk(indexName, records, false);
+    }
+
+    /**
+     * Bulk index records to the specified index
+     *
+     * @param indexName Name of the index to bulk records to
+     * @param records List of {@link SearchQueryRecord} to index
+     * @param useObjectSource If true, serializes the SOURCE attribute as a {@link org.opensearch.search.builder.SearchSourceBuilder} object;
+     *                       if false, serializes it as a string representation {@link org.opensearch.plugin.insights.rules.model.SourceString}. Used for handling mapping conflicts.
+     * @throws IOException If there's an error during bulk indexing
+     */
+    void bulk(final String indexName, final List<SearchQueryRecord> records, boolean useObjectSource) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS, useObjectSource))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
@@ -194,10 +216,25 @@ public class LocalIndexExporter implements QueryInsightsExporter {
 
             @Override
             public void onFailure(Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
-                logger.error("Failed to execute bulk operation for query insights data: ", e);
+                if (!useObjectSource && isMapperException(e)) {
+                    logger.debug("Bulk failed with mapper exception, retrying with object source");
+                    try {
+                        bulk(indexName, records, true);
+                    } catch (IOException ioe) {
+                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                        logger.error("Failed to retry bulk operation: ", ioe);
+                    }
+                } else {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                    logger.error("Failed to execute bulk operation: ", e);
+                }
             }
         });
+    }
+
+    private boolean isMapperException(Exception e) {
+        Throwable cause = ExceptionsHelper.unwrapCause(e);
+        return cause instanceof MapperException;
     }
 
     /**

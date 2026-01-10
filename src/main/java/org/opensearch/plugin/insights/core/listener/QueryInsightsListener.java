@@ -332,7 +332,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, request.source());
             attributes.put(Attribute.TOTAL_SHARDS, context.getNumShards());
             attributes.put(Attribute.INDICES, request.indices());
             attributes.put(Attribute.PHASE_LATENCY_MAP, searchRequestContext.phaseTookMap());
@@ -384,7 +383,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
 
             // construct SearchQueryRecord from attributes and measurements
-            SearchQueryRecord record = new SearchQueryRecord(request.getOrCreateAbsoluteStartMillis(), measurements, attributes);
+            SearchQueryRecord record = new SearchQueryRecord(
+                request.getOrCreateAbsoluteStartMillis(),
+                measurements,
+                attributes,
+                request.source(),
+                null
+            );
             queryInsightsService.addRecord(record);
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
