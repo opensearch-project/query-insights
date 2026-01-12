@@ -46,12 +46,17 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
      *
      * @throws IOException IOException
      */
-    public void testTopQueriesResponses() throws IOException, InterruptedException {
+    public void testTopQueriesResponses() throws Exception {
         // Disable all features first to clear any existing queries
         updateClusterSettings(this::disableTopQueriesSettings);
+        waitForSettingsDisabled("latency");
+        waitForSettingsDisabled("cpu");
+        waitForSettingsDisabled("memory");
 
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
+        // Wait for settings to propagate to ensure latency collection is enabled
+        waitForSettingsPropagation("latency");
         waitForEmptyTopQueriesResponse();
 
         doSearch(5);
@@ -60,9 +65,12 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         // Disable all features to clear queries
         updateClusterSettings(this::disableTopQueriesSettings);
+        waitForSettingsDisabled("latency");
 
         // Enable Top N Queries by resource usage
         updateClusterSettings(this::topQueriesByResourceUsagesSettings);
+        waitForSettingsPropagation("cpu");
+        waitForSettingsPropagation("memory");
         waitForEmptyTopQueriesResponse();
 
         // Do Search
@@ -223,18 +231,23 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
             "{\n" + "    \"persistent\" : {\n" + "        \"search.insights.top_queries.latency.top_n_size\" : -1\n" + "    }\n" + "}" };
     }
 
-    public void testExcludedIndices() throws IOException, InterruptedException {
+    public void testExcludedIndices() throws Exception {
         // Disable all features first to clear any existing queries
         updateClusterSettings(this::disableTopQueriesSettings);
+        waitForSettingsDisabled("latency");
         waitForEmptyTopQueriesResponse();
 
         // Enable only Top N Queries by latency feature
         updateClusterSettings(this::defaultTopQueriesSettings);
 
+        // Wait for settings to propagate
+        waitForSettingsPropagation("latency");
+
         prepareExcludedIndices();
 
         // Exclude the first index
         updateClusterSettings(() -> excludedIndicesSettings("exclude-me-index-01"));
+        waitForNonCollectionSettingsPropagation();
         doSearch(2, "exclude-me-index-01");
         assertTopQueriesCount(0, "latency", "exclude-me-index-01");
 
@@ -248,6 +261,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         // Exclude indices using wildcard
         updateClusterSettings(() -> excludedIndicesSettings("exclude-me*"));
+        waitForNonCollectionSettingsPropagation();
         doSearch(2, "exclude-me-index-01");
         doSearch(2, "exclude-me-index-02");
         assertTopQueriesCount(0, "latency", "exclude-me-index-01");
@@ -255,6 +269,7 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
 
         // Reset excluded indices
         updateClusterSettings(() -> excludedIndicesSettings(null));
+        waitForNonCollectionSettingsPropagation();
         doSearch(2, "exclude-me-index-01");
         assertTopQueriesCount(2, "latency", "exclude-me-index-01");
     }
