@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
@@ -43,8 +44,13 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
 
     public void testAllMetricTypes() {
         Set<MetricType> allMetrics = MetricType.allMetricTypes();
-        Set<MetricType> expected = new HashSet<>(Arrays.asList(MetricType.LATENCY, MetricType.CPU, MetricType.MEMORY));
+        Set<MetricType> expected = new HashSet<>(Arrays.asList(MetricType.LATENCY, MetricType.CPU, MetricType.MEMORY, MetricType.FAILURE));
         assertEquals(expected, allMetrics);
+
+        for (MetricType metricType : allMetrics) {
+            assertTrue(metricType.getMinimalSupportedVersion().onOrAfter(Version.V_2_12_0));
+            assertTrue(metricType.getMinimalSupportedVersion().onOrBefore(Version.CURRENT));
+        }
     }
 
     public void testCompare() {

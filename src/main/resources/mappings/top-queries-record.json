@@ -120,6 +120,13 @@
               "type": "double"
             }
           }
+        },
+        "failure": {
+          "properties": {
+            "number": {
+              "type": "double"
+            }
+          }
         }
       }
     },
@@ -132,6 +139,9 @@
           "type" : "boolean"
         },
         "memory" : {
+          "type" : "boolean"
+        },
+        "failure" : {
           "type" : "boolean"
         }
       }

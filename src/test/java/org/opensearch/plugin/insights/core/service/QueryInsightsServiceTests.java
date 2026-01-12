@@ -145,6 +145,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.LATENCY, true);
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
+        queryInsightsService.enableCollection(MetricType.FAILURE, true);
         queryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(clusterService));
         queryInsightsService.setLocalIndexLifecycleManager(mockLocalIndexLifecycleManagerSpy);
         queryInsightsServiceSpy = spy(queryInsightsService);
@@ -312,10 +313,11 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertEquals(1, healthStats.getQueryRecordsQueueSize());
         Map<MetricType, TopQueriesHealthStats> topQueriesHealthStatsMap = healthStats.getTopQueriesHealthStats();
         assertNotNull(topQueriesHealthStatsMap);
-        assertEquals(3, topQueriesHealthStatsMap.size());
+        assertEquals(4, topQueriesHealthStatsMap.size());
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.LATENCY));
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.CPU));
         assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.MEMORY));
+        assertTrue(topQueriesHealthStatsMap.containsKey(MetricType.FAILURE));
         Map<String, Long> fieldTypeCacheStats = healthStats.getFieldTypeCacheStats();
         assertNotNull(fieldTypeCacheStats);
         assertEquals(5, fieldTypeCacheStats.size());
@@ -642,6 +644,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Disable all features one by one
         queryInsightsService.enableCollection(MetricType.LATENCY, false);
         queryInsightsService.enableCollection(MetricType.CPU, false);
+        queryInsightsService.enableCollection(MetricType.FAILURE, false);
 
         // Queue should not be cleared yet as MEMORY is still enabled
         healthStats = queryInsightsService.getHealthStats();
@@ -726,6 +729,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         updatedQueryInsightsService.enableCollection(MetricType.LATENCY, true);
         updatedQueryInsightsService.enableCollection(MetricType.CPU, true);
         updatedQueryInsightsService.enableCollection(MetricType.MEMORY, true);
+        updatedQueryInsightsService.enableCollection(MetricType.FAILURE, true);
         updatedQueryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(updatedClusterService));
         updatedQueryInsightsService.setLocalIndexLifecycleManager(mockLocalIndexLifecycleManagerSpy);
         // Create a local index exporter with a retention period of 7 days

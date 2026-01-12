@@ -65,6 +65,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String MEMORY = "memory";
     /**
+     * FAILURE count
+     */
+    public static final String FAILURE = "failure";
+    /**
      * The search query type
      */
     public static final String SEARCH_TYPE = "search_type";
@@ -254,6 +258,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case LATENCY:
                     case CPU:
                     case MEMORY:
+                    case FAILURE:
                         MetricType metric = MetricType.fromString(fieldName);
                         measurements.put(metric, Measurement.fromXContent(parser));
                         break;
@@ -554,14 +559,22 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     public void writeTo(final StreamOutput out) throws IOException {
         out.writeLong(timestamp);
         out.writeString(id);
+        Map<MetricType, Measurement> filteredMeasurements = measurements.entrySet()
+            .stream()
+            .filter(e -> out.getVersion().onOrAfter(e.getKey().getMinimalSupportedVersion()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         if (out.getVersion().onOrAfter(Version.V_2_17_0)) {
             out.writeMap(
-                measurements,
+                filteredMeasurements,
                 (stream, metricType) -> MetricType.writeTo(out, metricType),
                 (stream, measurement) -> measurement.writeTo(out)
             );
         } else {
-            out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
+            out.writeMap(
+                filteredMeasurements,
+                (stream, metricType) -> MetricType.writeTo(out, metricType),
+                StreamOutput::writeGenericValue
+            );
         }
         out.writeMap(
             attributes,

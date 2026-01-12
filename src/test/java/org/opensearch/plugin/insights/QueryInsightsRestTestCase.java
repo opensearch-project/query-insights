@@ -204,7 +204,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
-            + "        \"search.insights.top_queries.cpu.enabled\" : \"false\"\n"
+            + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.failure.enabled\" : \"false\"\n"
             + "    }\n"
             + "}";
     }
@@ -217,6 +218,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
+            + "        \"search.insights.top_queries.failure.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"none\"\n"
             + "    }\n"
             + "}";
@@ -534,6 +536,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 case "cpu":
                 case "memory":
                 case "latency":
+                case "failure":
                     endpoint = "/_insights/top_queries?type=" + type + "&pretty";
                     break;
                 case "all":

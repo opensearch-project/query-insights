@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 
@@ -32,7 +33,11 @@ public enum MetricType implements Comparator<Number> {
     /**
      * JVM heap usage metric type
      */
-    MEMORY;
+    MEMORY,
+    /**
+     * Failure metric type
+     */
+    FAILURE;
 
     /**
      * Read a MetricType from a StreamInput
@@ -92,6 +97,7 @@ public enum MetricType implements Comparator<Number> {
             case LATENCY:
             case CPU:
             case MEMORY:
+            case FAILURE:
                 return Long.compare(a.longValue(), b.longValue());
         }
         return -1;
@@ -108,9 +114,29 @@ public enum MetricType implements Comparator<Number> {
             case LATENCY:
             case CPU:
             case MEMORY:
+            case FAILURE:
                 return (Long) o;
             default:
                 return (Number) o;
         }
     }
+
+    /**
+     * Returns the earliest version that is aware of this MetricType
+     *
+     * @return {@link Version}
+     */
+    Version getMinimalSupportedVersion() {
+        switch (this) {
+            case LATENCY:
+            case CPU:
+            case MEMORY:
+                return Version.V_2_12_0;
+            case FAILURE:
+                return Version.V_3_5_0;
+            default:
+                throw new UnsupportedOperationException("Unknown metric type [" + this + "]");
+        }
+    }
+
 }

@@ -128,6 +128,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_LATENCY_QUERIES_WINDOW_SIZE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_CPU_QUERIES_ENABLED);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_FAILURE_QUERIES_ENABLED);
     }
 
     @Override

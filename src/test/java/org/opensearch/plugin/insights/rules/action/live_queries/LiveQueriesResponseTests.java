@@ -41,6 +41,7 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             measurements.put(MetricType.LATENCY, new Measurement(baseLatency + i * 100));
             measurements.put(MetricType.CPU, new Measurement(randomLongBetween(10, 1000)));
             measurements.put(MetricType.MEMORY, new Measurement(randomLongBetween(1024, 10240)));
+            measurements.put(MetricType.FAILURE, new Measurement(randomLongBetween(0, 1000)));
             Map<Attribute, Object> attributes = new HashMap<>();
             if (randomBoolean()) {
                 attributes.put(Attribute.DESCRIPTION, "desc_" + baseLatency + "_" + i);
@@ -68,7 +69,9 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             MetricType.CPU,
             new Measurement(20L),
             MetricType.MEMORY,
-            new Measurement(30L)
+            new Measurement(30L),
+            MetricType.FAILURE,
+            new Measurement(40L)
         );
         SearchQueryRecord rec1 = new SearchQueryRecord(1L, measurements, emptyMap(), "id1");
         SearchQueryRecord rec2 = new SearchQueryRecord(2L, measurements, emptyMap(), "id2");

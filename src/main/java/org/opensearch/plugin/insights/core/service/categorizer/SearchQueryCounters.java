@@ -56,6 +56,10 @@ public final class SearchQueryCounters {
      * Histogram for memory per query type
      */
     private final Histogram queryTypeMemoryHistogram;
+    /**
+     * Histogram for failure per query type
+     */
+    private final Histogram queryTypeFailureHistogram;
 
     private final Map<Class<? extends QueryBuilder>, Counter> queryHandlers;
     /**
@@ -99,6 +103,11 @@ public final class SearchQueryCounters {
             "search.query.type.memory.histogram",
             "Histogram for the memory per query type",
             UNIT_BYTES
+        );
+        this.queryTypeFailureHistogram = metricsRegistry.createHistogram(
+            "search.query.type.failure.histogram",
+            "Histogram for the failure per query type",
+            UNIT
         );
         this.queryHandlers = new HashMap<>();
     }
@@ -148,6 +157,9 @@ public final class SearchQueryCounters {
         }
         if (measurements.containsKey(MetricType.MEMORY)) {
             queryTypeMemoryHistogram.record(measurements.get(MetricType.MEMORY).getMeasurement().doubleValue(), tags);
+        }
+        if (measurements.containsKey(MetricType.FAILURE)) {
+            queryTypeFailureHistogram.record(measurements.get(MetricType.FAILURE).getMeasurement().doubleValue(), tags);
         }
     }
 

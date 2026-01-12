@@ -134,10 +134,12 @@ final public class QueryInsightsTestUtils {
             long latencyValue = randomLongBetween(1000, 10000); // Replace with actual method to generate a random long
             long cpuValue = randomLongBetween(1000, 10000);
             long memoryValue = randomLongBetween(1000, 10000);
+            long failureValue = randomLongBetween(0, 10);
             Map<MetricType, Measurement> measurements = new LinkedHashMap<>();
             measurements.put(MetricType.LATENCY, new Measurement(latencyValue, aggregationType));
             measurements.put(MetricType.CPU, new Measurement(cpuValue, aggregationType));
             measurements.put(MetricType.MEMORY, new Measurement(memoryValue, aggregationType));
+            measurements.put(MetricType.FAILURE, new Measurement(failureValue, aggregationType));
 
             Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
             int countOfPhases = randomIntBetween(2, 5);
@@ -355,6 +357,9 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_FAILURE_QUERIES_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_FAILURE_QUERIES_SIZE);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_FAILURE_QUERIES_WINDOW_SIZE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_TYPE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N);

@@ -112,7 +112,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         queryInsightsService.setQueryShapeGenerator(queryShapeGenerator);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
-        // Expected metricTypes are Latency, CPU, and Memory.
+        // Expected metricTypes are Latency, CPU, Memory and Failure.
         for (MetricType type : MetricType.allMetricTypes()) {
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(getTopNEnabledSetting(type), v -> this.setEnableTopQueries(type, v));
@@ -250,12 +250,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        constructSearchQueryRecord(context, searchRequestContext, false);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        constructSearchQueryRecord(context, searchRequestContext, true);
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -292,7 +292,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private void constructSearchQueryRecord(
+        final SearchPhaseContext context,
+        final SearchRequestContext searchRequestContext,
+        final boolean failure
+    ) {
         if (skipSearchRequest(searchRequestContext)) {
             return;
         }
@@ -329,6 +333,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                     tasksResourceUsages.stream().map(a -> a.getTaskResourceUsage().getMemoryInBytes()).mapToLong(Long::longValue).sum()
                 )
             );
+            measurements.put(MetricType.FAILURE, new Measurement(failure ? 1L : 0L));
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, request.searchType().toString().toLowerCase(Locale.ROOT));

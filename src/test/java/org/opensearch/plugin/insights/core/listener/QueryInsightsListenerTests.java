@@ -144,6 +144,58 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
+        assertEquals(0, generatedRecord.getMeasurement(MetricType.FAILURE).longValue());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnRequestFail() {
+        Long timestamp = System.currentTimeMillis() - 100L;
+        SearchType searchType = SearchType.QUERY_THEN_FETCH;
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.aggregation(new TermsAggregationBuilder("agg1").userValueTypeHint(ValueType.STRING).field("type.keyword"));
+        searchSourceBuilder.size(0);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        String[] indices = new String[] { "index-1", "index-2" };
+
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("expand", 0L);
+        phaseLatencyMap.put("query", 20L);
+        phaseLatencyMap.put("fetch", 1L);
+
+        int numberOfShards = 10;
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(searchType);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchRequest.indices()).thenReturn(indices);
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(numberOfShards);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+
+        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord generatedRecord = captor.getValue();
+        assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
+        assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
+        assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
+        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
+        Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
+        assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
+        assertEquals(1, generatedRecord.getMeasurement(MetricType.FAILURE).longValue());
     }
 
     public void testConcurrentOnRequestEnd() throws InterruptedException {
@@ -215,6 +267,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(true, false),  // Latency enabled, then disabled
             Arrays.asList(false),        // CPU disabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(false)         // Metrics disabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
@@ -225,6 +278,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(false, true),  // Latency disabled, then enabled
             Arrays.asList(false),        // CPU disabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(false)         // Metrics disabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
@@ -235,6 +289,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(true, false),  // Latency enabled, then disabled
             Arrays.asList(true),         // CPU enabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(false)         // Metrics disabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
@@ -245,6 +300,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(false, true),  // Latency disabled, then enabled
             Arrays.asList(true),         // CPU enabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(false)         // Metrics disabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
@@ -254,7 +310,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         queryInsightsListener = testFeatureEnableDisableSetup(
             Arrays.asList(true, false),  // Latency enabled, then disabled
             Arrays.asList(true, false),  // CPU enabled, then disabled
-            Arrays.asList(false),         // Memory disabled
+            Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(true)          // Metrics enabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
@@ -266,6 +323,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(false),        // Latency disabled
             Arrays.asList(false),        // CPU disabled
             Arrays.asList(true, false),  // Memory enabled, then disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(true)          // Metrics enabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.MEMORY, false);
@@ -276,6 +334,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(true, false),  // Latency enabled, then disabled
             Arrays.asList(true, false),  // CPU enabled, then disabled
             Arrays.asList(true, false),  // Memory enabled, then disabled
+            Arrays.asList(true, false),  // Failure enabled, then disabled
             Arrays.asList(true)          // Metrics enabled
         );
         queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, false);
@@ -288,6 +347,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(true),  // Latency enabled
             Arrays.asList(false),        // CPU disabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(true)         // Metrics enabled then disabled
         );
         queryInsightsListener.setSearchQueryMetricsEnabled(false);
@@ -298,16 +358,30 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             Arrays.asList(false),  // Latency disabled
             Arrays.asList(false),        // CPU disabled
             Arrays.asList(false),        // Memory disabled
+            Arrays.asList(false),        // Failure disabled
             Arrays.asList(true, false)   // Metrics enabled then disabled
         );
         queryInsightsListener.setSearchQueryMetricsEnabled(false);
         assertFalse(queryInsightsListener.isEnabled());  // All disabled, so QI should be disabled
+
+        // Test case 10
+        queryInsightsListener = testFeatureEnableDisableSetup(
+            Arrays.asList(false),        // Latency disabled
+            Arrays.asList(false),        // CPU disabled
+            Arrays.asList(true, false),  // Memory enabled, then disabled
+            Arrays.asList(true),        // Failure disabled
+            Arrays.asList(true)          // Metrics enabled
+        );
+        queryInsightsListener.setEnableTopQueries(MetricType.MEMORY, false);
+        queryInsightsListener.setEnableTopQueries(MetricType.LATENCY, true);
+        assertTrue(queryInsightsListener.isEnabled());  // Metrics is still enabled, so QI should still be enabled
     }
 
     private QueryInsightsListener testFeatureEnableDisableSetup(
         List<Boolean> latencyValues,
         List<Boolean> cpuValues,
         List<Boolean> memoryValues,
+        List<Boolean> failureValues,
         List<Boolean> metricsEnabledValues
     ) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
@@ -336,6 +410,11 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(queryInsightsService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(
             memoryValues.get(0),
             memoryValues.subList(1, memoryValues.size()).toArray(new Boolean[0])
+        );
+
+        when(queryInsightsService.isCollectionEnabled(MetricType.FAILURE)).thenReturn(
+            memoryValues.get(0),
+            memoryValues.subList(1, failureValues.size()).toArray(new Boolean[0])
         );
 
         when(queryInsightsService.isSearchQueryMetricsFeatureEnabled()).thenReturn(

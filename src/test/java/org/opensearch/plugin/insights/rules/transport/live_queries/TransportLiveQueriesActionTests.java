@@ -193,6 +193,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         assertEquals(1000000L, record1.getMeasurements().get(MetricType.LATENCY).getMeasurement().longValue());
         assertEquals(500L, record1.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
         assertEquals(1024L, record1.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        assertEquals(0L, record1.getMeasurements().get(MetricType.FAILURE).getMeasurement().longValue());
 
         assertTrue(resultsById.containsKey(task2.getTaskId().toString()));
         SearchQueryRecord record2 = resultsById.get(task2.getTaskId().toString());
@@ -358,6 +359,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         SearchQueryRecord rec = response.getLiveQueries().get(0);
         assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
         assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        assertEquals(0L, rec.getMeasurements().get(MetricType.FAILURE).getMeasurement().longValue());
     }
 
     public void testEmptyUsageInfoDefaultsToZero() throws Exception {
@@ -391,6 +393,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         SearchQueryRecord rec = response.getLiveQueries().get(0);
         assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
         assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        assertEquals(0L, rec.getMeasurements().get(MetricType.FAILURE).getMeasurement().longValue());
     }
 
     public void testMissingTotalUsageDefaultsToZero() throws Exception {
@@ -425,5 +428,6 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         SearchQueryRecord rec = response.getLiveQueries().get(0);
         assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
         assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        assertEquals(0L, rec.getMeasurements().get(MetricType.FAILURE).getMeasurement().longValue());
     }
 }

@@ -319,13 +319,16 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         Double expectedLatency = record.getMeasurement(MetricType.LATENCY).doubleValue();
         Double expectedCpu = record.getMeasurement(MetricType.CPU).doubleValue();
         Double expectedMemory = record.getMeasurement(MetricType.MEMORY).doubleValue();
+        Double expectedFailures = record.getMeasurement(MetricType.FAILURE).doubleValue();
 
         Histogram queryTypeLatencyHistogram = histogramMap.get("search.query.type.latency.histogram");
         Histogram queryTypeCpuHistogram = histogramMap.get("search.query.type.cpu.histogram");
         Histogram queryTypeMemoryHistogram = histogramMap.get("search.query.type.memory.histogram");
+        Histogram queryTypeFailureHistogram = histogramMap.get("search.query.type.failure.histogram");
 
         verify(queryTypeLatencyHistogram, times(times)).record(eq(expectedLatency), any(Tags.class));
         verify(queryTypeCpuHistogram, times(times)).record(eq(expectedCpu), any(Tags.class));
         verify(queryTypeMemoryHistogram, times(times)).record(eq(expectedMemory), any(Tags.class));
+        verify(queryTypeFailureHistogram, times(times)).record(eq(expectedFailures), any(Tags.class));
     }
 }

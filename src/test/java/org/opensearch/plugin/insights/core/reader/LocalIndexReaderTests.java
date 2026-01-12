@@ -82,6 +82,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         measurementsMap.put(String.valueOf(MetricType.CPU), Map.of("number", 10000, "count", 1, "aggregationType", "NONE"));
         measurementsMap.put(String.valueOf(MetricType.MEMORY), Map.of("number", 20000, "count", 1, "aggregationType", "NONE"));
         measurementsMap.put(String.valueOf(MetricType.LATENCY), Map.of("number", 3, "count", 1, "aggregationType", "NONE"));
+        measurementsMap.put(String.valueOf(MetricType.FAILURE), Map.of("number", 0, "count", 1, "aggregationType", "NONE"));
         sourceMap.put(SearchQueryRecord.MEASUREMENTS, measurementsMap);
 
         BytesReference sourceRef;
@@ -190,6 +191,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         assertEquals(10000, records1.getFirst().getMeasurement(MetricType.CPU));
         assertEquals(20000, records1.getFirst().getMeasurement(MetricType.MEMORY));
         assertEquals(3, records1.getFirst().getMeasurement(MetricType.LATENCY));
+        assertEquals(0, records1.getFirst().getMeasurement(MetricType.FAILURE));
         Object[] indices = (Object[]) records1.getFirst().getAttributes().get(Attribute.INDICES);
         assertNotNull(indices);
         assertEquals(1, indices.length);
@@ -224,6 +226,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         assertEquals(10000, record2.getMeasurement(MetricType.CPU));
         assertEquals(20000, record2.getMeasurement(MetricType.MEMORY));
         assertEquals(3, record2.getMeasurement(MetricType.LATENCY));
+        assertEquals(0, record2.getMeasurement(MetricType.FAILURE));
         Object[] indicesNonVerbose = (Object[]) record2.getAttributes().get(Attribute.INDICES);
         assertNotNull(indicesNonVerbose);
         assertEquals(1, indicesNonVerbose.length);

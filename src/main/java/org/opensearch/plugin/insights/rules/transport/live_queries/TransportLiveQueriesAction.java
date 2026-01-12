@@ -95,6 +95,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
                         measurements.put(MetricType.CPU, new Measurement(cpuNanos));
                         measurements.put(MetricType.MEMORY, new Measurement(memBytes));
+                        measurements.put(MetricType.FAILURE, new Measurement(0L));
 
                         Map<Attribute, Object> attributes = new HashMap<>();
                         attributes.put(Attribute.NODE_ID, nodeId);

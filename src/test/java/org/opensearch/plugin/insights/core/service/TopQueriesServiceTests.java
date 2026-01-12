@@ -533,6 +533,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             assertTrue(topNMap.get(MetricType.LATENCY.toString()));
             assertFalse(topNMap.get(MetricType.CPU.toString()));
             assertFalse(topNMap.get(MetricType.MEMORY.toString()));
+            assertFalse(topNMap.get(MetricType.FAILURE.toString()));
         }
     }
 
