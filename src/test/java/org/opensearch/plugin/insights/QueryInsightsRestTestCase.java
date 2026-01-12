@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -490,6 +491,113 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         if (!isEmpty) {
             throw new IllegalStateException("Top queries response did not become empty within the timeout period");
         }
+    }
+
+    /**
+     * Navigate through nested maps using a path of keys.
+     *
+     * @param map the starting map
+     * @param keys the path of keys to navigate (e.g., "persistent", "search", "insights")
+     * @return the value at the end of the path, or null if any key in the path is not found
+     */
+    @SuppressWarnings("unchecked")
+    private Object navigateMap(Map<String, Object> map, String... keys) {
+        Map<String, Object> current = map;
+        for (int i = 0; i < keys.length - 1; i++) {
+            Object value = current.get(keys[i]);
+            if (!(value instanceof Map)) {
+                return null;
+            }
+            current = (Map<String, Object>) value;
+        }
+        return current.get(keys[keys.length - 1]);
+    }
+
+    /**
+     * Get the enabled setting value for a specific metric type from cluster settings.
+     *
+     * @param type the metric type (e.g., "latency", "cpu", "memory")
+     * @return Boolean.TRUE if enabled, Boolean.FALSE if explicitly disabled, null if setting not found
+     * @throws IOException if request fails
+     */
+    private Boolean getMetricEnabledValue(String type) throws IOException {
+        String filterPath = "persistent.search.insights.top_queries." + type + ".enabled";
+        Request request = new Request("GET", "/_cluster/settings?include_defaults=false&filter_path=" + filterPath);
+        Response response = client().performRequest(request);
+
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                response.getEntity().getContent()
+            )
+        ) {
+            Map<String, Object> settingsMap = parser.map();
+
+            // Navigate: persistent -> search -> insights -> top_queries -> {type} -> enabled
+            Object enabledValue = navigateMap(settingsMap, "persistent", "search", "insights", "top_queries", type, "enabled");
+            if (enabledValue == null) {
+                return null;
+            }
+
+            return "true".equals(String.valueOf(enabledValue)) || Boolean.TRUE.equals(enabledValue);
+        }
+    }
+
+    /**
+     * Wait for settings to be disabled by verifying the cluster settings API.
+     * This ensures that the enableCollect flag has been set to false before proceeding.
+     * Uses assertBusy with 15-second timeout (10s for cluster state propagation + 5s drain interval).
+     *
+     * @param type the metric type to verify is disabled (e.g., "latency", "cpu", "memory")
+     * @throws Exception if request fails or timeout
+     */
+    protected void waitForSettingsDisabled(String type) throws Exception {
+        assertBusy(() -> {
+            Boolean isEnabled = getMetricEnabledValue(type);
+            if (Boolean.TRUE.equals(isEnabled)) {
+                throw new AssertionError("Expected metric type [" + type + "] to be disabled, but it's still enabled");
+            }
+        }, 15, TimeUnit.SECONDS);
+
+        // Wait one drain interval to ensure at least one drain cycle runs with the new flag
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        logger.info("Settings verified disabled for type [" + type + "]");
+    }
+
+    /**
+     * Wait for non-collection settings (like excluded indices) to propagate.
+     * These settings are applied synchronously at request time but may have a small
+     * propagation delay from cluster settings to the listener.
+     *
+     * @throws InterruptedException if interrupted during wait
+     */
+    protected void waitForNonCollectionSettingsPropagation() throws InterruptedException {
+        // Small wait to allow cluster settings to propagate to listeners
+        // These settings don't require drain interval since they're checked synchronously
+        Thread.sleep(1000);
+    }
+
+    /**
+     * Wait for settings to propagate by verifying the cluster settings API
+     * and waiting one drain interval for internal propagation to the TopQueriesService.
+     * This ensures that the enableCollect flag has been set before executing test searches.
+     * Uses assertBusy with 15-second timeout (10s for cluster state propagation + 5s drain interval).
+     *
+     * @param type the metric type to verify (e.g., "latency", "cpu", "memory")
+     * @throws Exception if request fails or timeout
+     */
+    protected void waitForSettingsPropagation(String type) throws Exception {
+        assertBusy(() -> {
+            Boolean isEnabled = getMetricEnabledValue(type);
+            if (!Boolean.TRUE.equals(isEnabled)) {
+                throw new AssertionError("Expected metric type [" + type + "] to be enabled, but current value is: " + isEnabled);
+            }
+        }, 15, TimeUnit.SECONDS);
+
+        // Wait one drain interval to ensure at least one drain cycle runs with the new enableCollect flag
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        logger.info("Settings verified for type [" + type + "], enabled=true");
     }
 
     protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
