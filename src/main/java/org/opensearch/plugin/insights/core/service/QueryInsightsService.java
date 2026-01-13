@@ -225,6 +225,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         final List<SearchQueryRecord> records = new ArrayList<>();
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
                 // ingest the records into topQueriesService

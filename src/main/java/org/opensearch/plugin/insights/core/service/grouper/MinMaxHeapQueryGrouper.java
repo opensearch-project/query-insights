@@ -20,6 +20,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 
@@ -132,6 +133,10 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
             aggregateSearchQueryRecord.addAttribute(Attribute.GROUP_BY, groupingType);
+            aggregateSearchQueryRecord.addAttribute(
+                Attribute.SOURCE,
+                new SourceString(searchQueryRecord.getSearchSourceBuilder().toString())
+            );
             addToMinPQ(aggregateSearchQueryRecord, groupId);
         } else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();

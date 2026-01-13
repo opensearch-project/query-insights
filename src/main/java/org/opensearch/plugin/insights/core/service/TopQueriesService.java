@@ -50,9 +50,11 @@ import org.opensearch.plugin.insights.core.service.grouper.MinMaxHeapQueryGroupe
 import org.opensearch.plugin.insights.core.service.grouper.QueryGrouper;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.tags.Tags;
@@ -431,6 +433,12 @@ public class TopQueriesService {
             // remove top elements for fix sizing priority queue
             while (topQueriesStore.size() > topNSize) {
                 topQueriesStore.poll();
+            }
+            // Add Source Attribute for all top queries
+            for (SearchQueryRecord record : topQueriesStore) {
+                if (record.getSearchSourceBuilder() != null && record.getAttributes().get(Attribute.SOURCE) == null) {
+                    record.addAttribute(Attribute.SOURCE, new SourceString(record.getSearchSourceBuilder().toString()));
+                }
             }
         }
     }

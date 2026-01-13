@@ -195,7 +195,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         BoostingQueryBuilder queryBuilder = new BoostingQueryBuilder(
             new TermQueryBuilder("unmapped_field", "foo"),
             new MatchNoneQueryBuilder()
-        );
+        ).negativeBoost(0.5f); // Set positive boost value
         sourceBuilder.query(queryBuilder);
 
         SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);

@@ -27,6 +27,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,10 +50,13 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
@@ -795,5 +799,100 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         verify(mockListener).onResponse(listCaptor.capture());
         assertTrue(listCaptor.getValue().isEmpty());
+    }
+
+    public void testConsumeRecordsUpdatesSourceAttribute() {
+        // Create a SearchSourceBuilder with some content
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        // Create a record with SearchSourceBuilder but no SOURCE attribute
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
+    }
+
+    public void testConsumeRecordsSkipsRecordsWithoutSearchSourceBuilder() {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, null, "test-id");
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+    }
+
+    public void testWindowRotationUpdatesSourceForBothWindows() {
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        long currentTime = System.currentTimeMillis();
+
+        Map<MetricType, Measurement> measurements1 = new HashMap<>();
+        measurements1.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes1 = new HashMap<>();
+        SearchQueryRecord oldRecord1 = new SearchQueryRecord(
+            currentTime - TimeValue.timeValueMinutes(15).getMillis(),
+            measurements1,
+            attributes1,
+            searchSourceBuilder,
+            "old-1"
+        );
+
+        Map<MetricType, Measurement> measurements2 = new HashMap<>();
+        measurements2.put(MetricType.LATENCY, new Measurement(200L));
+        Map<Attribute, Object> attributes2 = new HashMap<>();
+        SearchQueryRecord oldRecord2 = new SearchQueryRecord(
+            currentTime - TimeValue.timeValueMinutes(15).getMillis(),
+            measurements2,
+            attributes2,
+            searchSourceBuilder,
+            "old-2"
+        );
+
+        topQueriesService.consumeRecords(List.of(oldRecord1, oldRecord2));
+
+        Map<MetricType, Measurement> measurements3 = new HashMap<>();
+        measurements3.put(MetricType.LATENCY, new Measurement(150L));
+        Map<Attribute, Object> attributes3 = new HashMap<>();
+        SearchQueryRecord newRecord1 = new SearchQueryRecord(currentTime, measurements3, attributes3, searchSourceBuilder, "new-1");
+
+        Map<MetricType, Measurement> measurements4 = new HashMap<>();
+        measurements4.put(MetricType.LATENCY, new Measurement(250L));
+        Map<Attribute, Object> attributes4 = new HashMap<>();
+        SearchQueryRecord newRecord2 = new SearchQueryRecord(currentTime, measurements4, attributes4, searchSourceBuilder, "new-2");
+
+        topQueriesService.consumeRecords(List.of(newRecord1, newRecord2));
+
+        List<SearchQueryRecord> allRecords = topQueriesService.getTopQueriesRecords(true, null, null, null, null);
+        for (SearchQueryRecord record : allRecords) {
+            assertNotNull(record.getAttributes().get(Attribute.SOURCE));
+        }
     }
 }

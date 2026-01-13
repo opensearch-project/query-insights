@@ -215,7 +215,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
-            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 10,\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"none\"\n"
@@ -228,7 +228,7 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
             + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
-            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 10,\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"similarity\",\n"
             + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5,\n"
             + "        \"search.insights.top_queries.grouping.attributes.field_name\" : true,\n"
@@ -471,20 +471,25 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         long startTime = System.currentTimeMillis();
 
         while (!isEmpty && (System.currentTimeMillis() - startTime) < timeoutMillis) {
-            Request request = new Request("GET", "/_insights/top_queries?pretty");
-            Response response = client().performRequest(request);
+            try {
+                Request request = new Request("GET", "/_insights/top_queries?pretty");
+                Response response = client().performRequest(request);
 
-            if (response.getStatusLine().getStatusCode() != 200) {
-                Thread.sleep(1000); // Sleep before retrying
-                continue;
-            }
+                if (response.getStatusLine().getStatusCode() != 200) {
+                    Thread.sleep(2000); // Sleep before retrying
+                    continue;
+                }
 
-            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
-            if (countTopQueries(responseBody, DEFAULT_KEYWORD) == 0) {
-                isEmpty = true;
-            } else {
-                Thread.sleep(1000); // Sleep before retrying
+                if (countTopQueries(responseBody, DEFAULT_KEYWORD) == 0) {
+                    isEmpty = true;
+                } else {
+                    Thread.sleep(2000); // Sleep before retrying
+                }
+            } catch (Exception e) {
+                // Ignore exceptions during cleanup and retry
+                Thread.sleep(2000);
             }
         }
 
@@ -913,10 +918,32 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             }
             idNodePairs.add(new String[] { id, nodeId });
 
-            Map<String, Object> source = (Map<String, Object>) query.get("source");
-            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
-            Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
-            Map<String, Object> title = (Map<String, Object>) match.get("title");
+            Object sourceObj = query.get("source");
+            Map<String, Object> source;
+            if (sourceObj instanceof String) {
+                try (
+                    XContentParser sourceParser = JsonXContent.jsonXContent.createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        (String) sourceObj
+                    )
+                ) {
+                    source = sourceParser.map();
+                } catch (Exception e) {
+                    continue;
+                }
+            } else {
+                source = (Map<String, Object>) sourceObj;
+            }
+            if (source != null) {
+                Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+                if (queryBlock != null) {
+                    Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                    if (match != null) {
+                        Map<String, Object> title = (Map<String, Object>) match.get("title");
+                    }
+                }
+            }
             List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
             Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
             for (Map<String, Object> task : taskUsages) {

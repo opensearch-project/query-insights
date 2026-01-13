@@ -47,6 +47,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
     private final String id;
+    private final SearchSourceBuilder searchSourceBuilder; // Private field for categorization only
 
     /**
      * Timestamp
@@ -170,17 +171,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             });
         }
         this.attributes = Attribute.readAttributeMap(in);
-    }
-
-    /**
-     * Constructor of SearchQueryRecord
-     *
-     * @param timestamp The timestamp of the query.
-     * @param measurements A list of Measurement associated with this query
-     * @param attributes A list of Attributes associated with this query
-     */
-    public SearchQueryRecord(final long timestamp, Map<MetricType, Measurement> measurements, final Map<Attribute, Object> attributes) {
-        this(timestamp, measurements, attributes, UUID.randomUUID().toString());
+        // SearchSourceBuilder is not available from stream data - only for in-memory categorization
+        this.searchSourceBuilder = null;
     }
 
     /**
@@ -197,13 +189,33 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         final Map<Attribute, Object> attributes,
         String id
     ) {
+        this(timestamp, measurements, attributes, null, id);
+    }
+
+    /**
+     * Constructor of SearchQueryRecord
+     *
+     * @param timestamp The timestamp of the query.
+     * @param measurements A list of Measurement associated with this query
+     * @param attributes A list of Attributes associated with this query
+     * @param searchSourceBuilder SearchSourceBuilder for categorization (can be null)
+     * @param id unique id for a search query record
+     */
+    public SearchQueryRecord(
+        final long timestamp,
+        Map<MetricType, Measurement> measurements,
+        final Map<Attribute, Object> attributes,
+        SearchSourceBuilder searchSourceBuilder,
+        String id
+    ) {
         if (measurements == null) {
             throw new IllegalArgumentException("Measurements cannot be null");
         }
         this.measurements = measurements;
         this.attributes = attributes;
         this.timestamp = timestamp;
-        this.id = id;
+        this.id = id != null ? id : UUID.randomUUID().toString();
+        this.searchSourceBuilder = searchSourceBuilder;
     }
 
     /**
@@ -223,6 +235,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.timestamp = other.timestamp;
         this.id = other.id;
         this.groupingId = other.groupingId;
+        this.searchSourceBuilder = other.searchSourceBuilder;
     }
 
     /**
@@ -267,8 +280,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.QUERY_GROUP_HASHCODE, parser.text());
                         break;
                     case SOURCE:
-                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
-                        attributes.put(Attribute.SOURCE, SearchSourceBuilder.fromXContent(parser, false));
+                        // Always store as SourceString for consistent in-memory representation
+                        if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
+                            attributes.put(Attribute.SOURCE, new SourceString(parser.text()));
+                        } else {
+                            // Convert old SearchSourceBuilder format to string
+                            XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                            attributes.put(Attribute.SOURCE, new SourceString(SearchSourceBuilder.fromXContent(parser, false).toString()));
+                        }
                         break;
                     case TOTAL_SHARDS:
                         attributes.put(Attribute.TOTAL_SHARDS, parser.intValue());
@@ -376,7 +395,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, null, id);
     }
 
     /**
@@ -455,6 +474,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     }
 
     /**
+     * Returns the SearchSourceBuilder for categorization purposes only.
+     * This is not serialized or exported.
+     *
+     * @return SearchSourceBuilder or null if not available
+     */
+    public SearchSourceBuilder getSearchSourceBuilder() {
+        return searchSourceBuilder;
+    }
+
+    /**
      * Add an attribute to this record
      *
      * @param attribute attribute to add
@@ -528,12 +557,34 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @throws IOException if an I/O error occurs during serialization.
      */
     public XContentBuilder toXContentForExport(final XContentBuilder builder, final Params params) throws IOException {
+        return toXContentForExport(builder, params, false);
+    }
+
+    /**
+     * Serializes this object into an {@link XContentBuilder} for external export with optional object source formatting.
+     * <p>
+     * Unlike {@link #toXContent}, this method includes all attributes, including {@code Attribute.TOP_N_QUERY}.
+     * It also serializes all {@link Measurement} objects under the "measurements" field using their own {@code toXContent} method.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @param useObjectSource If true, serializes the SOURCE attribute as a {@link SearchSourceBuilder} object;
+     *                       if false, serializes it as a string representation {@link SourceString}.
+     * @return The updated {@link XContentBuilder} with this object's full content.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
+    public XContentBuilder toXContentForExport(final XContentBuilder builder, final Params params, boolean useObjectSource)
+        throws IOException {
         builder.startObject();
         builder.field("timestamp", timestamp);
         builder.field("id", id);
 
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
-            builder.field(entry.getKey().toString(), entry.getValue());
+            if (entry.getKey() == Attribute.SOURCE && useObjectSource) {
+                builder.field(entry.getKey().toString(), searchSourceBuilder);
+            } else {
+                builder.field(entry.getKey().toString(), entry.getValue());
+            }
         }
         builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {

@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +30,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
@@ -45,6 +47,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.index.mapper.MapperException;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -87,7 +90,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // Setup exists response
         doAnswer(invocation -> {
-            org.opensearch.core.action.ActionListener<Boolean> listener = invocation.getArgument(1);
+            ActionListener<Boolean> listener = invocation.getArgument(1);
             listener.onResponse(true);
             return null;
         }).when(indicesAdminClient).exists(any(IndicesExistsRequest.class), any());
@@ -136,7 +139,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         exporterSpy.export(records);
 
-        // bulk was called (to add records to existing index)
+        // bulk was called directly (to add records to existing index)
         verify(exporterSpy).bulk(anyString(), eq(records));
 
         // createIndexAndBulk was NOT called
@@ -159,7 +162,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // createIndexAndBulk was called
         verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
-        // bulk was NOT called directly (it's called inside createIndexAndBulk)
+        // bulk was NOT called directly (it's called directly when index exists)
         verify(exporterSpy, never()).bulk(anyString(), any());
     }
 
@@ -329,4 +332,51 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
     }
 
+    public void testBulkStartsWithTextFormat() throws IOException {
+        LocalIndexExporter exporterSpy = spy(new LocalIndexExporter(client, clusterService, format, "{}", "id"));
+        doNothing().when(exporterSpy).bulk(anyString(), any());
+
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        // Simulate the export flow for existing index
+        doReturn(true).when(exporterSpy).checkIndexExists(anyString());
+        exporterSpy.export(records);
+
+        // Verify it starts with useObjectSource = false (text format)
+        verify(exporterSpy).bulk(anyString(), eq(records));
+    }
+
+    public void testBulkRetryOnMapperException() throws IOException {
+        // Create a real BulkRequestBuilder with the client and action
+        BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
+        when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
+
+        // Track the number of execute calls to verify retry
+        AtomicInteger executeCallCount = new AtomicInteger(0);
+
+        // Mock execute to fail first time with MapperException, succeed second time
+        doAnswer(invocation -> {
+            ActionListener<BulkResponse> listener = invocation.getArgument(0);
+            int callNumber = executeCallCount.incrementAndGet();
+
+            if (callNumber == 1) {
+                // First call fails with MapperException
+                listener.onFailure(new MapperException("test mapper exception"));
+            } else {
+                // Second call succeeds
+                listener.onResponse(mock(BulkResponse.class));
+            }
+            return null;
+        }).when(bulkRequestBuilder).execute(any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        // Call bulk with useObjectSource=false, should retry with useObjectSource=true
+        exporter.bulk("test-index", records, false);
+
+        // Verify execute was called twice (original + retry)
+        assertEquals(2, executeCallCount.get());
+        verify(bulkRequestBuilder, times(2)).execute(any());
+    }
 }

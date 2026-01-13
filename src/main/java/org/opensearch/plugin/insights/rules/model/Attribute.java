@@ -15,10 +15,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.apache.lucene.util.ArrayUtil;
+import org.opensearch.Version;
+import org.opensearch.common.xcontent.LoggingDeprecationHandler;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.search.builder.SearchSourceBuilder;
 
 /**
@@ -127,6 +132,28 @@ public enum Attribute {
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {
         if (attributeValue instanceof List) {
             out.writeList((List<? extends Writeable>) attributeValue);
+        } else if (attributeValue instanceof SourceString) {
+            if (out.getVersion().onOrAfter(Version.V_3_5_0)) {
+                out.writeString(((SourceString) attributeValue).getValue());
+            } else {
+                // Convert source to SearchSourceBuilder and write to stream
+                try {
+                    // Attempt to convert source to SearchSourceBuilder
+                    String sourceStr = ((SourceString) attributeValue).getValue();
+                    if (sourceStr != null && !sourceStr.isEmpty()) {
+                        XContentParser parser = XContentType.JSON.xContent()
+                            .createParser(NamedXContentRegistry.EMPTY, LoggingDeprecationHandler.INSTANCE, sourceStr);
+                        SearchSourceBuilder searchSourceBuilder = SearchSourceBuilder.fromXContent(parser, false);
+                        searchSourceBuilder.writeTo(out);
+                        parser.close();
+                    } else {
+                        new SearchSourceBuilder().writeTo(out);
+                    }
+                } catch (Exception e) {
+                    // Unable to convert source to SearchSourceBuilder, sending dummy object instead
+                    new SearchSourceBuilder().writeTo(out);
+                }
+            }
         } else if (attributeValue instanceof SearchSourceBuilder) {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
         } else if (attributeValue instanceof GroupingType) {
@@ -148,8 +175,11 @@ public enum Attribute {
         if (attribute == Attribute.TASK_RESOURCE_USAGES) {
             return in.readList(TaskResourceInfo::readFromStream);
         } else if (attribute == Attribute.SOURCE) {
-            SearchSourceBuilder builder = new SearchSourceBuilder(in);
-            return builder;
+            if (in.getVersion().onOrAfter(Version.V_3_5_0)) {
+                return new SourceString(in.readString());
+            } else {
+                return new SourceString(new SearchSourceBuilder(in).toString());
+            }
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
         } else {

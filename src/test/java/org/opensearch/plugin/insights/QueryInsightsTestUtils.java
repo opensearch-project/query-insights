@@ -37,7 +37,6 @@ import java.util.UUID;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
-import org.opensearch.common.util.Maps;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
@@ -49,6 +48,7 @@ import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -85,16 +85,24 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count, SearchSourceBuilder searchSourceBuilder) {
-        List<SearchQueryRecord> records = generateQueryInsightRecords(
-            count,
-            count,
-            System.currentTimeMillis(),
-            0,
-            AggregationType.DEFAULT_AGGREGATION_TYPE,
-            randomId
-        );
-        for (SearchQueryRecord record : records) {
-            record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
+        List<SearchQueryRecord> records = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            // Generate base record data
+            List<SearchQueryRecord> baseRecords = generateQueryInsightRecords(1);
+            SearchQueryRecord baseRecord = baseRecords.get(0);
+
+            // Create new record with SearchSourceBuilder for categorization
+            SearchQueryRecord recordWithSource = new SearchQueryRecord(
+                baseRecord.getTimestamp(),
+                baseRecord.getMeasurements(),
+                baseRecord.getAttributes(),
+                searchSourceBuilder,  // Pass SearchSourceBuilder for categorization
+                baseRecord.getId()
+            );
+
+            // Update SOURCE attribute to SourceString
+            recordWithSource.getAttributes().put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
+            records.add(recordWithSource);
         }
         return records;
     }
@@ -150,7 +158,7 @@ final public class QueryInsightsTestUtils {
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, searchSourceBuilder);
+            attributes.put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
@@ -180,7 +188,7 @@ final public class QueryInsightsTestUtils {
                 )
             );
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id));
+            records.add(new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id));
             timestamp += interval;
         }
         return records;
@@ -299,29 +307,49 @@ final public class QueryInsightsTestUtils {
         assertEquals(param1Builder.toString(), param2Builder.toString());
     }
 
-    @SuppressWarnings("unchecked")
     public static boolean checkRecordsEquals(List<SearchQueryRecord> records1, List<SearchQueryRecord> records2) {
         if (records1.size() != records2.size()) {
             return false;
         }
         for (int i = 0; i < records1.size(); i++) {
-            if (!records1.get(i).equals(records2.get(i))) {
+            SearchQueryRecord record1 = records1.get(i);
+            SearchQueryRecord record2 = records2.get(i);
+            if (record1.getTimestamp() != record2.getTimestamp()) {
                 return false;
             }
-            Map<Attribute, Object> attributes1 = records1.get(i).getAttributes();
-            Map<Attribute, Object> attributes2 = records2.get(i).getAttributes();
-            for (Map.Entry<Attribute, Object> entry : attributes1.entrySet()) {
-                Attribute attribute = entry.getKey();
-                Object value = entry.getValue();
-                if (!attributes2.containsKey(attribute)) {
+            if (!record1.getMeasurements().equals(record2.getMeasurements())) {
+                return false;
+            }
+            if (!compareAttributes(record1.getAttributes(), record2.getAttributes())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean compareAttributes(Map<Attribute, Object> attributes1, Map<Attribute, Object> attributes2) {
+        if (attributes1.size() != attributes2.size()) {
+            return false;
+        }
+        for (Map.Entry<Attribute, Object> entry : attributes1.entrySet()) {
+            Attribute key = entry.getKey();
+            Object value1 = entry.getValue();
+            Object value2 = attributes2.get(key);
+            if (key == Attribute.SOURCE) {
+                // Both values should be SourceString
+                String source1 = value1 instanceof SourceString ? ((SourceString) value1).getValue() : null;
+                String source2 = value2 instanceof SourceString ? ((SourceString) value2).getValue() : null;
+                if (!Objects.equals(source1, source2)) {
                     return false;
                 }
-                if (value instanceof Object[] && !Arrays.deepEquals((Object[]) value, (Object[]) attributes2.get(attribute))) {
+            } else if (value1 instanceof Object[] && value2 instanceof Object[]) {
+                if (!Arrays.deepEquals((Object[]) value1, (Object[]) value2)) {
                     return false;
-                } else if (value instanceof Map
-                    && !Maps.deepEquals((Map<Object, Object>) value, (Map<Object, Object>) attributes2.get(attribute))) {
-                        return false;
-                    }
+                }
+            } else {
+                if (!Objects.equals(value1, value2)) {
+                    return false;
+                }
             }
         }
         return true;

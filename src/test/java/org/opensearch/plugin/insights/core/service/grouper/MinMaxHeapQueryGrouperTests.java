@@ -8,8 +8,10 @@
 
 package org.opensearch.plugin.insights.core.service.grouper;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 import org.junit.Before;
@@ -17,9 +19,12 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -713,5 +718,27 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
             groupedRecord = minMaxHeapQueryGrouper.add(record);
             assertEquals(GroupingType.SIMILARITY, groupedRecord.getAttributes().get(Attribute.GROUP_BY));
         }
+    }
+
+    public void testSourceAttributeSetForNewGroup() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-123");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            "test-id"
+        );
+
+        SearchQueryRecord groupedRecord = minMaxHeapQueryGrouper.add(record);
+        assertNotNull(groupedRecord.getAttributes().get(Attribute.SOURCE));
+        assertTrue(groupedRecord.getAttributes().get(Attribute.SOURCE) instanceof SourceString);
     }
 }

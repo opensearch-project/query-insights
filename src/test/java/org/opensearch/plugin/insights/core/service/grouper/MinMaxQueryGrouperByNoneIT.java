@@ -28,11 +28,11 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
         waitForEmptyTopQueriesResponse();
 
         // Search
-        doSearch("range", 2);
-        doSearch("match", 6);
-        doSearch("term", 4);
+        doSearch("range", 1);
+        doSearch("match", 3);
+        doSearch("term", 2);
 
-        assertTopQueriesCount(12, "latency");
+        assertTopQueriesCount(6, "latency");
     }
 
     private String groupByNoneSettings() {

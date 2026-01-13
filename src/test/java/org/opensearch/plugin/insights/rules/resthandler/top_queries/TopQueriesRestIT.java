@@ -292,11 +292,12 @@ public class TopQueriesRestIT extends QueryInsightsRestTestCase {
     }
 
     private String excludedIndicesSettings(String excludedIndices) {
-        excludedIndices = excludedIndices == null ? "null" : "\" " + excludedIndices + " \" ";
+        excludedIndices = excludedIndices == null ? "null" : "\"" + excludedIndices + "\"";
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.excluded_indices\" : "
             + excludedIndices
+            + "\n"
             + "    }\n"
             + "}";
     }
