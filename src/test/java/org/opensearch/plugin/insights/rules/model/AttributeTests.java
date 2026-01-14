@@ -137,4 +137,39 @@ public class AttributeTests extends OpenSearchTestCase {
         assertNotNull("Should not be null", result);
     }
 
+    /**
+     * Test rolling upgrade scenario: old coordinator node receiving unknown attributes from new node
+     * Should gracefully skip unknown attributes without failing
+     */
+    public void testUnknownAttributeDuringRollingUpgrade() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        // Simulate attribute map with mix of known and unknown attributes
+        out.writeVInt(3); // 3 attributes
+
+        // Known attribute
+        out.writeString("NODE_ID");
+        out.writeGenericValue("node-1");
+
+        // Unknown attribute (simulating new attribute like USER_ROLES)
+        out.writeString("UNKNOWN_NEW_ATTRIBUTE");
+        out.writeGenericValue("some_value");
+
+        // Another known attribute
+        out.writeString("TOTAL_SHARDS");
+        out.writeGenericValue(5);
+
+        StreamInput in = out.bytes().streamInput();
+
+        // Old coordinator tries to read attribute map
+        var attributeMap = Attribute.readAttributeMap(in);
+
+        assertNotNull("Attribute map should not be null", attributeMap);
+        assertEquals("Should only contain 2 known attributes", 2, attributeMap.size());
+        assertTrue("Should contain NODE_ID", attributeMap.containsKey(Attribute.NODE_ID));
+        assertEquals("NODE_ID value should match", "node-1", attributeMap.get(Attribute.NODE_ID));
+        assertTrue("Should contain TOTAL_SHARDS", attributeMap.containsKey(Attribute.TOTAL_SHARDS));
+        assertEquals("TOTAL_SHARDS value should match", 5, attributeMap.get(Attribute.TOTAL_SHARDS));
+        assertFalse("Should not contain unknown attribute", attributeMap.containsKey(null));
+    }
 }

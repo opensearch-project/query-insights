@@ -103,11 +103,15 @@ public enum Attribute {
      * Read an Attribute from a StreamInput
      *
      * @param in the StreamInput to read from
-     * @return Attribute
+     * @return Attribute, or null if unknown
      * @throws IOException IOException
      */
     static Attribute readFromStream(final StreamInput in) throws IOException {
-        return Attribute.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        try {
+            return Attribute.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**
@@ -203,6 +207,10 @@ public enum Attribute {
 
         for (int i = 0; i < size; i++) {
             Attribute key = readFromStream(in);
+            if (key == null) {
+                in.readGenericValue();
+                continue;
+            }
             Object value = readAttributeValue(in, key);
             map.put(key, value);
         }
