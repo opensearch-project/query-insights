@@ -9,11 +9,14 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.opensearch.action.search.SearchPhaseName;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
@@ -191,6 +194,98 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         String testValue = "test source string";
         SourceString sourceString = new SourceString(testValue);
         assertEquals("toString should return the wrapped value", testValue, sourceString.toString());
+    }
+
+    /**
+     * Test that all fields added to SearchQueryRecord code are properly mapped in top-queries-record.json.
+     * This test validates enum values to ensure mapping completeness independent of test data generation.
+     *
+     * This prevents mapping conflicts when users have custom index templates by ensuring all fields
+     * that can appear in SearchQueryRecord have explicit mappings defined.
+     */
+    @SuppressWarnings("unchecked")
+    public void testAllEnumFieldsAreMappedInIndexMapping() throws Exception {
+        // Load the mapping file
+        Map<String, Object> mapping = loadMappingFile();
+        Map<String, Object> properties = (Map<String, Object>) mapping.get("properties");
+        assertNotNull("Properties field missing in mapping", properties);
+
+        // Attributes that are explicitly excluded from serialization and don't need mapping
+        Set<String> excludedAttributes = new HashSet<>(Arrays.asList("top_n_query", "description"));
+
+        // Check ALL Attribute enum values are mapped (except excluded ones)
+        List<String> missingAttributes = new ArrayList<>();
+        for (Attribute attr : Attribute.values()) {
+            String fieldName = attr.toString(); // converts to lowercase
+            if (!excludedAttributes.contains(fieldName) && !properties.containsKey(fieldName)) {
+                missingAttributes.add("Attribute." + attr.name() + " (field: '" + fieldName + "')");
+            }
+        }
+        assertTrue("The following Attribute enum values are missing from mapping: " + missingAttributes, missingAttributes.isEmpty());
+
+        // Check ALL MetricType enum values have complete measurement mappings
+        assertTrue("Field 'measurements' is missing from mapping", properties.containsKey("measurements"));
+        Map<String, Object> measurementsMapping = (Map<String, Object>) properties.get("measurements");
+        Map<String, Object> measurementsProps = (Map<String, Object>) measurementsMapping.get("properties");
+        assertNotNull("measurements should have properties", measurementsProps);
+
+        List<String> missingMeasurements = new ArrayList<>();
+        for (MetricType metric : MetricType.values()) {
+            String metricName = metric.toString();
+            if (!measurementsProps.containsKey(metricName)) {
+                missingMeasurements.add("MetricType." + metric.name() + " (field: '" + metricName + "')");
+                continue;
+            }
+
+            // Verify each metric has number, count, aggregationType (from Measurement class)
+            Map<String, Object> metricMapping = (Map<String, Object>) measurementsProps.get(metricName);
+            Map<String, Object> metricProps = (Map<String, Object>) metricMapping.get("properties");
+            if (metricProps == null) {
+                missingMeasurements.add(metricName + " has no properties");
+                continue;
+            }
+
+            if (!metricProps.containsKey("number")) {
+                missingMeasurements.add(metricName + ".number");
+            }
+            if (!metricProps.containsKey("count")) {
+                missingMeasurements.add(metricName + ".count");
+            }
+            if (!metricProps.containsKey("aggregationType")) {
+                missingMeasurements.add(metricName + ".aggregationType");
+            }
+        }
+        assertTrue("The following measurement fields are missing from mapping: " + missingMeasurements, missingMeasurements.isEmpty());
+
+        // Check all SearchPhaseName enum values are in phase_latency_map
+        assertTrue("Field 'phase_latency_map' is missing from mapping", properties.containsKey("phase_latency_map"));
+        Map<String, Object> phaseLatencyMapping = (Map<String, Object>) properties.get("phase_latency_map");
+        Map<String, Object> phaseProperties = (Map<String, Object>) phaseLatencyMapping.get("properties");
+        assertNotNull("phase_latency_map should have properties", phaseProperties);
+
+        List<String> missingPhases = new ArrayList<>();
+        for (SearchPhaseName phase : SearchPhaseName.values()) {
+            String phaseName = phase.getName();
+            if (!phaseProperties.containsKey(phaseName)) {
+                missingPhases.add("SearchPhaseName." + phase.name() + " (field: '" + phaseName + "')");
+            }
+        }
+        assertTrue(
+            "The following SearchPhaseName enum values are missing from phase_latency_map: " + missingPhases,
+            missingPhases.isEmpty()
+        );
+    }
+
+    /**
+     * Load the mapping file from resources.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadMappingFile() throws IOException {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("mappings/top-queries-record.json")) {
+            assertNotNull("Mapping file mappings/top-queries-record.json not found", is);
+            XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, is);
+            return parser.map();
+        }
     }
 
     /**
