@@ -544,6 +544,9 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Set a reasonable window size instead of Long.MAX_VALUE to avoid window calculation issues
         topQueriesService.setWindowSize(TimeValue.timeValueHours(1));
 
+        // Force initialize windowStart
+        topQueriesService.consumeRecords(new ArrayList<>());
+
         // Use current time to ensure records are in the current window
         long currentTime = System.currentTimeMillis();
 
