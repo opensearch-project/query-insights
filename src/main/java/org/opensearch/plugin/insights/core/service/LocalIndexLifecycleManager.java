@@ -53,7 +53,7 @@ class LocalIndexLifecycleManager {
     LocalIndexLifecycleManager(final ThreadPool threadPool, final Client client, final int deleteAfter) {
         this.threadPool = threadPool;
         this.client = client;
-        setDeleteAfterAndDelete(deleteAfter);
+        setDeleteAfter(deleteAfter);
     }
 
     /**
@@ -62,6 +62,7 @@ class LocalIndexLifecycleManager {
      * @param deleteAfter the number of days after which Top N local indices should be deleted
      */
     void setDeleteAfter(final int deleteAfter) {
+        logger.info("Setting Query Insights delete after to [{}]", deleteAfter);
         this.deleteAfter = deleteAfter;
     }
 
@@ -80,7 +81,6 @@ class LocalIndexLifecycleManager {
      * @param deleteAfter the number of days after which Top N local indices should be deleted
      */
     void setDeleteAfterAndDelete(final int deleteAfter) {
-        logger.info("Setting Query Insights delete after to [{}]", deleteAfter);
         setDeleteAfter(deleteAfter);
 
         // Immediately delete all local indices when user sets value to '0'
