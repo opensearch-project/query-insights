@@ -116,23 +116,29 @@ class LocalIndexLifecycleManager {
      */
     void deleteExpiredTopNIndices() {
         threadPool.executor(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR).execute(() -> {
-            final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(IndicesOptions.strictExpand());
+            try {
+                final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(
+                    IndicesOptions.strictExpand()
+                );
 
-            client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
-                final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
-                final long startOfTodayUtcMillis = LocalDateTime.now(ZoneOffset.UTC)    // Today at 00:00 UTC
-                    .truncatedTo(ChronoUnit.DAYS)
-                    .toInstant(ZoneOffset.UTC)
-                    .toEpochMilli();
-                final long expirationMillisLong = startOfTodayUtcMillis - TimeUnit.DAYS.toMillis(getDeleteAfter());
-                for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
-                    String indexName = entry.getKey();
-                    if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() < expirationMillisLong) {
-                        // delete this index
-                        deleteSingleIndex(indexName, client);
+                client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
+                    final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
+                    final long startOfTodayUtcMillis = LocalDateTime.now(ZoneOffset.UTC)    // Today at 00:00 UTC
+                        .truncatedTo(ChronoUnit.DAYS)
+                        .toInstant(ZoneOffset.UTC)
+                        .toEpochMilli();
+                    final long expirationMillisLong = startOfTodayUtcMillis - TimeUnit.DAYS.toMillis(getDeleteAfter());
+                    for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
+                        String indexName = entry.getKey();
+                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() < expirationMillisLong) {
+                            // delete this index
+                            deleteSingleIndex(indexName, client);
+                        }
                     }
-                }
-            }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
+                }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
+            } catch (Exception exception) {
+                logger.error("Error while deleting expired top_queries-* indices: ", exception);
+            }
         });
     }
 

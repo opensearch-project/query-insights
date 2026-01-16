@@ -73,19 +73,6 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
     }
 
     /**
-     * Test get top queries when feature disabled
-     */
-    public void testGetTopQueriesWhenFeatureDisabled() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY);
-        TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
-        Assert.assertNotEquals(0, response.failures().size());
-        Assert.assertEquals(
-            "Cannot get top n queries for [latency] when it is not enabled.",
-            response.failures().get(0).getCause().getCause().getMessage()
-        );
-    }
-
-    /**
      * Test update top query record when feature enabled
      */
     public void testUpdateRecordWhenFeatureDisabledThenEnabled() throws ExecutionException, InterruptedException {
@@ -98,43 +85,29 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         ClusterHealthResponse health = client().admin().cluster().prepareHealth().setWaitForNodes("2").execute().actionGet();
         assertFalse(health.isTimedOut());
 
-        assertAcked(
-            prepareCreate("test").setSettings(Settings.builder().put("index.number_of_shards", 2).put("index.number_of_replicas", 2))
-        );
-        ensureStableCluster(2);
-        logger.info("--> creating indices for query insight testing");
-        for (int i = 0; i < 5; i++) {
-            IndexResponse response = client().prepareIndex("test_" + i).setId("" + i).setSource("field_" + i, "value_" + i).get();
-            assertEquals("CREATED", response.status().toString());
-        }
+        createTestIndex();
         // making search requests to get top queries
-        for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
-                .prepareSearch()
-                .setQuery(QueryBuilders.matchAllQuery())
-                .get();
-            assertEquals(searchResponse.getFailedShards(), 0);
-        }
+        makeSearchRequests();
 
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
-        Assert.assertNotEquals(0, response.failures().size());
-        Assert.assertEquals(
-            "Cannot get top n queries for [latency] when it is not enabled.",
-            response.failures().get(0).getCause().getCause().getMessage()
-        );
+        Assert.assertEquals(0, response.failures().size());
+        Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
+        Assert.assertEquals(0, response.getNodes().stream().mapToInt(o -> o.getTopQueriesRecord().size()).sum());
 
         ClusterUpdateSettingsRequest updateSettingsRequest = new ClusterUpdateSettingsRequest().persistentSettings(
             Settings.builder().put(TOP_N_LATENCY_QUERIES_ENABLED.getKey(), "true").build()
         );
         assertAcked(internalCluster().client().admin().cluster().updateSettings(updateSettingsRequest).get());
-        TopQueriesRequest request2 = new TopQueriesRequest(MetricType.LATENCY);
+
+        // making search requests to get top queries
+        makeSearchRequests();
+
+        TopQueriesRequest request2 = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response2 = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request2).actionGet();
         Assert.assertEquals(0, response2.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response2.getNodes().size());
-        for (int i = 0; i < TOTAL_NUMBER_OF_NODES; i++) {
-            Assert.assertEquals(0, response2.getNodes().get(i).getTopQueriesRecord().size());
-        }
+        Assert.assertEquals(TOTAL_SEARCH_REQUESTS, response2.getNodes().stream().mapToInt(o -> o.getTopQueriesRecord().size()).sum());
 
         internalCluster().stopAllNodes();
     }
@@ -144,7 +117,6 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
      */
     public void testGetTopQueriesWhenFeatureEnabled() throws InterruptedException {
         Settings commonSettings = Settings.builder()
-            .put(TOP_N_LATENCY_QUERIES_ENABLED.getKey(), "true")
             .put(TOP_N_LATENCY_QUERIES_SIZE.getKey(), "100")
             .put(TOP_N_LATENCY_QUERIES_WINDOW_SIZE.getKey(), "600s")
             .build();
@@ -156,26 +128,11 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         ClusterHealthResponse health = client().admin().cluster().prepareHealth().setWaitForNodes("2").execute().actionGet();
         assertFalse(health.isTimedOut());
 
-        assertAcked(
-            prepareCreate("test").setSettings(Settings.builder().put("index.number_of_shards", 2).put("index.number_of_replicas", 2))
-        );
-        ensureStableCluster(2);
-        logger.info("--> creating indices for query insight testing");
-        for (int i = 0; i < 5; i++) {
-            IndexResponse response = client().prepareIndex("test_" + i).setId("" + i).setSource("field_" + i, "value_" + i).get();
-            assertEquals("CREATED", response.status().toString());
-        }
+        createTestIndex();
         // making search requests to get top queries
-        for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
-                .prepareSearch()
-                .setQuery(QueryBuilders.matchAllQuery())
-                .get();
-            assertEquals(searchResponse.getFailedShards(), 0);
-        }
-        // Sleep to wait for queue drained to top queries store
-        Thread.sleep(6000);
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY);
+        makeSearchRequests();
+
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
@@ -189,7 +146,6 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
      */
     public void testGetTopQueriesWithSmallTopN() throws InterruptedException {
         Settings commonSettings = Settings.builder()
-            .put(TOP_N_LATENCY_QUERIES_ENABLED.getKey(), "true")
             .put(TOP_N_LATENCY_QUERIES_SIZE.getKey(), "1")
             .put(TOP_N_LATENCY_QUERIES_WINDOW_SIZE.getKey(), "600s")
             .build();
@@ -201,25 +157,11 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         ClusterHealthResponse health = client().admin().cluster().prepareHealth().setWaitForNodes("2").execute().actionGet();
         assertFalse(health.isTimedOut());
 
-        assertAcked(
-            prepareCreate("test").setSettings(Settings.builder().put("index.number_of_shards", 2).put("index.number_of_replicas", 2))
-        );
-        ensureStableCluster(2);
-        logger.info("--> creating indices for query insight testing");
-        for (int i = 0; i < 5; i++) {
-            IndexResponse response = client().prepareIndex("test_" + i).setId("" + i).setSource("field_" + i, "value_" + i).get();
-            assertEquals("CREATED", response.status().toString());
-        }
+        createTestIndex();
         // making search requests to get top queries
-        for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
-                .prepareSearch()
-                .setQuery(QueryBuilders.matchAllQuery())
-                .get();
-            assertEquals(searchResponse.getFailedShards(), 0);
-        }
-        Thread.sleep(6000);
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY);
+        makeSearchRequests();
+
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
@@ -245,6 +187,28 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         ClusterHealthResponse health = client().admin().cluster().prepareHealth().setWaitForNodes("2").execute().actionGet();
         assertFalse(health.isTimedOut());
 
+        createTestIndex();
+
+        // making search requests to get top queries
+        makeSearchRequests();
+
+        for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
+            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
+                .prepareSearch()
+                .setQuery(QueryBuilders.matchAllQuery())
+                .get();
+            assertEquals(searchResponse.getFailedShards(), 0);
+        }
+
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
+        Assert.assertEquals(0, response.failures().size());
+        Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
+
+        internalCluster().stopAllNodes();
+    }
+
+    private void createTestIndex() {
         assertAcked(
             prepareCreate("test").setSettings(Settings.builder().put("index.number_of_shards", 2).put("index.number_of_replicas", 2))
         );
@@ -254,20 +218,15 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
             IndexResponse response = client().prepareIndex("test_" + i).setId("" + i).setSource("field_" + i, "value_" + i).get();
             assertEquals("CREATED", response.status().toString());
         }
+    }
+
+    private void makeSearchRequests() throws InterruptedException {
         // making search requests to get top queries
         for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
-                .prepareSearch()
-                .setQuery(QueryBuilders.matchAllQuery())
-                .get();
+            SearchResponse searchResponse = internalCluster().client().prepareSearch().setQuery(QueryBuilders.matchAllQuery()).get();
             assertEquals(searchResponse.getFailedShards(), 0);
         }
-
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY);
-        TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
-        Assert.assertEquals(0, response.failures().size());
-        Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
+        // Sleep to wait for queue drained to top queries store
         Thread.sleep(6000);
-        internalCluster().stopAllNodes();
     }
 }
