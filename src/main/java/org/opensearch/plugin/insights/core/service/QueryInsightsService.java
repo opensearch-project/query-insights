@@ -219,6 +219,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set the maximum source length before truncation
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(int maxSourceLength) {
+        // Update all TopQueriesService instances
+        for (TopQueriesService topQueriesService : topQueriesServices.values()) {
+            topQueriesService.setMaxSourceLength(maxSourceLength);
+        }
+    }
+
+    /**
      * Drain the queryRecordsQueue into internal stores and services
      */
     public void drainRecords() {

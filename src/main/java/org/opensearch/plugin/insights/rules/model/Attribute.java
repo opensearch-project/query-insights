@@ -97,7 +97,12 @@ public enum Attribute {
     /**
      * The roles of the user who initiated the search query.
      */
-    USER_ROLES;
+    USER_ROLES,
+
+    /**
+     * Indicates if the source was truncated due to length limits.
+     */
+    SOURCE_TRUNCATED;
 
     /**
      * Read an Attribute from a StreamInput
