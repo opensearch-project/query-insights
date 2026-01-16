@@ -166,6 +166,7 @@ final public class QueryInsightsTestUtils {
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
             attributes.put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
+            attributes.put(Attribute.SOURCE_TRUNCATED, false);
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
