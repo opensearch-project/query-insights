@@ -324,9 +324,11 @@ tasks.named("integTest").configure {
   it.dependsOn(project.tasks.named("bundlePlugin"))
 }
 
-testClusters.integTest {
-    testDistribution = "ARCHIVE"
+testClusters.all {
+  testDistribution = "ARCHIVE"
+  if (name != "yamlRestTest") {
     numberOfNodes = 2
+
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
 
@@ -344,6 +346,7 @@ testClusters.integTest {
     } else {
       logger.warn("WLM plugin not found at ${wlmPluginFile}")
     }
+  }
 }
 
 run {
