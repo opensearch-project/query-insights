@@ -100,9 +100,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings properly handles latency metric settings.
+     * Test that processSettings properly handles latency metric settings.
      */
-    public void testMapSettingsWithLatencyMetric() {
+    public void testProcessSettingsWithLatencyMetric() {
         Map<String, Object> settings = new HashMap<>();
         Map<String, Object> latencySettings = new HashMap<>();
         latencySettings.put("enabled", true);
@@ -112,7 +112,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -123,9 +123,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings properly handles cpu and memory metric settings.
+     * Test that processSettings properly handles cpu and memory metric settings.
      */
-    public void testMapSettingsWithCpuAndMemoryMetrics() {
+    public void testProcessSettingsWithCpuAndMemoryMetrics() {
         Map<String, Object> settings = new HashMap<>();
 
         Map<String, Object> cpuSettings = new HashMap<>();
@@ -140,7 +140,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -152,9 +152,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings properly handles grouping settings.
+     * Test that processSettings properly handles grouping settings.
      */
-    public void testMapSettingsWithGroupingSettings() {
+    public void testProcessSettingsWithGroupingSettings() {
         Map<String, Object> settings = new HashMap<>();
         Map<String, Object> groupingSettings = new HashMap<>();
         groupingSettings.put("group_by", "similarity");
@@ -162,7 +162,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -170,9 +170,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings properly handles exporter settings.
+     * Test that processSettings properly handles exporter settings.
      */
-    public void testMapSettingsWithExporterSettings() {
+    public void testProcessSettingsWithExporterSettings() {
         Map<String, Object> settings = new HashMap<>();
         Map<String, Object> exporterSettings = new HashMap<>();
         exporterSettings.put("type", "local_index");
@@ -181,7 +181,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -190,34 +190,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings properly handles nested persistent settings structure.
+     * Test that processSettings handles all three metric types correctly.
      */
-    public void testMapSettingsWithNestedPersistentStructure() {
-        Map<String, Object> settings = new HashMap<>();
-        Map<String, Object> persistent = new HashMap<>();
-
-        Map<String, Object> latencySettings = new HashMap<>();
-        latencySettings.put("enabled", true);
-        latencySettings.put("top_n_size", 15);
-        persistent.put("latency", latencySettings);
-
-        settings.put("persistent", persistent);
-
-        Settings.Builder builder = Settings.builder();
-
-        action.mapSettings(settings, builder);
-
-        Settings result = builder.build();
-
-        // Should correctly extract from nested structure
-        assertEquals("true", result.get("search.insights.top_queries.latency.enabled"));
-        assertEquals("15", result.get("search.insights.top_queries.latency.top_n_size"));
-    }
-
-    /**
-     * Test that mapSettings handles all three metric types correctly.
-     */
-    public void testMapSettingsWithAllMetricTypes() {
+    public void testProcessSettingsWithAllMetricTypes() {
         Map<String, Object> settings = new HashMap<>();
 
         Map<String, Object> latencySettings = new HashMap<>();
@@ -240,7 +215,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -259,9 +234,9 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
     }
 
     /**
-     * Test that mapSettings handles mixed settings (metrics, grouping, exporter).
+     * Test that processSettings handles mixed settings (metrics, grouping, exporter).
      */
-    public void testMapSettingsWithComplexMixedSettings() {
+    public void testProcessSettingsWithComplexMixedSettings() {
         Map<String, Object> settings = new HashMap<>();
 
         // Metric settings
@@ -283,7 +258,7 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
 
         Settings.Builder builder = Settings.builder();
 
-        action.mapSettings(settings, builder);
+        action.processSettings(settings, builder);
 
         Settings result = builder.build();
 
@@ -408,4 +383,118 @@ public class TransportUpdateQueryInsightsSettingsActionTests extends OpenSearchT
         // Verify that updateSettings was called on clusterAdminClient
         verify(clusterAdminClient).updateSettings(any(ClusterUpdateSettingsRequest.class), any());
     }
+
+    /**
+     * Test that doExecute writes settings to both persistent and transient.
+     * This ensures settings take immediate effect (transient) and survive restarts (persistent).
+     */
+    public void testDoExecuteWritesToBothPersistentAndTransient() {
+        Map<String, Object> settings = new HashMap<>();
+        Map<String, Object> latencySettings = new HashMap<>();
+        latencySettings.put("enabled", true);
+        latencySettings.put("top_n_size", 10);
+        settings.put("latency", latencySettings);
+
+        UpdateQueryInsightsSettingsRequest request = new UpdateQueryInsightsSettingsRequest(settings);
+
+        @SuppressWarnings("unchecked")
+        ActionListener<UpdateQueryInsightsSettingsResponse> listener = mock(ActionListener.class);
+
+        // Capture the ClusterUpdateSettingsRequest
+        org.mockito.ArgumentCaptor<ClusterUpdateSettingsRequest> requestCaptor = org.mockito.ArgumentCaptor.forClass(
+            ClusterUpdateSettingsRequest.class
+        );
+
+        action.doExecute(null, request, listener);
+
+        // Verify updateSettings was called and capture the request
+        verify(clusterAdminClient).updateSettings(requestCaptor.capture(), any());
+
+        ClusterUpdateSettingsRequest capturedRequest = requestCaptor.getValue();
+
+        // Verify both persistent and transient settings are set with the same values
+        Settings persistentSettings = capturedRequest.persistentSettings();
+        Settings transientSettings = capturedRequest.transientSettings();
+
+        // Check persistent settings
+        assertEquals("true", persistentSettings.get("search.insights.top_queries.latency.enabled"));
+        assertEquals("10", persistentSettings.get("search.insights.top_queries.latency.top_n_size"));
+
+        // Check transient settings - should be identical to persistent
+        assertEquals("true", transientSettings.get("search.insights.top_queries.latency.enabled"));
+        assertEquals("10", transientSettings.get("search.insights.top_queries.latency.top_n_size"));
+    }
+
+    /**
+     * Test that arbitrary cluster settings are ignored by the mapping logic.
+     * This ensures the API can only modify Query Insights settings.
+     */
+    public void testProcessSettingsIgnoresArbitraryClusterSettings() {
+        Map<String, Object> settings = new HashMap<>();
+
+        // Add Query Insights settings
+        Map<String, Object> latencySettings = new HashMap<>();
+        latencySettings.put("enabled", true);
+        settings.put("latency", latencySettings);
+
+        // Try to inject arbitrary cluster settings
+        settings.put("cluster.name", "malicious-cluster");
+        settings.put("node.name", "malicious-node");
+        settings.put("cluster.routing.allocation.enable", "none");
+
+        Settings.Builder builder = Settings.builder();
+
+        action.processSettings(settings, builder);
+
+        Settings result = builder.build();
+
+        // Verify Query Insights settings are mapped
+        assertEquals("true", result.get("search.insights.top_queries.latency.enabled"));
+
+        // Verify arbitrary settings are NOT mapped
+        assertNull(result.get("cluster.name"));
+        assertNull(result.get("node.name"));
+        assertNull(result.get("cluster.routing.allocation.enable"));
+
+        // Verify only Query Insights settings exist
+        for (String key : result.keySet()) {
+            assertTrue("Only Query Insights settings should be present, found: " + key, key.startsWith("search.insights.top_queries."));
+        }
+    }
+
+    /**
+     * Test that processSettings only processes known Query Insights setting categories.
+     */
+    public void testProcessSettingsOnlyHandlesKnownCategories() {
+        Map<String, Object> settings = new HashMap<>();
+
+        // Add valid Query Insights settings
+        Map<String, Object> cpuSettings = new HashMap<>();
+        cpuSettings.put("enabled", true);
+        settings.put("cpu", cpuSettings);
+
+        // Add unknown/arbitrary categories
+        settings.put("unknown_category", Map.of("some_key", "some_value"));
+        settings.put("malicious_setting", Map.of("enabled", true));
+        settings.put("cluster", Map.of("name", "hacked"));
+
+        Settings.Builder builder = Settings.builder();
+
+        action.processSettings(settings, builder);
+
+        Settings result = builder.build();
+
+        // Verify only the CPU setting was processed
+        assertEquals("true", result.get("search.insights.top_queries.cpu.enabled"));
+
+        // Verify unknown categories were ignored
+        assertNull(result.get("unknown_category.some_key"));
+        assertNull(result.get("malicious_setting.enabled"));
+        assertNull(result.get("cluster.name"));
+
+        // Verify result only contains Query Insights settings
+        assertEquals(1, result.size());
+        assertTrue(result.keySet().iterator().next().startsWith("search.insights.top_queries."));
+    }
+
 }

@@ -57,15 +57,18 @@ public class TransportUpdateQueryInsightsSettingsAction extends HandledTransport
     ) {
         try {
             // Build cluster settings update request with ONLY Query Insights settings
-            final Settings.Builder persistentSettings = Settings.builder();
+            final Settings.Builder settingsBuilder = Settings.builder();
             final Map<String, Object> requestedSettings = request.getSettings();
 
             // Map the simplified keys to actual setting keys
-            mapSettings(requestedSettings, persistentSettings);
+            processSettings(requestedSettings, settingsBuilder);
 
-            final ClusterUpdateSettingsRequest clusterRequest = new ClusterUpdateSettingsRequest().persistentSettings(
-                persistentSettings.build()
-            );
+            // Write to both persistent and transient settings
+            // Persistent: survive cluster restart
+            // Transient: take immediate effect (highest precedence)
+            final Settings newSettings = settingsBuilder.build();
+            final ClusterUpdateSettingsRequest clusterRequest = new ClusterUpdateSettingsRequest().persistentSettings(newSettings)
+                .transientSettings(newSettings);
 
             client.admin()
                 .cluster()
@@ -80,23 +83,6 @@ public class TransportUpdateQueryInsightsSettingsAction extends HandledTransport
                 );
         } catch (Exception e) {
             listener.onFailure(e);
-        }
-    }
-
-    /**
-     * Map simplified setting keys to actual cluster setting keys
-     *
-     * @param requestedSettings The settings from the request
-     * @param persistentSettings The builder to add mapped settings to
-     */
-    @SuppressWarnings("unchecked")
-    void mapSettings(final Map<String, Object> requestedSettings, final Settings.Builder persistentSettings) {
-        // Handle nested settings structure
-        if (requestedSettings.containsKey("persistent")) {
-            Map<String, Object> persistent = (Map<String, Object>) requestedSettings.get("persistent");
-            processSettings(persistent, persistentSettings);
-        } else {
-            processSettings(requestedSettings, persistentSettings);
         }
     }
 

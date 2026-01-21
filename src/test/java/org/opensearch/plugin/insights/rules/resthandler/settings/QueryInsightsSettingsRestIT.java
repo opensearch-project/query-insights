@@ -329,6 +329,126 @@ public class QueryInsightsSettingsRestIT extends QueryInsightsRestTestCase {
     }
 
     /**
+     * Test that PUT /_insights/settings overwrites transient settings for immediate effect.
+     * This verifies that settings updates take immediate effect even when transient overrides exist.
+     */
+    public void testUpdateOverwritesTransientForImmediateEffect() throws IOException {
+        // Set transient override via _cluster/settings to false
+        Request transientRequest = new Request("PUT", "/_cluster/settings");
+        transientRequest.setJsonEntity(
+            "{"
+                + "\"transient\": {"
+                + "\""
+                + QueryInsightsSettings.TOP_N_LATENCY_QUERIES_ENABLED.getKey()
+                + "\": false,"
+                + "\""
+                + QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.getKey()
+                + "\": 5"
+                + "}"
+                + "}"
+        );
+        client().performRequest(transientRequest);
+
+        // Verify transient override is in effect
+        Request getRequest1 = new Request("GET", "/_insights/settings/latency");
+        Response getResponse1 = client().performRequest(getRequest1);
+        Map<String, Object> responseMap1 = parseResponseMap(getResponse1);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> persistentSettings1 = (Map<String, Object>) responseMap1.get("persistent");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> latencySettings1 = (Map<String, Object>) persistentSettings1.get("latency");
+        assertEquals(false, latencySettings1.get("enabled"));
+        assertEquals(5, latencySettings1.get("top_n_size"));
+
+        // Update via _insights/settings API to true
+        Request updateRequest = new Request("PUT", "/_insights/settings");
+        updateRequest.setJsonEntity("{" + "\"latency\": {" + "  \"enabled\": true," + "  \"top_n_size\": 15" + "}" + "}");
+        Response updateResponse = client().performRequest(updateRequest);
+        assertEquals(200, updateResponse.getStatusLine().getStatusCode());
+
+        // Verify the update took immediate effect (overwrote transient)
+        Request getRequest2 = new Request("GET", "/_insights/settings/latency");
+        Response getResponse2 = client().performRequest(getRequest2);
+        Map<String, Object> responseMap2 = parseResponseMap(getResponse2);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> persistentSettings2 = (Map<String, Object>) responseMap2.get("persistent");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> latencySettings2 = (Map<String, Object>) persistentSettings2.get("latency");
+
+        // Should now return the updated values
+        assertEquals(true, latencySettings2.get("enabled"));
+        assertEquals(15, latencySettings2.get("top_n_size"));
+    }
+
+    /**
+     * Test that arbitrary cluster settings cannot be modified through the Query Insights settings API.
+     * This is a security test to ensure the API only accepts Query Insights settings.
+     */
+    public void testCannotModifyArbitraryClusterSettings() throws IOException {
+        // Get current cluster name to verify it doesn't change
+        Request getClusterInfoRequest = new Request("GET", "/");
+        Response clusterInfoResponse = client().performRequest(getClusterInfoRequest);
+        Map<String, Object> clusterInfo = parseResponseMap(clusterInfoResponse);
+        String originalClusterName = clusterInfo.get("cluster_name").toString();
+
+        // Try to inject arbitrary cluster settings through Query Insights API
+        Request request = new Request("PUT", "/_insights/settings");
+        request.setJsonEntity("{" + "\"latency\": {" + "  \"enabled\": true," + "  \"top_n_size\": 20" + "},"
+        // Attempt to inject arbitrary settings
+            + "\"cluster.name\": \"hacked-cluster\","
+            + "\"node.name\": \"hacked-node\","
+            + "\"cluster.routing.allocation.enable\": \"none\","
+            + "\"http.port\": 9999"
+            + "}");
+
+        Response response = client().performRequest(request);
+        assertEquals(200, response.getStatusLine().getStatusCode());
+
+        // Verify Query Insights settings were updated
+        Request getQueryInsightsSettings = new Request("GET", "/_insights/settings/latency");
+        Response getResponse = client().performRequest(getQueryInsightsSettings);
+        Map<String, Object> responseMap = parseResponseMap(getResponse);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> persistentSettings = (Map<String, Object>) responseMap.get("persistent");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> latencySettings = (Map<String, Object>) persistentSettings.get("latency");
+        assertEquals(true, latencySettings.get("enabled"));
+        assertEquals(20, latencySettings.get("top_n_size"));
+
+        // Verify cluster settings were NOT modified
+        Request getClusterSettingsRequest = new Request("GET", "/_cluster/settings");
+        getClusterSettingsRequest.addParameter("include_defaults", "false");
+        Response clusterSettingsResponse = client().performRequest(getClusterSettingsRequest);
+        Map<String, Object> clusterSettings = parseResponseMap(clusterSettingsResponse);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> persistentClusterSettings = (Map<String, Object>) clusterSettings.get("persistent");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> transientClusterSettings = (Map<String, Object>) clusterSettings.get("transient");
+
+        // Verify the injected settings don't exist in persistent or transient
+        assertFalse(persistentClusterSettings.containsKey("cluster.name"));
+        assertFalse(persistentClusterSettings.containsKey("node.name"));
+        assertFalse(persistentClusterSettings.containsKey("cluster.routing.allocation.enable"));
+        assertFalse(persistentClusterSettings.containsKey("http.port"));
+
+        if (transientClusterSettings != null) {
+            assertFalse(transientClusterSettings.containsKey("cluster.name"));
+            assertFalse(transientClusterSettings.containsKey("node.name"));
+            assertFalse(transientClusterSettings.containsKey("cluster.routing.allocation.enable"));
+            assertFalse(transientClusterSettings.containsKey("http.port"));
+        }
+
+        // Verify cluster name hasn't changed
+        Response clusterInfoResponse2 = client().performRequest(getClusterInfoRequest);
+        Map<String, Object> clusterInfo2 = parseResponseMap(clusterInfoResponse2);
+        assertEquals(originalClusterName, clusterInfo2.get("cluster_name").toString());
+    }
+
+    /**
      * Test invalid metric type (currently no validation, returns empty for unknown metrics)
      */
     public void testGetSettingsWithInvalidMetricType() throws IOException {
@@ -405,11 +525,20 @@ public class QueryInsightsSettingsRestIT extends QueryInsightsRestTestCase {
         updateRequest.setJsonEntity("{" + "\"latency\": {" + "  \"enabled\": true," + "  \"top_n_size\": 50" + "}" + "}");
         client().performRequest(updateRequest);
 
-        // Reset by setting to null
+        // Reset by setting both persistent and transient to null
+        // Need to reset both because PUT /_insights/settings now writes to both
         Request resetRequest = new Request("PUT", "/_cluster/settings");
         resetRequest.setJsonEntity(
             "{"
                 + "\"persistent\": {"
+                + "\""
+                + QueryInsightsSettings.TOP_N_LATENCY_QUERIES_ENABLED.getKey()
+                + "\": null,"
+                + "\""
+                + QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.getKey()
+                + "\": null"
+                + "},"
+                + "\"transient\": {"
                 + "\""
                 + QueryInsightsSettings.TOP_N_LATENCY_QUERIES_ENABLED.getKey()
                 + "\": null,"
