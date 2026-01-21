@@ -29,6 +29,7 @@ import org.opensearch.action.admin.cluster.node.info.PluginsAndModules;
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest;
 import org.opensearch.action.index.IndexResponse;
 import org.opensearch.action.search.SearchResponse;
+import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -87,7 +88,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
 
         createTestIndex();
         // making search requests to get top queries
-        makeSearchRequests();
+        makeSearchRequests(nodes);
 
         TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
@@ -101,7 +102,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         assertAcked(internalCluster().client().admin().cluster().updateSettings(updateSettingsRequest).get());
 
         // making search requests to get top queries
-        makeSearchRequests();
+        makeSearchRequests(nodes);
 
         TopQueriesRequest request2 = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response2 = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request2).actionGet();
@@ -130,7 +131,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
 
         createTestIndex();
         // making search requests to get top queries
-        makeSearchRequests();
+        makeSearchRequests(nodes);
 
         TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
@@ -159,7 +160,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
 
         createTestIndex();
         // making search requests to get top queries
-        makeSearchRequests();
+        makeSearchRequests(nodes);
 
         TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
@@ -190,7 +191,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         createTestIndex();
 
         // making search requests to get top queries
-        makeSearchRequests();
+        makeSearchRequests(nodes);
 
         for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
             SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
@@ -215,15 +216,22 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         ensureStableCluster(2);
         logger.info("--> creating indices for query insight testing");
         for (int i = 0; i < 5; i++) {
-            IndexResponse response = client().prepareIndex("test_" + i).setId("" + i).setSource("field_" + i, "value_" + i).get();
+            IndexResponse response = client().prepareIndex("test_" + i)
+                .setId("" + i)
+                .setSource("field_" + i, "value_" + i)
+                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                .get();
             assertEquals("CREATED", response.status().toString());
         }
     }
 
-    private void makeSearchRequests() throws InterruptedException {
+    private void makeSearchRequests(List<String> nodes) throws InterruptedException {
         // making search requests to get top queries
         for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client().prepareSearch().setQuery(QueryBuilders.matchAllQuery()).get();
+            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
+                .prepareSearch()
+                .setQuery(QueryBuilders.matchAllQuery())
+                .get();
             assertEquals(searchResponse.getFailedShards(), 0);
         }
         // Sleep to wait for queue drained to top queries store
