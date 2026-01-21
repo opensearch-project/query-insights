@@ -110,6 +110,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
+                QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
                 QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
             ),
             queryInsightsPlugin.getSettings()
@@ -132,7 +133,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             metricsRegistry
         );
-        assertEquals(3, components.size());
+        assertEquals(2, components.size());
         assertTrue(components.get(0) instanceof QueryInsightsService);
         assertTrue(components.get(1) instanceof QueryInsightsListener);
     }

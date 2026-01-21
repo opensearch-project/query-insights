@@ -22,12 +22,12 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 public class LiveQueriesAPIExamplesIT extends QueryInsightsRestTestCase {
 
     /**
-     * Test the exact API call: GET /_insights/live_queries?cached=true
+     * Test the exact API call: GET /_insights/live_queries
      * Should return only live queries
      */
     @SuppressWarnings("unchecked")
     public void testLiveQueriesOnlyCached() throws IOException {
-        Request request = new Request("GET", "/_insights/live_queries?cached=true");
+        Request request = new Request("GET", "/_insights/live_queries");
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
 
@@ -47,12 +47,12 @@ public class LiveQueriesAPIExamplesIT extends QueryInsightsRestTestCase {
     }
 
     /**
-     * Test the exact API call: GET /_insights/live_queries?cached=true&include_finished=true
+     * Test the exact API call: GET /_insights/live_queries?use_finished_cache=true
      * Should return both live and finished queries
      */
     @SuppressWarnings("unchecked")
     public void testLiveAndFinishedQueriesCached() throws IOException {
-        Request request = new Request("GET", "/_insights/live_queries?cached=true&include_finished=true");
+        Request request = new Request("GET", "/_insights/live_queries?use_finished_cache=true");
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
 
@@ -80,12 +80,12 @@ public class LiveQueriesAPIExamplesIT extends QueryInsightsRestTestCase {
     }
 
     /**
-     * Test the exact API call: GET /_insights/live_queries?include_finished=true
+     * Test the exact API call: GET /_insights/live_queries?use_finished_cache=true
      * Should return both live and finished queries without cache
      */
     @SuppressWarnings("unchecked")
     public void testLiveAndFinishedQueriesNonCached() throws IOException {
-        Request request = new Request("GET", "/_insights/live_queries?include_finished=true");
+        Request request = new Request("GET", "/_insights/live_queries?use_finished_cache=true");
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
 
@@ -206,14 +206,13 @@ public class LiveQueriesAPIExamplesIT extends QueryInsightsRestTestCase {
     @SuppressWarnings("unchecked")
     public void testValidParameterCombinations() throws IOException {
         String[] validCombinations = {
-            "?cached=true",
-            "?include_finished=true",
-            "?cached=false&include_finished=false",
-            "?cached=true&include_finished=true",
-            "?cached=true&include_finished=true&verbose=true",
-            "?cached=true&include_finished=true&sort=cpu&size=5",
+            "",
+            "?use_finished_cache=true",
+            "?use_finished_cache=false",
+            "?use_finished_cache=true&verbose=true",
+            "?use_finished_cache=true&sort=cpu&size=5",
             "?wlmGroupId=DEFAULT_WORKLOAD_GROUP",
-            "?cached=true&wlmGroupId=DEFAULT_WORKLOAD_GROUP&include_finished=true" };
+            "?wlmGroupId=DEFAULT_WORKLOAD_GROUP&use_finished_cache=true" };
 
         for (String params : validCombinations) {
             Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + params);
@@ -224,7 +223,7 @@ public class LiveQueriesAPIExamplesIT extends QueryInsightsRestTestCase {
             assertTrue("Response should contain live_queries for params: " + params, responseMap.containsKey("live_queries"));
 
             // Check if finished_queries should be present
-            boolean shouldHaveFinished = params.contains("include_finished=true");
+            boolean shouldHaveFinished = params.contains("use_finished_cache=true");
             assertEquals(
                 "Finished queries presence for params: " + params,
                 shouldHaveFinished,

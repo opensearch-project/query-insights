@@ -309,7 +309,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, null, false, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, null, false);
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo highCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000L, "high", 200L, 200L);

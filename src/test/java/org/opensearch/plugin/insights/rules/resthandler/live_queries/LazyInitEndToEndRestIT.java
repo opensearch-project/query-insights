@@ -27,7 +27,7 @@ public class LazyInitEndToEndRestIT extends QueryInsightsRestTestCase {
         client().performRequest(createIndex);
 
         // Enable finished queries listener
-        Request enableRequest = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?include_finished=true");
+        Request enableRequest = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?use_finished_cache=true");
         client().performRequest(enableRequest);
         Thread.sleep(500);
 
@@ -43,7 +43,7 @@ public class LazyInitEndToEndRestIT extends QueryInsightsRestTestCase {
         boolean hasFinishedQueries = false;
         for (int i = 0; i < 3; i++) {
             Response response = client().performRequest(
-                new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?cached=true&include_finished=true")
+                new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?use_finished_cache=true")
             );
             Map<String, Object> responseMap = entityAsMap(response);
             hasFinishedQueries = !((List<?>) responseMap.get("finished_queries")).isEmpty();
@@ -52,17 +52,13 @@ public class LazyInitEndToEndRestIT extends QueryInsightsRestTestCase {
         }
         assertTrue("Should have finished queries after search", hasFinishedQueries);
 
-        // Do searches for 5 minutes and 5 seconds (no API calls to avoid keeping cache active)
-        long endTime = System.currentTimeMillis() + 305000; // 5 minutes + 5 seconds
-        while (System.currentTimeMillis() < endTime) {
-            Request searchRequest2 = new Request("GET", "/test-index/_search");
-            searchRequest2.setJsonEntity("{\"query\":{\"match_all\":{}}}");
-            client().performRequest(searchRequest2);
-        }
+        // Wait idle for 5 minutes and 10 seconds (no API calls to keep cache active)
+        // Idle check runs every 1 minute, so we need to wait for at least one check cycle after timeout
+        Thread.sleep(310000); // 5 minutes + 10 seconds
 
         // Check for finished queries (should be empty due to cache timeout)
         Response response2 = client().performRequest(
-            new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?cached=true&include_finished=true")
+            new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?use_finished_cache=true")
         );
         Map<String, Object> responseMap2 = entityAsMap(response2);
         boolean hasFinishedQueries2 = !((List<?>) responseMap2.get("finished_queries")).isEmpty();

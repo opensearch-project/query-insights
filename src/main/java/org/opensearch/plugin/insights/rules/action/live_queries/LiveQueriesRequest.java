@@ -30,8 +30,7 @@ public class LiveQueriesRequest extends ActionRequest {
     private final String[] nodeIds;
     private String wlmGroupId;
     private String taskId;
-    private final boolean cached;
-    private final boolean includeFinished;
+    private final boolean useFinishedCache;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -50,11 +49,9 @@ public class LiveQueriesRequest extends ActionRequest {
         }
         if (in.getVersion().onOrAfter(Version.V_3_5_0)) {
             this.taskId = in.readOptionalString();
-            this.cached = in.readBoolean();
-            this.includeFinished = in.readBoolean();
+            this.useFinishedCache = in.readBoolean();
         } else {
-            this.cached = false;
-            this.includeFinished = false;
+            this.useFinishedCache = false;
         }
     }
 
@@ -74,8 +71,7 @@ public class LiveQueriesRequest extends ActionRequest {
         final String[] nodeIds,
         String wlmGroupId,
         String taskId,
-        boolean cached,
-        boolean includeFinished
+        boolean useFinishedCache
     ) {
         this.verbose = verbose;
         this.sortBy = sortBy;
@@ -83,8 +79,7 @@ public class LiveQueriesRequest extends ActionRequest {
         this.nodeIds = nodeIds;
         this.wlmGroupId = wlmGroupId;
         this.taskId = taskId;
-        this.cached = cached;
-        this.includeFinished = includeFinished;
+        this.useFinishedCache = useFinishedCache;
     }
 
     /**
@@ -93,7 +88,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds the node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final String... nodeIds) {
-        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, null, false, false);
+        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, null, false);
     }
 
     /**
@@ -143,19 +138,11 @@ public class LiveQueriesRequest extends ActionRequest {
     }
 
     /**
-     * Get whether to use cached results
-     * @return boolean indicating whether to use cached results
+     * Get whether to use finished queries cache
+     * @return boolean indicating whether to use finished queries cache
      */
-    public boolean isCached() {
-        return cached;
-    }
-
-    /**
-     * Get whether to include finished queries
-     * @return boolean indicating whether to include finished queries
-     */
-    public boolean isIncludeFinished() {
-        return includeFinished;
+    public boolean isUseFinishedCache() {
+        return useFinishedCache;
     }
 
     @Override
@@ -170,8 +157,7 @@ public class LiveQueriesRequest extends ActionRequest {
         }
         if (out.getVersion().onOrAfter(Version.V_3_5_0)) {
             out.writeOptionalString(taskId);
-            out.writeBoolean(cached);
-            out.writeBoolean(includeFinished);
+            out.writeBoolean(useFinishedCache);
         }
     }
 

@@ -32,7 +32,7 @@ public class CacheIdleTimeoutRestIT extends QueryInsightsRestTestCase {
 
     public void testFinishedCacheStartsOnAccess() throws IOException {
         // Access finished queries to start cache
-        Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?include_finished=true");
+        Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?use_finished_cache=true");
         Response response = client().performRequest(request);
         assertEquals(200, response.getStatusLine().getStatusCode());
 

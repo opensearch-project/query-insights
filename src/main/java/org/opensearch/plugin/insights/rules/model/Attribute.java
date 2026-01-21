@@ -100,11 +100,6 @@ public enum Attribute {
     USER_ROLES,
 
     /**
-     * The task ID associated with the search query.
-     */
-    TASK_ID,
-
-    /**
      * Indicates if the source was truncated due to length limits.
      */
     SOURCE_TRUNCATED;

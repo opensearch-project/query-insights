@@ -44,6 +44,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -72,7 +73,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final PrincipalExtractor principalExtractor;
-    private static final ThreadLocal<String> recordIdThreadLocal = new ThreadLocal<>();
 
     /**
      * Constructor for QueryInsightsListener
@@ -182,6 +182,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
+
+        // Setting for live queries cache idle timeout
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
+                v -> this.setLiveQueriesCacheIdleTimeout(v.millis())
+            );
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -259,27 +266,25 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        String recordId = java.util.UUID.randomUUID().toString();
-        recordIdThreadLocal.set(recordId);
-        try {
+        String recordId = queryInsightsService.isTopNFeatureEnabled() ? java.util.UUID.randomUUID().toString() : null;
+        if (queryInsightsService.isTopNFeatureEnabled()) {
             constructSearchQueryRecord(context, searchRequestContext, recordId);
-        } finally {
-            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
-                recordIdThreadLocal.remove();
-            }
+        }
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache != null) {
+            cache.captureQuery(context, searchRequestContext, recordId);
         }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        String recordId = java.util.UUID.randomUUID().toString();
-        recordIdThreadLocal.set(recordId);
-        try {
+        String recordId = queryInsightsService.isTopNFeatureEnabled() ? java.util.UUID.randomUUID().toString() : null;
+        if (queryInsightsService.isTopNFeatureEnabled()) {
             constructSearchQueryRecord(context, searchRequestContext, recordId);
-        } finally {
-            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
-                recordIdThreadLocal.remove();
-            }
+        }
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache != null) {
+            cache.captureQuery(context, searchRequestContext, recordId);
         }
     }
 
@@ -444,12 +449,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         }
     }
 
-    public static String getRecordId() {
-        return recordIdThreadLocal.get();
+    private void setLiveQueriesCacheIdleTimeout(long idleTimeoutMs) {
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache != null) {
+            cache.setIdleTimeout(idleTimeoutMs);
+        }
     }
-
-    public static void removeRecordId() {
-        recordIdThreadLocal.remove();
-    }
-
 }
