@@ -23,7 +23,6 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
-import org.opensearch.plugin.insights.core.service.LiveQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
@@ -68,34 +67,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
         // If cached=true, read directly from cache without ListTasks
         if (request.isCached()) {
-            try {
-                LiveQueriesCache liveCache = queryInsightsService.getLiveQueriesCache();
-                List<SearchQueryRecord> liveRecords = liveCache.getCurrentQueries();
-
-                List<SearchQueryRecord> finishedRecords = new ArrayList<>();
-                if (request.isIncludeFinished()) {
-                    FinishedQueriesCache finishedCache = queryInsightsService.getFinishedQueriesCacheForAPI();
-                    if (finishedCache != null) {
-                        finishedRecords.addAll(finishedCache.getFinishedQueries(true));
-                    }
-                }
-
-                // Sort and limit results
-                List<SearchQueryRecord> finalLiveRecords = liveRecords.stream()
-                    .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
-                    .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
-                    .toList();
-
-                List<SearchQueryRecord> finalFinishedRecords = finishedRecords.stream()
-                    .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
-                    .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
-                    .toList();
-
-                listener.onResponse(new LiveQueriesResponse(finalLiveRecords, finalFinishedRecords, request.isIncludeFinished()));
-            } catch (Exception ex) {
-                logger.error("Failed to retrieve cached queries", ex);
-                listener.onFailure(ex);
-            }
+            listener.onFailure(new UnsupportedOperationException("Live queries cache has been removed"));
             return;
         }
 

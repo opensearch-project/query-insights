@@ -19,7 +19,7 @@ import org.opensearch.test.OpenSearchTestCase;
 public class FinishedQueriesCacheTimeoutTests extends OpenSearchTestCase {
 
     public void testCacheExpiresAfterInactivity() throws InterruptedException {
-        FinishedQueriesCache cache = new FinishedQueriesCache();
+        FinishedQueriesCache cache = new FinishedQueriesCache(300000L);
 
         // Add a query
         Map<MetricType, Measurement> measurements = new HashMap<>();

@@ -366,7 +366,7 @@ public class QueryInsightsSettings {
     /**
      * Setting for retention period of finished queries in the cache.
      */
-    public static final Setting<TimeValue> FINISHED_QUERIES_RETENTION_PERIOD = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> FINISHED_QUERIES_RETENTION_PERIOD = Setting.timeSetting(
         "search.insights.live_queries.finished_queries_retention",
         DEFAULT_FINISHED_QUERIES_RETENTION,
         MIN_FINISHED_QUERIES_RETENTION,
