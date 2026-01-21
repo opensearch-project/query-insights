@@ -193,14 +193,6 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
-                .prepareSearch()
-                .setQuery(QueryBuilders.matchAllQuery())
-                .get();
-            assertEquals(searchResponse.getFailedShards(), 0);
-        }
-
         TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
@@ -228,7 +220,8 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
     private void makeSearchRequests(List<String> nodes) throws InterruptedException {
         // making search requests to get top queries
         for (int i = 0; i < TOTAL_SEARCH_REQUESTS; i++) {
-            SearchResponse searchResponse = internalCluster().client(randomFrom(nodes))
+            // ensure we hit all nodes in the list
+            SearchResponse searchResponse = internalCluster().client(nodes.get(i % nodes.size()))
                 .prepareSearch()
                 .setQuery(QueryBuilders.matchAllQuery())
                 .get();
