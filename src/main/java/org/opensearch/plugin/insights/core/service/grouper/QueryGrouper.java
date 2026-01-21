@@ -60,6 +60,13 @@ public interface QueryGrouper {
     void updateTopNSize(int topNSize);
 
     /**
+     * Set the maximum source length before truncation
+     *
+     * @param maxSourceLength maximum length for source strings
+     */
+    void setMaxSourceLength(int maxSourceLength);
+
+    /**
      * Get health stats of the QueryGrouperService
      *
      * @return QueryGrouperHealthStats

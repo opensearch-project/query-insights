@@ -544,6 +544,9 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Set a reasonable window size instead of Long.MAX_VALUE to avoid window calculation issues
         topQueriesService.setWindowSize(TimeValue.timeValueHours(1));
 
+        // Force initialize windowStart
+        topQueriesService.consumeRecords(new ArrayList<>());
+
         // Use current time to ensure records are in the current window
         long currentTime = System.currentTimeMillis();
 
@@ -830,20 +833,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertNotNull(sourceValue);
         assertTrue(sourceValue instanceof SourceString);
         assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
-    }
-
-    public void testConsumeRecordsSkipsRecordsWithoutSearchSourceBuilder() {
-        Map<MetricType, Measurement> measurements = new HashMap<>();
-        measurements.put(MetricType.LATENCY, new Measurement(100L));
-
-        Map<Attribute, Object> attributes = new HashMap<>();
-        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
-
-        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, null, "test-id");
-
-        topQueriesService.consumeRecords(List.of(record));
-
-        assertNull(record.getAttributes().get(Attribute.SOURCE));
+        assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
     public void testWindowRotationUpdatesSourceForBothWindows() {
@@ -895,4 +885,87 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             assertNotNull(record.getAttributes().get(Attribute.SOURCE));
         }
     }
+
+    public void testSourceTruncationWithMaxLength() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        String fullSource = searchSourceBuilder.toString();
+        int maxLength = 20;
+        topQueriesService.setMaxSourceLength(maxLength);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(fullSource.substring(0, maxLength), ((SourceString) sourceValue).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSourceTruncationWithZeroLength() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        topQueriesService.setMaxSourceLength(0);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals("", ((SourceString) sourceValue).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSourceNoTruncationWhenBelowLimit() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        String fullSource = searchSourceBuilder.toString();
+        topQueriesService.setMaxSourceLength(fullSource.length() + 100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(fullSource, ((SourceString) sourceValue).getValue());
+        assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
 }

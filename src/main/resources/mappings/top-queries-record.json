@@ -38,8 +38,24 @@
         }
       }
     },
+    "indices" : {
+      "type" : "keyword"
+    },
+    "labels" : {
+      "type" : "object",
+      "enabled" : true
+    },
     "phase_latency_map" : {
       "properties" : {
+        "can_match" : {
+          "type" : "long"
+        },
+        "dfs_pre_query" : {
+          "type" : "long"
+        },
+        "dfs_query" : {
+          "type" : "long"
+        },
         "expand" : {
           "type" : "long"
         },
@@ -50,6 +66,15 @@
           "type" : "long"
         }
       }
+    },
+    "query_group_hashcode" : {
+      "type" : "keyword"
+    },
+    "wlm_group_id" : {
+      "type" : "keyword"
+    },
+    "is_cancelled" : {
+      "type" : "boolean"
     },
     "search_type" : {
       "type" : "text",
@@ -63,6 +88,9 @@
     "source" : {
       "type" : "match_only_text",
       "index" : false
+    },
+    "source_truncated" : {
+      "type" : "boolean"
     },
     "task_resource_usages" : {
       "properties" : {
@@ -108,6 +136,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         },
@@ -115,6 +149,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         },
@@ -122,6 +162,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         }

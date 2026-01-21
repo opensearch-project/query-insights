@@ -19,13 +19,14 @@ import static org.opensearch.test.OpenSearchTestCase.random;
 import static org.opensearch.test.OpenSearchTestCase.randomAlphaOfLengthBetween;
 import static org.opensearch.test.OpenSearchTestCase.randomArray;
 import static org.opensearch.test.OpenSearchTestCase.randomIntBetween;
-import static org.opensearch.test.OpenSearchTestCase.randomLong;
 import static org.opensearch.test.OpenSearchTestCase.randomLongBetween;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -37,10 +38,12 @@ import java.util.UUID;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -52,6 +55,7 @@ import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.tasks.Task;
 import org.opensearch.test.VersionUtils;
 
 final public class QueryInsightsTestUtils {
@@ -148,10 +152,13 @@ final public class QueryInsightsTestUtils {
             measurements.put(MetricType.MEMORY, new Measurement(memoryValue, aggregationType));
 
             Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
-            int countOfPhases = randomIntBetween(2, 5);
-            for (int j = 0; j < countOfPhases; ++j) {
-                phaseLatencyMap.put(randomAlphaOfLengthBetween(5, 10), randomLong());
-            }
+            // Use actual SearchPhaseName values to ensure mapping coverage
+            phaseLatencyMap.put("can_match", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("dfs_pre_query", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("dfs_query", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("expand", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("fetch", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("query", randomLongBetween(0, 1000));
 
             SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
             searchSourceBuilder.size(20); // Set the size parameter as needed
@@ -159,6 +166,7 @@ final public class QueryInsightsTestUtils {
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
             attributes.put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
+            attributes.put(Attribute.SOURCE_TRUNCATED, false);
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
@@ -187,8 +195,19 @@ final public class QueryInsightsTestUtils {
                     )
                 )
             );
+            // Add labels attribute
+            Map<String, Object> labels = new HashMap<>();
+            labels.put(Task.X_OPAQUE_ID, randomAlphaOfLengthBetween(5, 10));
+            attributes.put(Attribute.LABELS, labels);
+            // Add WLM group ID attribute
+            attributes.put(Attribute.WLM_GROUP_ID, randomAlphaOfLengthBetween(5, 10));
+            // Add is_cancelled attribute
+            attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id));
+            SearchQueryRecord record = new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id);
+            // Validate that the generated record includes all fields from the mapping
+            validateRecordCompleteness(record);
+            records.add(record);
             timestamp += interval;
         }
         return records;
@@ -390,6 +409,68 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
+    }
+
+    /**
+     * Load the set of all required attribute field names from the mapping file.
+     * This is used to validate that generated test records include all fields defined in the mapping.
+     *
+     * @return Set of field names that should be present in generated records
+     */
+    @SuppressWarnings("unchecked")
+    private static Set<String> getRequiredFieldsFromMapping() {
+        try (InputStream is = QueryInsightsTestUtils.class.getClassLoader().getResourceAsStream("mappings/top-queries-record.json")) {
+            if (is == null) {
+                throw new RuntimeException("Mapping file mappings/top-queries-record.json not found");
+            }
+            XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, is);
+            Map<String, Object> mapping = parser.map();
+            Map<String, Object> properties = (Map<String, Object>) mapping.get("properties");
+
+            Set<String> requiredFields = new HashSet<>();
+            // Fields that are not Attributes or are explicitly excluded from serialization
+            Set<String> excludedFields = new HashSet<>(Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description"));
+
+            for (String fieldName : properties.keySet()) {
+                if (!excludedFields.contains(fieldName)) {
+                    requiredFields.add(fieldName);
+                }
+            }
+            return requiredFields;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load mapping file", e);
+        }
+    }
+
+    /**
+     * Validate that a generated SearchQueryRecord contains all fields defined in the mapping file.
+     * This ensures that when developers add new fields to the mapping, they also update the test
+     * data generation logic.
+     *
+     * @param record The SearchQueryRecord to validate
+     * @throws RuntimeException if the record is missing any required fields from the mapping
+     */
+    private static void validateRecordCompleteness(SearchQueryRecord record) {
+        Set<String> requiredFields = getRequiredFieldsFromMapping();
+        Set<String> presentFields = new HashSet<>();
+
+        // Get fields from attributes
+        for (Attribute attr : record.getAttributes().keySet()) {
+            presentFields.add(attr.toString());
+        }
+
+        // Find missing fields
+        Set<String> missingFields = new HashSet<>(requiredFields);
+        missingFields.removeAll(presentFields);
+
+        if (!missingFields.isEmpty()) {
+            throw new RuntimeException(
+                "Generated SearchQueryRecord is missing fields that are defined in the mapping: "
+                    + missingFields
+                    + ". Please update QueryInsightsTestUtils.generateQueryInsightRecords() to include these fields."
+            );
+        }
     }
 }

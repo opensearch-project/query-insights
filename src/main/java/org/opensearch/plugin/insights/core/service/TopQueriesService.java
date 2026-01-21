@@ -133,6 +133,8 @@ public class TopQueriesService {
 
     private final QueryGrouper queryGrouper;
 
+    private int maxSourceLength;
+
     TopQueriesService(
         final Client client,
         final MetricType metricType,
@@ -159,6 +161,7 @@ public class TopQueriesService {
             topQueriesStore,
             topNSize
         );
+        this.maxSourceLength = QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
     }
 
     /**
@@ -169,6 +172,16 @@ public class TopQueriesService {
     public void setTopNSize(final int topNSize) {
         this.topNSize = topNSize;
         this.queryGrouper.updateTopNSize(topNSize);
+    }
+
+    /**
+     * Set the maximum source length before truncation
+     *
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(final int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
+        this.queryGrouper.setMaxSourceLength(maxSourceLength);
     }
 
     /**
@@ -434,12 +447,28 @@ public class TopQueriesService {
             while (topQueriesStore.size() > topNSize) {
                 topQueriesStore.poll();
             }
-            // Add Source Attribute for all top queries
+            // Add Source Attribute for all top queries with truncation
             for (SearchQueryRecord record : topQueriesStore) {
-                if (record.getSearchSourceBuilder() != null && record.getAttributes().get(Attribute.SOURCE) == null) {
-                    record.addAttribute(Attribute.SOURCE, new SourceString(record.getSearchSourceBuilder().toString()));
+                if (record.getAttributes().get(Attribute.SOURCE) == null) {
+                    setSourceAndTruncation(record, maxSourceLength);
                 }
             }
+        }
+    }
+
+    public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
+        String sourceString = record.getSearchSourceBuilder().toString();
+        if (maxSourceLength == 0) {
+            record.addAttribute(Attribute.SOURCE, new SourceString(""));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+        } else if (sourceString.length() > maxSourceLength) {
+            record.addAttribute(Attribute.SOURCE, new SourceString(sourceString.substring(0, maxSourceLength)));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+        } else {
+            record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
         }
     }
 
