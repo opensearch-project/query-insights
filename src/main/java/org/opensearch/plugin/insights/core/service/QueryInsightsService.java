@@ -129,6 +129,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    volatile FinishedQueriesCache finishedQueriesCache;
+    private volatile Scheduler.Cancellable cacheIdleCheckTask;
+
     SinkType sinkType;
 
     /**
@@ -188,6 +191,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = null; // Will be created lazily with default settings
     }
 
     /**
@@ -566,6 +572,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        synchronized (this) {
+            if (cacheIdleCheckTask != null) {
+                cacheIdleCheckTask.cancel();
+                cacheIdleCheckTask = null;
+            }
+            finishedQueriesCache = null;
+        }
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -625,5 +640,49 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
+    }
+
+    /**
+     * Get the finished queries cache, starts it if not already started
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        if (finishedQueriesCache == null) {
+            synchronized (this) {
+                if (finishedQueriesCache == null) {
+                    finishedQueriesCache = new FinishedQueriesCache(300_000L, clusterService, threadPool);
+                    startCacheIdleCheck();
+                }
+            }
+        }
+        return finishedQueriesCache;
+    }
+
+    /**
+     * Get the finished queries cache without lazy initialization
+     * @return FinishedQueriesCache or null if not initialized
+     */
+    public FinishedQueriesCache getFinishedQueriesCacheIfExists() {
+        return finishedQueriesCache;
+    }
+
+    private void startCacheIdleCheck() {
+        if (cacheIdleCheckTask == null) {
+            cacheIdleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
+                FinishedQueriesCache cache = finishedQueriesCache;
+                if (cache != null && cache.isExpired()) {
+                    synchronized (this) {
+                        if (finishedQueriesCache != null && finishedQueriesCache.isExpired()) {
+                            finishedQueriesCache.clear();
+                            finishedQueriesCache = null;
+                            if (cacheIdleCheckTask != null) {
+                                cacheIdleCheckTask.cancel();
+                                cacheIdleCheckTask = null;
+                            }
+                        }
+                    }
+                }
+            }, TimeValue.timeValueMinutes(1), QUERY_INSIGHTS_EXECUTOR);
+        }
     }
 }
