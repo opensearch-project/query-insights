@@ -732,4 +732,14 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         updatedQueryInsightsService.queryInsightsExporterFactory.createLocalIndexExporter(TOP_QUERIES_EXPORTER_ID, "YYYY.MM.dd", "");
         return List.of(updatedQueryInsightsService, updatedClusterService);
     }
+
+    public void testGetLiveQueriesCache() {
+        // Test lazy initialization
+        LiveQueriesCache cache1 = queryInsightsService.getLiveQueriesCache();
+        assertNotNull(cache1);
+
+        // Test that subsequent calls return the same instance
+        LiveQueriesCache cache2 = queryInsightsService.getLiveQueriesCache();
+        assertSame(cache1, cache2);
+    }
 }

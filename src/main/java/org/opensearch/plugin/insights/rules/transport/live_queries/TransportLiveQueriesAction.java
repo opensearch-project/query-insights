@@ -9,7 +9,6 @@
 package org.opensearch.plugin.insights.rules.transport.live_queries;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
@@ -20,17 +19,15 @@ import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.HandledTransportAction;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
-import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.LiveQueriesCache;
+import org.opensearch.plugin.insights.core.service.LiveQueriesHelper;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.Measurement;
-import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.Task;
-import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
@@ -45,22 +42,62 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
-        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search");
+        // If use_live_cache=true, read directly from cache without ListTasks
+        if (request.isUseLiveCache()) {
+            try {
+                LiveQueriesCache liveCache = queryInsightsService.getLiveQueriesCache();
+                List<SearchQueryRecord> liveRecords = liveCache.getCurrentQueries();
+
+                // Filter by wlmGroupId and taskId
+                List<SearchQueryRecord> filteredRecords = liveRecords.stream().filter(record -> {
+                    if (request.getWlmGroupId() != null
+                        && !request.getWlmGroupId().equals(record.getAttributes().get(Attribute.WLM_GROUP_ID))) {
+                        return false;
+                    }
+                    if (request.getTaskId() != null && !request.getTaskId().equals(record.getId())) {
+                        return false;
+                    }
+                    return true;
+                })
+                    .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
+                    .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
+                    .toList();
+
+                listener.onResponse(new LiveQueriesResponse(filteredRecords));
+            } catch (Exception ex) {
+                logger.error("Failed to retrieve live cache queries", ex);
+                listener.onFailure(ex);
+            }
+            return;
+        }
+
+        // use_live_cache=false: Fan out to all nodes to get fresh data
+        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search*");
 
         // Set nodes filter if provided in the request
         String[] requestedNodeIds = request.nodesIds();
         if (requestedNodeIds != null && requestedNodeIds.length > 0) {
             listTasksRequest.setNodes(requestedNodeIds);
+        } else {
+            // Fan out to all nodes when no specific nodes are requested
+            listTasksRequest.setNodes(new String[] { "_all" });
         }
 
         // Execute tasks request asynchronously to avoid blocking
@@ -68,64 +105,16 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             @Override
             public void onResponse(ListTasksResponse taskResponse) {
                 try {
-                    List<SearchQueryRecord> allFilteredRecords = new ArrayList<>();
-                    for (TaskInfo taskInfo : taskResponse.getTasks()) {
-                        if (!taskInfo.getAction().equals("indices:data/read/search")) {
-                            continue;
-                        }
-                        long timestamp = taskInfo.getStartTime();
-                        String nodeId = taskInfo.getTaskId().getNodeId();
-                        long runningNanos = taskInfo.getRunningTimeNanos();
+                    Map<String, SearchQueryRecord> recordMap = LiveQueriesHelper.processTaskGroups(
+                        taskResponse.getTaskGroups(),
+                        transportService,
+                        request.isVerbose(),
+                        null,
+                        request.getWlmGroupId(),
+                        request.getTaskId()
+                    );
 
-                        Map<MetricType, Measurement> measurements = new HashMap<>();
-                        measurements.put(MetricType.LATENCY, new Measurement(runningNanos));
-
-                        long cpuNanos = 0L;
-                        long memBytes = 0L;
-                        TaskResourceStats stats = taskInfo.getResourceStats();
-                        if (stats != null) {
-                            Map<String, TaskResourceUsage> usageInfo = stats.getResourceUsageInfo();
-                            if (usageInfo != null) {
-                                TaskResourceUsage totalUsage = usageInfo.get(TOTAL);
-                                if (totalUsage != null) {
-                                    cpuNanos = totalUsage.getCpuTimeInNanos();
-                                    memBytes = totalUsage.getMemoryInBytes();
-                                }
-                            }
-                        }
-                        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
-                        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
-
-                        Map<Attribute, Object> attributes = new HashMap<>();
-                        attributes.put(Attribute.NODE_ID, nodeId);
-                        if (request.isVerbose()) {
-                            attributes.put(Attribute.DESCRIPTION, taskInfo.getDescription());
-                            attributes.put(Attribute.IS_CANCELLED, taskInfo.isCancelled());
-                        }
-                        Task runningTask = null;
-                        if (transportService.getLocalNode().getId().equals(taskInfo.getTaskId().getNodeId())) {
-                            runningTask = transportService.getTaskManager().getTask(taskInfo.getTaskId().getId());
-                        }
-
-                        String wlmGroupId = null;
-                        if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
-                            wlmGroupId = workloadTask.getWorkloadGroupId();
-                        }
-                        attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
-                        String targetWlmGroupId = request.getWlmGroupId();
-                        if (targetWlmGroupId != null && !targetWlmGroupId.equals(wlmGroupId)) {
-                            // skip if this task's wlm group does not match user requested wlm group
-                            continue;
-                        }
-                        SearchQueryRecord record = new SearchQueryRecord(
-                            timestamp,
-                            measurements,
-                            attributes,
-                            taskInfo.getTaskId().toString()
-                        );
-
-                        allFilteredRecords.add(record);
-                    }
+                    List<SearchQueryRecord> allFilteredRecords = new ArrayList<>(recordMap.values());
 
                     // Sort descending by the requested metric and apply size limit in one pass
                     List<SearchQueryRecord> finalRecords = allFilteredRecords.stream()
@@ -146,4 +135,5 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             }
         });
     }
+
 }

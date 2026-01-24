@@ -95,6 +95,43 @@ public class QueryInsightsSettings {
     public static final int DEFAULT_LIVE_QUERIES_SIZE = 100;
 
     /**
+     * Maximum cache size for live queries
+     */
+    public static final int LIVE_QUERIES_MAX_CACHE_SIZE = 1000;
+
+    /**
+     * Maximum number of queries to return for live queries
+     */
+    public static final int LIVE_QUERIES_MAX_RETURNED_QUERIES = 100;
+
+    /**
+     * Polling interval in milliseconds for live queries cache
+     */
+    public static final int LIVE_QUERIES_POLLING_INTERVAL_MS = 10;
+
+    /**
+     * Default idle timeout for live queries cache (5 minutes)
+     */
+    public static final TimeValue DEFAULT_LIVE_QUERIES_CACHE_IDLE_TIMEOUT = new TimeValue(5, TimeUnit.MINUTES);
+
+    /**
+     * Setting for live queries cache idle timeout.
+     * Set to -1 to disable auto-stop. Minimum is 2 minutes, maximum is 10 minutes.
+     */
+    public static final Setting<TimeValue> LIVE_QUERIES_CACHE_IDLE_TIMEOUT = Setting.timeSetting(
+        "search.insights.live_queries.cache_timeout",
+        DEFAULT_LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
+        new TimeValue(-1, TimeUnit.MILLISECONDS),
+        value -> {
+            if (value.millis() != -1 && (value.millis() < TimeUnit.MINUTES.toMillis(2) || value.millis() > TimeUnit.MINUTES.toMillis(10))) {
+                throw new IllegalArgumentException("Live queries cache idle timeout must be -1 (disabled) or between 2 and 10 minutes");
+            }
+        },
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
      * Default timeout for search requests in query insights operations
      */
     public static final TimeValue DEFAULT_SEARCH_REQUEST_TIMEOUT = new TimeValue(10, TimeUnit.SECONDS);

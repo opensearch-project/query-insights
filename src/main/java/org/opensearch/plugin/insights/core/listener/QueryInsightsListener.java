@@ -74,6 +74,20 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final PrincipalExtractor principalExtractor;
 
     /**
+     * Extract and store user information for the given search task
+     */
+    private void extractAndStoreUserInfo(SearchTask searchTask) {
+        if (principalExtractor != null) {
+            PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
+            if (userInfo != null && userInfo.getUserName() != null) {
+                String taskId = clusterService.localNode().getId() + ":" + searchTask.getId();
+                String[] roles = userInfo.getRoles() != null ? userInfo.getRoles().toArray(new String[0]) : null;
+                queryInsightsService.getLiveQueriesCache().storeTaskUserInfo(taskId, userInfo.getUserName(), roles);
+            }
+        }
+    }
+
+    /**
      * Constructor for QueryInsightsListener
      *
      * @param clusterService       The Node's cluster service.
@@ -243,7 +257,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     @Override
-    public void onPhaseStart(SearchPhaseContext context) {}
+    public void onPhaseStart(SearchPhaseContext context) {
+        if (context.getTask() instanceof SearchTask) {
+            extractAndStoreUserInfo((SearchTask) context.getTask());
+        }
+    }
 
     @Override
     public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {}
