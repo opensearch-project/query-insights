@@ -22,34 +22,32 @@ public class PrincipalExtractor {
     private static final String SECURITY_USER_INFO_THREAD_CONTEXT = "_opendistro_security_user_info";
     private static final Pattern PIPE_DELIMITER_PATTERN = Pattern.compile("(?<!\\\\)\\|");
 
-    private final ThreadPool threadPool;
+    private final String userString;
 
     public PrincipalExtractor(ThreadPool threadPool) {
-        this.threadPool = threadPool;
+        ThreadContext threadContext = threadPool.getThreadContext();
+        this.userString = threadContext.getTransient(SECURITY_USER_INFO_THREAD_CONTEXT);
     }
 
     /**
-     * Extract username and roles from thread context
-     * @return UserPrincipalInfo containing username and roles, or null if not available
+     * Get the raw user string
+     * @return raw user string, or null if not available
      */
-    public UserPrincipalInfo extractUserInfo() {
-        return parseUserInfo();
+    public String getUserString() {
+        return userString;
     }
 
     /**
-     * Parses a user string into {@link UserPrincipalInfo}.
+     * Parses the stored user string into {@link UserPrincipalInfo}.
      * User String format is pipe separated: user_name|backendroles|roles|...
      * We only extract the username (index 0) and roles (index 2).
      */
-    private UserPrincipalInfo parseUserInfo() {
-        ThreadContext threadContext = threadPool.getThreadContext();
-        String userStr = threadContext.getTransient(SECURITY_USER_INFO_THREAD_CONTEXT);
-
-        if (Strings.isNullOrEmpty(userStr)) {
+    public UserPrincipalInfo extractUserInfo() {
+        if (Strings.isNullOrEmpty(userString)) {
             return null;
         }
 
-        String[] strs = PIPE_DELIMITER_PATTERN.split(userStr);
+        String[] strs = PIPE_DELIMITER_PATTERN.split(userString);
         if (strs.length == 0 || Strings.isNullOrEmpty(strs[0])) {
             return null;
         }

@@ -26,13 +26,17 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.threadpool.ThreadPool;
 
 /**
  * Granular tests for the {@link SearchQueryRecord} class.
  */
 public class SearchQueryRecordTests extends OpenSearchTestCase {
+
+    private final ThreadPool threadPool = QueryInsightsTestUtils.createMockThreadPool();
 
     /**
      * Check that if the serialization, deserialization and equals functions are working as expected
@@ -197,7 +201,14 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
         attributes.put(Attribute.SOURCE, new SourceString(sourceBuilder.toString()));
 
-        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, sourceBuilder, "test-id");
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            sourceBuilder,
+            new PrincipalExtractor(threadPool),
+            "test-id"
+        );
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
         record.toXContentForExport(builder, null, true);

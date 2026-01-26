@@ -10,7 +10,6 @@ package org.opensearch.plugin.insights.core.auth;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
@@ -20,13 +19,11 @@ import org.opensearch.threadpool.ThreadPool;
  */
 public class PrincipalExtractorTests extends OpenSearchTestCase {
     private ThreadPool threadPool;
-    private PrincipalExtractor principalExtractor;
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
         threadPool = new TestThreadPool("PrincipalExtractorTest");
-        principalExtractor = new PrincipalExtractor(threadPool);
     }
 
     @Override
@@ -35,26 +32,30 @@ public class PrincipalExtractorTests extends OpenSearchTestCase {
         ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
     }
 
-    private PrincipalExtractor.UserPrincipalInfo extractUserInfoWithContext(String userInfoValue) {
-        ThreadContext threadContext = threadPool.getThreadContext();
-        threadContext.putTransient("_opendistro_security_user_info", userInfoValue);
-        return principalExtractor.extractUserInfo();
-    }
-
     public void testExtractUserInfoFromThreadContext() {
-        PrincipalExtractor.UserPrincipalInfo userInfo = extractUserInfoWithContext("testuser|role1,role2|admin,user|tenant1|access1");
+        threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "testuser|role1,role2|admin,user|tenant1|access1");
+        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", principalExtractor.getUserString());
+
+        PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
         assertNotNull(userInfo);
         assertEquals("testuser", userInfo.getUserName());
         assertEquals(List.of("admin", "user"), userInfo.getRoles());
     }
 
     public void testExtractUserInfoNoThreadContext() {
-        PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
-        assertNull(userInfo);
+        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+
+        assertNull(principalExtractor.getUserString());
+        assertNull(principalExtractor.extractUserInfo());
     }
 
     public void testExtractUserInfoInvalidFormat() {
-        PrincipalExtractor.UserPrincipalInfo userInfo = extractUserInfoWithContext("|role1,role2|admin");
-        assertNull(userInfo);
+        threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "|role1,role2|admin");
+        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+
+        assertNotNull(principalExtractor.getUserString());
+        assertNull(principalExtractor.extractUserInfo());
     }
 }

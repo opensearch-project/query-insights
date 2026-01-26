@@ -34,6 +34,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
@@ -45,6 +46,7 @@ import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.VersionUtils;
@@ -152,6 +154,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 1L,
                 Map.of(MetricType.CPU, new Measurement(1.0D, AggregationType.SUM)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
+                new SearchSourceBuilder(),
+                new PrincipalExtractor(threadPool),
                 "live_only"
             )
         );
@@ -194,6 +198,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 1L,
                 Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
+                new SearchSourceBuilder(),
+                new PrincipalExtractor(threadPool),
                 "live_entry"
             )
         );
@@ -205,6 +211,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 2L,
                 Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
+                null,
+                null,
                 "hist_entry"
             )
         );
@@ -229,6 +237,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 3L,
                 Map.of(MetricType.CPU, new Measurement(2.0D, AggregationType.SUM)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
+                new SearchSourceBuilder(),
+                new PrincipalExtractor(threadPool),
                 "live_fail"
             )
         );
@@ -258,6 +268,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             1L,
             Map.of(MetricType.LATENCY, new Measurement(3.0D, AggregationType.AVERAGE)),
             Map.of(Attribute.NODE_ID, node1.getId()),
+            new SearchSourceBuilder(),
+            new PrincipalExtractor(threadPool),
             "unique_in_memory"
         );
 
@@ -266,6 +278,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             2L,
             Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
             Map.of(Attribute.NODE_ID, node1.getId()),
+            new SearchSourceBuilder(),
+            new PrincipalExtractor(threadPool),
             "duplicate_entry"
         );
 
@@ -274,6 +288,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             3L, // Different timestamp
             Map.of(MetricType.LATENCY, new Measurement(8.0D, AggregationType.AVERAGE)), // Different measurement
             Map.of(Attribute.NODE_ID, node1.getId()),
+            null,
+            null,
             "duplicate_entry" // Same ID - this is what matters for deduplication
         );
 
@@ -282,6 +298,8 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             4L,
             Map.of(MetricType.LATENCY, new Measurement(7.0D, AggregationType.AVERAGE)),
             Map.of(Attribute.NODE_ID, node1.getId()),
+            null,
+            null,
             "unique_historical"
         );
 

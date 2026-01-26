@@ -12,6 +12,8 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP;
 import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
@@ -38,12 +40,15 @@ import java.util.UUID;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -57,10 +62,26 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import org.opensearch.test.VersionUtils;
+import org.opensearch.threadpool.ThreadPool;
 
 final public class QueryInsightsTestUtils {
 
     static String randomId = UUID.randomUUID().toString();
+    // Use a mock ThreadPool that only provides ThreadContext - no background threads, no cleanup needed
+    static ThreadPool testThreadPool = createMockThreadPool();
+
+    /**
+     * Creates a mock ThreadPool with pre-configured ThreadContext for testing.
+     * No background threads are created, so no cleanup is needed.
+     * @return Mock ThreadPool with test user info in ThreadContext
+     */
+    public static ThreadPool createMockThreadPool() {
+        ThreadPool mockThreadPool = mock(ThreadPool.class);
+        ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
+        threadContext.putTransient("_opendistro_security_user_info", "testuser|role1,role2|admin,user|tenant1|access1");
+        when(mockThreadPool.getThreadContext()).thenReturn(threadContext);
+        return mockThreadPool;
+    }
 
     public QueryInsightsTestUtils() {}
 
@@ -100,7 +121,8 @@ final public class QueryInsightsTestUtils {
                 baseRecord.getTimestamp(),
                 baseRecord.getMeasurements(),
                 baseRecord.getAttributes(),
-                searchSourceBuilder,  // Pass SearchSourceBuilder for categorization
+                searchSourceBuilder,
+                new PrincipalExtractor(testThreadPool),
                 baseRecord.getId()
             );
 
@@ -142,6 +164,8 @@ final public class QueryInsightsTestUtils {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
         long timestamp = startTimeStamp;
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(20);
         for (int i = 0; i < countOfRecords; ++i) {
             long latencyValue = randomLongBetween(1000, 10000); // Replace with actual method to generate a random long
             long cpuValue = randomLongBetween(1000, 10000);
@@ -159,9 +183,6 @@ final public class QueryInsightsTestUtils {
             phaseLatencyMap.put("expand", randomLongBetween(0, 1000));
             phaseLatencyMap.put("fetch", randomLongBetween(0, 1000));
             phaseLatencyMap.put("query", randomLongBetween(0, 1000));
-
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-            searchSourceBuilder.size(20); // Set the size parameter as needed
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
@@ -204,7 +225,14 @@ final public class QueryInsightsTestUtils {
             // Add is_cancelled attribute
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
 
-            SearchQueryRecord record = new SearchQueryRecord(timestamp, measurements, attributes, searchSourceBuilder, id);
+            SearchQueryRecord record = new SearchQueryRecord(
+                timestamp,
+                measurements,
+                attributes,
+                searchSourceBuilder,
+                new PrincipalExtractor(testThreadPool),
+                id
+            );
             // Validate that the generated record includes all fields from the mapping
             validateRecordCompleteness(record);
             records.add(record);
@@ -306,7 +334,14 @@ final public class QueryInsightsTestUtils {
         attributes.put(Attribute.USERNAME, "testuser");
         attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
 
-        return new SearchQueryRecord(timestamp, measurements, attributes, id);
+        return new SearchQueryRecord(
+            timestamp,
+            measurements,
+            attributes,
+            new SearchSourceBuilder(),
+            new PrincipalExtractor(testThreadPool),
+            id
+        );
     }
 
     public static void compareJson(ToXContent param1, ToXContent param2) throws IOException {
