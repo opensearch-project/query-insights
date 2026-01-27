@@ -40,6 +40,7 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -447,15 +448,19 @@ public class TopQueriesService {
             while (topQueriesStore.size() > topNSize) {
                 topQueriesStore.poll();
             }
-            // Add Source Attribute for all top queries with truncation
+            // Add Source Attribute and extract user info for all top queries with truncation
             for (SearchQueryRecord record : topQueriesStore) {
                 if (record.getAttributes().get(Attribute.SOURCE) == null) {
                     setSourceAndTruncation(record, maxSourceLength);
+                }
+                if (record.getAttributes().get(Attribute.USERNAME) == null) {
+                    setUserInfo(record);
                 }
             }
         }
     }
 
+    // Add Source and Source Truncated attributes to record
     public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
         String sourceString = record.getSearchSourceBuilder().toString();
         if (maxSourceLength == 0) {
@@ -469,6 +474,22 @@ public class TopQueriesService {
         } else {
             record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
             record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+        }
+    }
+
+    // Add Username and User Roles attributes to record
+    public static void setUserInfo(final SearchQueryRecord record) {
+        UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
+        if (userPrincipalContext != null) {
+            UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+            if (userInfo != null) {
+                if (userInfo.getUserName() != null) {
+                    record.addAttribute(Attribute.USERNAME, userInfo.getUserName());
+                }
+                if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
+                    record.addAttribute(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                }
+            }
         }
     }
 
