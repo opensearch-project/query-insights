@@ -24,7 +24,8 @@
       "type" : "keyword"
     },
     "timestamp" : {
-      "type" : "long"
+      "type" : "date",
+      "format": "epoch_millis"
     },
     "total_shards" : {
       "type" : "long"
