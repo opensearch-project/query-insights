@@ -41,7 +41,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -71,7 +71,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private boolean groupingFieldTypeEnabled;
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
-    private final PrincipalExtractor principalExtractor;
+    private final ThreadPool threadPool;
 
     /**
      * Constructor for QueryInsightsListener
@@ -109,7 +109,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         this.clusterService = clusterService;
         this.queryInsightsService = queryInsightsService;
         this.queryShapeGenerator = new QueryShapeGenerator(clusterService);
-        this.principalExtractor = threadPool != null ? new PrincipalExtractor(threadPool) : null;
+        this.threadPool = threadPool;
         queryInsightsService.setQueryShapeGenerator(queryShapeGenerator);
 
         // Setting endpoints set up for top n queries, including enabling top n queries, window size, and top n size
@@ -375,18 +375,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             attributes.put(Attribute.LABELS, labels);
 
-            // Extract username and roles from thread context if security plugin is available
-            if (principalExtractor != null) {
-                PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
-                if (userInfo != null) {
-                    if (userInfo.getUserName() != null) {
-                        attributes.put(Attribute.USERNAME, userInfo.getUserName());
-                    }
-                    if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
-                        attributes.put(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
-                    }
-                }
-            }
+            UserPrincipalContext userPrincipalContext = threadPool != null ? new UserPrincipalContext(threadPool) : null;
 
             // construct SearchQueryRecord from attributes and measurements
             SearchQueryRecord record = new SearchQueryRecord(
@@ -394,6 +383,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 measurements,
                 attributes,
                 request.source(),
+                userPrincipalContext,
                 null
             );
             queryInsightsService.addRecord(record);
