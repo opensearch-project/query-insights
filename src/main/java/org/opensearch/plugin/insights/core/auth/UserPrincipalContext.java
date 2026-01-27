@@ -18,15 +18,19 @@ import org.opensearch.threadpool.ThreadPool;
 /**
  * Extracts the principal (username and roles) from the thread context when security plugin is available
  */
-public class PrincipalExtractor {
+public class UserPrincipalContext {
     private static final String SECURITY_USER_INFO_THREAD_CONTEXT = "_opendistro_security_user_info";
     private static final Pattern PIPE_DELIMITER_PATTERN = Pattern.compile("(?<!\\\\)\\|");
 
     private final String userString;
 
-    public PrincipalExtractor(ThreadPool threadPool) {
+    public UserPrincipalContext(ThreadPool threadPool) {
+        if (threadPool == null) {
+            this.userString = null;
+            return;
+        }
         ThreadContext threadContext = threadPool.getThreadContext();
-        this.userString = threadContext.getTransient(SECURITY_USER_INFO_THREAD_CONTEXT);
+        this.userString = threadContext != null ? threadContext.getTransient(SECURITY_USER_INFO_THREAD_CONTEXT) : null;
     }
 
     /**

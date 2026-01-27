@@ -15,15 +15,15 @@ import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
 
 /**
- * Unit tests for {@link PrincipalExtractor}
+ * Unit tests for {@link UserPrincipalContext}
  */
-public class PrincipalExtractorTests extends OpenSearchTestCase {
+public class UserPrincipalContextTests extends OpenSearchTestCase {
     private ThreadPool threadPool;
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        threadPool = new TestThreadPool("PrincipalExtractorTest");
+        threadPool = new TestThreadPool("UserPrincipalContextTest");
     }
 
     @Override
@@ -34,28 +34,28 @@ public class PrincipalExtractorTests extends OpenSearchTestCase {
 
     public void testExtractUserInfoFromThreadContext() {
         threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "testuser|role1,role2|admin,user|tenant1|access1");
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
 
-        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", principalExtractor.getUserString());
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", userPrincipalContext.getUserString());
 
-        PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
+        UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
         assertNotNull(userInfo);
         assertEquals("testuser", userInfo.getUserName());
         assertEquals(List.of("admin", "user"), userInfo.getRoles());
     }
 
     public void testExtractUserInfoNoThreadContext() {
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
 
-        assertNull(principalExtractor.getUserString());
-        assertNull(principalExtractor.extractUserInfo());
+        assertNull(userPrincipalContext.getUserString());
+        assertNull(userPrincipalContext.extractUserInfo());
     }
 
     public void testExtractUserInfoInvalidFormat() {
         threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "|role1,role2|admin");
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
 
-        assertNotNull(principalExtractor.getUserString());
-        assertNull(principalExtractor.extractUserInfo());
+        assertNotNull(userPrincipalContext.getUserString());
+        assertNull(userPrincipalContext.extractUserInfo());
     }
 }

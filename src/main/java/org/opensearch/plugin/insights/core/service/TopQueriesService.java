@@ -40,7 +40,7 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
@@ -479,9 +479,9 @@ public class TopQueriesService {
 
     // Add Username and User Roles attributes to record
     public static void setUserInfo(final SearchQueryRecord record) {
-        PrincipalExtractor principalExtractor = record.getPrincipalExtractor();
-        if (principalExtractor != null) {
-            PrincipalExtractor.UserPrincipalInfo userInfo = principalExtractor.extractUserInfo();
+        UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
+        if (userPrincipalContext != null) {
+            UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
             if (userInfo != null) {
                 if (userInfo.getUserName() != null) {
                     record.addAttribute(Attribute.USERNAME, userInfo.getUserName());

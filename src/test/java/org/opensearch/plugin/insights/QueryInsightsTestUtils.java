@@ -48,7 +48,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -122,7 +122,7 @@ final public class QueryInsightsTestUtils {
                 baseRecord.getMeasurements(),
                 baseRecord.getAttributes(),
                 searchSourceBuilder,
-                new PrincipalExtractor(testThreadPool),
+                new UserPrincipalContext(testThreadPool),
                 baseRecord.getId()
             );
 
@@ -230,7 +230,7 @@ final public class QueryInsightsTestUtils {
                 measurements,
                 attributes,
                 searchSourceBuilder,
-                new PrincipalExtractor(testThreadPool),
+                new UserPrincipalContext(testThreadPool),
                 id
             );
             // Validate that the generated record includes all fields from the mapping
@@ -339,7 +339,7 @@ final public class QueryInsightsTestUtils {
             measurements,
             attributes,
             new SearchSourceBuilder(),
-            new PrincipalExtractor(testThreadPool),
+            new UserPrincipalContext(testThreadPool),
             id
         );
     }

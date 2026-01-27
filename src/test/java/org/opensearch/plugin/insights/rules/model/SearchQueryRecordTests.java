@@ -26,7 +26,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
@@ -206,7 +206,7 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
             measurements,
             attributes,
             sourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "test-id"
         );
 

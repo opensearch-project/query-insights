@@ -41,7 +41,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -375,7 +375,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             attributes.put(Attribute.LABELS, labels);
 
-            PrincipalExtractor principalExtractor = threadPool != null ? new PrincipalExtractor(threadPool) : null;
+            UserPrincipalContext userPrincipalContext = threadPool != null ? new UserPrincipalContext(threadPool) : null;
 
             // construct SearchQueryRecord from attributes and measurements
             SearchQueryRecord record = new SearchQueryRecord(
@@ -383,7 +383,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 measurements,
                 attributes,
                 request.source(),
-                principalExtractor,
+                userPrincipalContext,
                 null
             );
             queryInsightsService.addRecord(record);

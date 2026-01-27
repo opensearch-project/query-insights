@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -743,14 +743,14 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-123");
 
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(QueryInsightsTestUtils.createMockThreadPool());
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(QueryInsightsTestUtils.createMockThreadPool());
 
         SearchQueryRecord record = new SearchQueryRecord(
             System.currentTimeMillis(),
             measurements,
             attributes,
             searchSourceBuilder,
-            principalExtractor,
+            userPrincipalContext,
             "test-id"
         );
 
@@ -824,7 +824,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         assertEquals(true, groupedRecord.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
-    public void testUserInfoNotSetWhenPrincipalExtractorIsNull() {
+    public void testUserInfoNotSetWhenUserPrincipalContextIsNull() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(100);
 

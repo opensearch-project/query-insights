@@ -34,7 +34,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
@@ -155,7 +155,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 Map.of(MetricType.CPU, new Measurement(1.0D, AggregationType.SUM)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
                 new SearchSourceBuilder(),
-                new PrincipalExtractor(threadPool),
+                new UserPrincipalContext(threadPool),
                 "live_only"
             )
         );
@@ -199,7 +199,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
                 new SearchSourceBuilder(),
-                new PrincipalExtractor(threadPool),
+                new UserPrincipalContext(threadPool),
                 "live_entry"
             )
         );
@@ -238,7 +238,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
                 Map.of(MetricType.CPU, new Measurement(2.0D, AggregationType.SUM)),
                 Map.of(Attribute.NODE_ID, node1.getId()),
                 new SearchSourceBuilder(),
-                new PrincipalExtractor(threadPool),
+                new UserPrincipalContext(threadPool),
                 "live_fail"
             )
         );
@@ -269,7 +269,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             Map.of(MetricType.LATENCY, new Measurement(3.0D, AggregationType.AVERAGE)),
             Map.of(Attribute.NODE_ID, node1.getId()),
             new SearchSourceBuilder(),
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "unique_in_memory"
         );
 
@@ -279,7 +279,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
             Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
             Map.of(Attribute.NODE_ID, node1.getId()),
             new SearchSourceBuilder(),
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "duplicate_entry"
         );
 

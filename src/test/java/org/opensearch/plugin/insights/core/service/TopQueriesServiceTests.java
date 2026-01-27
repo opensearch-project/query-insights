@@ -44,7 +44,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -824,7 +824,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements,
             attributes,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "test-id"
         );
 
@@ -855,7 +855,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements1,
             attributes1,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "old-1"
         );
 
@@ -867,7 +867,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements2,
             attributes2,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "old-2"
         );
 
@@ -881,7 +881,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements3,
             attributes3,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "new-1"
         );
 
@@ -893,7 +893,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements4,
             attributes4,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "new-2"
         );
 
@@ -922,7 +922,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements,
             attributes,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "test-id"
         );
 
@@ -949,7 +949,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements,
             attributes,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "test-id"
         );
 
@@ -977,7 +977,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
             measurements,
             attributes,
             searchSourceBuilder,
-            new PrincipalExtractor(threadPool),
+            new UserPrincipalContext(threadPool),
             "test-id"
         );
 
@@ -990,7 +990,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
-    public void testSetUserInfoWithPrincipalExtractor() {
+    public void testSetUserInfoWithUserPrincipalContext() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(100);
 
@@ -999,14 +999,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         Map<Attribute, Object> attributes = new HashMap<>();
 
         // threadPool already has user info from createMockThreadPool()
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(threadPool);
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
 
         SearchQueryRecord record = new SearchQueryRecord(
             System.currentTimeMillis(),
             measurements,
             attributes,
             searchSourceBuilder,
-            principalExtractor,
+            userPrincipalContext,
             "test-id"
         );
 
@@ -1019,7 +1019,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
     }
 
-    public void testSetUserInfoWithNullPrincipalExtractor() {
+    public void testSetUserInfoWithNullUserPrincipalContext() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(100);
 
@@ -1053,14 +1053,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Create a mock ThreadPool with empty ThreadContext (no user info)
         ThreadPool emptyThreadPool = mock(ThreadPool.class);
         when(emptyThreadPool.getThreadContext()).thenReturn(new ThreadContext(Settings.EMPTY));
-        PrincipalExtractor principalExtractor = new PrincipalExtractor(emptyThreadPool);
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(emptyThreadPool);
 
         SearchQueryRecord record = new SearchQueryRecord(
             System.currentTimeMillis(),
             measurements,
             attributes,
             searchSourceBuilder,
-            principalExtractor,
+            userPrincipalContext,
             "test-id"
         );
 

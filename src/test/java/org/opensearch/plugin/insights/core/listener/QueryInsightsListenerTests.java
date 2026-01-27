@@ -542,9 +542,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         verify(queryInsightsService, times(1)).addRecord(captor.capture());
         SearchQueryRecord record = captor.getValue();
-        // PrincipalExtractor should be set and contain user string
-        assertNotNull(record.getPrincipalExtractor());
-        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", record.getPrincipalExtractor().getUserString());
+        // UserPrincipalContext should be set and contain user string
+        assertNotNull(record.getUserPrincipalContext());
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", record.getUserPrincipalContext().getUserString());
     }
 
     public void testExtractPrincipalAttributesNoThreadContext() {
@@ -556,9 +556,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         verify(queryInsightsService, times(1)).addRecord(captor.capture());
         SearchQueryRecord record = captor.getValue();
-        // PrincipalExtractor should be set but user string should be null
-        assertNotNull(record.getPrincipalExtractor());
-        assertNull(record.getPrincipalExtractor().getUserString());
+        // UserPrincipalContext should be set but user string should be null
+        assertNotNull(record.getUserPrincipalContext());
+        assertNull(record.getUserPrincipalContext().getUserString());
     }
 
     private void setupValidSearchRequest() {
