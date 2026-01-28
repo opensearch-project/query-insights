@@ -91,9 +91,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
     @Override
     public void tearDown() throws Exception {
-        super.tearDown();
         IOUtils.close(clusterService);
         ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
+        super.tearDown();
     }
 
     @SuppressWarnings("unchecked")
@@ -542,8 +542,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         verify(queryInsightsService, times(1)).addRecord(captor.capture());
         SearchQueryRecord record = captor.getValue();
-        assertEquals("testuser", record.getAttributes().get(Attribute.USERNAME));
-        assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
+        // UserPrincipalContext should be set and contain user string
+        assertNotNull(record.getUserPrincipalContext());
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", record.getUserPrincipalContext().getUserString());
     }
 
     public void testExtractPrincipalAttributesNoThreadContext() {
@@ -555,8 +556,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         verify(queryInsightsService, times(1)).addRecord(captor.capture());
         SearchQueryRecord record = captor.getValue();
-        assertNull(record.getAttributes().get(Attribute.USERNAME));
-        assertNull(record.getAttributes().get(Attribute.USER_ROLES));
+        // UserPrincipalContext should be set but user string should be null
+        assertNotNull(record.getUserPrincipalContext());
+        assertNull(record.getUserPrincipalContext().getUserString());
     }
 
     private void setupValidSearchRequest() {

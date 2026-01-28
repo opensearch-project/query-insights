@@ -33,6 +33,7 @@ import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.xcontent.XContentParserUtils;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import reactor.util.annotation.NonNull;
@@ -47,7 +48,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
     private final String id;
-    private final SearchSourceBuilder searchSourceBuilder; // Private field for categorization only
+    private final SearchSourceBuilder searchSourceBuilder;
+    private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
 
     /**
      * Timestamp
@@ -177,6 +179,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.attributes = Attribute.readAttributeMap(in);
         // SearchSourceBuilder is not available from stream data - only for in-memory categorization
         this.searchSourceBuilder = null;
+        this.userPrincipalContext = null;
     }
 
     /**
@@ -193,7 +196,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         final Map<Attribute, Object> attributes,
         String id
     ) {
-        this(timestamp, measurements, attributes, null, id);
+        this(timestamp, measurements, attributes, null, null, id);
     }
 
     /**
@@ -203,6 +206,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * @param measurements A list of Measurement associated with this query
      * @param attributes A list of Attributes associated with this query
      * @param searchSourceBuilder SearchSourceBuilder for categorization (can be null)
+     * @param userPrincipalContext UserPrincipalContext for user extraction (can be null)
      * @param id unique id for a search query record
      */
     public SearchQueryRecord(
@@ -210,6 +214,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Map<MetricType, Measurement> measurements,
         final Map<Attribute, Object> attributes,
         SearchSourceBuilder searchSourceBuilder,
+        UserPrincipalContext userPrincipalContext,
         String id
     ) {
         if (measurements == null) {
@@ -220,6 +225,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.timestamp = timestamp;
         this.id = id != null ? id : UUID.randomUUID().toString();
         this.searchSourceBuilder = searchSourceBuilder;
+        this.userPrincipalContext = userPrincipalContext;
     }
 
     /**
@@ -240,6 +246,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.id = other.id;
         this.groupingId = other.groupingId;
         this.searchSourceBuilder = other.searchSourceBuilder;
+        this.userPrincipalContext = other.userPrincipalContext;
     }
 
     /**
@@ -402,7 +409,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                 log.error("Error when parsing through search hit", e);
             }
         }
-        return new SearchQueryRecord(timestamp, measurements, attributes, null, id);
+        return new SearchQueryRecord(timestamp, measurements, attributes, null, null, id);
     }
 
     /**
@@ -488,6 +495,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public SearchSourceBuilder getSearchSourceBuilder() {
         return searchSourceBuilder;
+    }
+
+    /**
+     * Returns the UserPrincipalContext for user info extraction.
+     * This is not serialized or exported.
+     *
+     * @return {@link UserPrincipalContext} or null if not available
+     */
+    public UserPrincipalContext getUserPrincipalContext() {
+        return userPrincipalContext;
     }
 
     /**
