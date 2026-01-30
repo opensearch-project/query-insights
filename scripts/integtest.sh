@@ -105,7 +105,7 @@ cluster_node1_endpoint=`echo $ENDPOINT_LIST | jq -r '.[].data_nodes[0].endpoint'
 cluster_node1_port=`echo $ENDPOINT_LIST | jq -r '.[].data_nodes[0].port'`
 cluster_node_num=`echo $ENDPOINT_LIST | jq -r '.[].data_nodes | length'`
 
-echo "cluster_name: $cluster_name, cluster_node1_endpoint: $cluster_node1_endpoint, cluster_node0_port: $cluster_node0_port, cluster_node_num: $cluster_node_num"
+echo "cluster_name: $cluster_name, cluster_node1_endpoint: $cluster_node1_endpoint, cluster_node1_port: $cluster_node1_port, cluster_node_num: $cluster_node_num"
 
-set -x
+echo "./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain"
 ./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain
