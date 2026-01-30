@@ -282,8 +282,25 @@ integTest {
   }
   systemProperty 'tests.security.manager', 'false'
   systemProperty 'project.root', project.projectDir.absolutePath
+
+  // Pass through system properties for remote cluster testing
+  systemProperty "https", System.getProperty("https")
+  systemProperty "user", System.getProperty("user")
+  systemProperty "password", System.getProperty("password")
+
   // Set default query size limit
   systemProperty 'defaultQuerySizeLimit', '10000'
+
+  // Only REST-based integration tests can run with remote cluster
+  if (System.getProperty("tests.rest.cluster") != null) {
+    filter {
+      includeTestsMatching 'org.opensearch.plugin.insights.*IT'
+      // Exclude tests that require multi-node cluster or internal cluster access
+      excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
+      excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsPluginTransportIT'
+    }
+  }
+
   // Tell the test JVM if the cluster JVM is running under a debugger so that tests can use longer timeouts for
   // requests. The 'doFirst' delays reading the debug setting on the cluster till execution time.
   doFirst {
@@ -412,6 +429,48 @@ task integTestWithSecurity(type: RestIntegTestTask) {
     includeTestsMatching 'org.opensearch.plugin.insights.*IT'
     // QueryInsightsClusterIT requires 2+ nodes; excluded because demo SSL certs don't support multi-node in Java 21
     excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
+  }
+}
+
+task integTestRemote(type: RestIntegTestTask) {
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  systemProperty 'tests.security.manager', 'false'
+  systemProperty 'project.root', project.projectDir.absolutePath
+
+  // Pass through system properties for remote cluster connection
+  systemProperty "https", System.getProperty("https")
+  systemProperty "user", System.getProperty("user")
+  systemProperty "password", System.getProperty("password")
+
+  // Set default query size limit
+  systemProperty 'defaultQuerySizeLimit', '10000'
+
+  // Only REST-based integration tests can run with remote cluster
+  if (System.getProperty("tests.rest.cluster") != null) {
+    filter {
+      includeTestsMatching 'org.opensearch.plugin.insights.*IT'
+      // Exclude tests that require multi-node cluster or internal cluster access
+      excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
+      excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsPluginTransportIT'
+    }
+  }
+
+  if (System.getProperty("https") == null || System.getProperty("https") == "false") {
+    // No specific exclusions for non-HTTPS tests currently
+  }
+
+  // Set number of nodes system property to be used in tests
+  doFirst {
+    def numNodes = findProperty('numNodes') as Integer ?: 1
+    systemProperty 'cluster.number_of_nodes', "${numNodes}"
+  }
+
+  testLogging {
+    events "passed", "skipped", "failed"
+  }
+  afterTest { desc, result ->
+    logger.quiet "${desc.className}.${desc.name}: ${result.resultType} ${(result.getEndTime() - result.getStartTime())/1000}s"
   }
 }
 
