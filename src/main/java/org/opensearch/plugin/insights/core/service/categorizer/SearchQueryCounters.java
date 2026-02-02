@@ -8,12 +8,14 @@
 
 package org.opensearch.plugin.insights.core.service.categorizer;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.QueryTypeMetrics;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -64,12 +66,18 @@ public final class SearchQueryCounters {
     private final ConcurrentHashMap<String, Counter> nameToQueryTypeCounters;
 
     /**
+     * Aggregation type to QueryTypeMetrics map for storing queryable metrics
+     */
+    private final ConcurrentHashMap<String, QueryTypeMetrics> aggregationTypeMetrics;
+
+    /**
      * Constructor
      * @param metricsRegistry opentelemetry metrics registry
      */
     public SearchQueryCounters(MetricsRegistry metricsRegistry) {
         this.metricsRegistry = metricsRegistry;
         this.nameToQueryTypeCounters = new ConcurrentHashMap<>();
+        this.aggregationTypeMetrics = new ConcurrentHashMap<>();
         this.aggCounter = metricsRegistry.createCounter(
             "search.query.type.agg.count",
             "Counter for the number of top level agg search queries",
@@ -126,6 +134,53 @@ public final class SearchQueryCounters {
     public void incrementAggCounter(double value, Tags tags, Map<MetricType, Measurement> measurements) {
         aggCounter.add(value, tags);
         incrementAllHistograms(tags, measurements);
+    }
+
+    /**
+     * Increment aggregate counter and store metrics for the aggregation type
+     * @param value value to increment
+     * @param aggregationType the aggregation type (e.g., "streaming_terms", "terms")
+     * @param tags tags for OpenTelemetry
+     * @param measurements metrics measurements
+     */
+    public void incrementAggCounterWithType(double value, String aggregationType, Tags tags, Map<MetricType, Measurement> measurements) {
+        aggCounter.add(value, tags);
+        incrementAllHistograms(tags, measurements);
+
+        // Store metrics for querying via API
+        QueryTypeMetrics metrics = aggregationTypeMetrics.computeIfAbsent(
+            aggregationType,
+            k -> new QueryTypeMetrics(aggregationType)
+        );
+
+        long latency = measurements.containsKey(MetricType.LATENCY)
+            ? measurements.get(MetricType.LATENCY).getMeasurement().longValue()
+            : 0;
+        long cpu = measurements.containsKey(MetricType.CPU)
+            ? measurements.get(MetricType.CPU).getMeasurement().longValue()
+            : 0;
+        long memory = measurements.containsKey(MetricType.MEMORY)
+            ? measurements.get(MetricType.MEMORY).getMeasurement().longValue()
+            : 0;
+
+        metrics.recordMeasurement(latency, cpu, memory);
+    }
+
+    /**
+     * Get all aggregation type metrics
+     * @return unmodifiable map of aggregation type to QueryTypeMetrics
+     */
+    public Map<String, QueryTypeMetrics> getAggregationTypeMetrics() {
+        return Collections.unmodifiableMap(aggregationTypeMetrics);
+    }
+
+    /**
+     * Get metrics for a specific aggregation type
+     * @param aggregationType the aggregation type
+     * @return QueryTypeMetrics or null if not found
+     */
+    public QueryTypeMetrics getMetricsForAggregationType(String aggregationType) {
+        return aggregationTypeMetrics.get(aggregationType);
     }
 
     /**

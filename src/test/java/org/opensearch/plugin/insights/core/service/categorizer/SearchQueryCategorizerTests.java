@@ -41,6 +41,7 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.search.aggregations.bucket.range.RangeAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.terms.MultiTermsAggregationBuilder;
+import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.MultiTermsValuesSourceConfig;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.ScoreSortBuilder;
@@ -327,5 +328,51 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         verify(queryTypeLatencyHistogram, times(times)).record(eq(expectedLatency), any(Tags.class));
         verify(queryTypeCpuHistogram, times(times)).record(eq(expectedCpu), any(Tags.class));
         verify(queryTypeMemoryHistogram, times(times)).record(eq(expectedMemory), any(Tags.class));
+    }
+
+    public void testTermsAggregation() {
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.aggregation(new TermsAggregationBuilder("my_terms_agg").field("status"));
+        sourceBuilder.size(0);
+
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
+
+        ArgumentCaptor<Double> valueCaptor = ArgumentCaptor.forClass(Double.class);
+        ArgumentCaptor<Tags> tagsCaptor = ArgumentCaptor.forClass(Tags.class);
+
+        verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(valueCaptor.capture(), tagsCaptor.capture());
+
+        double actualValue = valueCaptor.getValue();
+        String actualTag = (String) tagsCaptor.getValue().getTagsMap().get(AGGREGATION_TYPE_TAG);
+
+        assertEquals(1.0d, actualValue, 0.0001);
+        assertEquals("terms", actualTag);
+    }
+
+    public void testStreamingTermsAggregation() {
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        TermsAggregationBuilder termsAgg = new TermsAggregationBuilder("my_streaming_terms_agg").field("status");
+        termsAgg.streamingEnabled(true);
+        sourceBuilder.aggregation(termsAgg);
+        sourceBuilder.size(0);
+
+        SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        searchQueryCategorizer.categorize(record);
+
+        verifyMeasurementHistogramsIncremented(record, 1);
+
+        ArgumentCaptor<Double> valueCaptor = ArgumentCaptor.forClass(Double.class);
+        ArgumentCaptor<Tags> tagsCaptor = ArgumentCaptor.forClass(Tags.class);
+
+        verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(valueCaptor.capture(), tagsCaptor.capture());
+
+        double actualValue = valueCaptor.getValue();
+        String actualTag = (String) tagsCaptor.getValue().getTagsMap().get(AGGREGATION_TYPE_TAG);
+
+        assertEquals(1.0d, actualValue, 0.0001);
+        assertEquals("streaming_terms", actualTag);
     }
 }
