@@ -148,20 +148,11 @@ public final class SearchQueryCounters {
         incrementAllHistograms(tags, measurements);
 
         // Store metrics for querying via API
-        QueryTypeMetrics metrics = aggregationTypeMetrics.computeIfAbsent(
-            aggregationType,
-            k -> new QueryTypeMetrics(aggregationType)
-        );
+        QueryTypeMetrics metrics = aggregationTypeMetrics.computeIfAbsent(aggregationType, k -> new QueryTypeMetrics(aggregationType));
 
-        long latency = measurements.containsKey(MetricType.LATENCY)
-            ? measurements.get(MetricType.LATENCY).getMeasurement().longValue()
-            : 0;
-        long cpu = measurements.containsKey(MetricType.CPU)
-            ? measurements.get(MetricType.CPU).getMeasurement().longValue()
-            : 0;
-        long memory = measurements.containsKey(MetricType.MEMORY)
-            ? measurements.get(MetricType.MEMORY).getMeasurement().longValue()
-            : 0;
+        long latency = measurements.containsKey(MetricType.LATENCY) ? measurements.get(MetricType.LATENCY).getMeasurement().longValue() : 0;
+        long cpu = measurements.containsKey(MetricType.CPU) ? measurements.get(MetricType.CPU).getMeasurement().longValue() : 0;
+        long memory = measurements.containsKey(MetricType.MEMORY) ? measurements.get(MetricType.MEMORY).getMeasurement().longValue() : 0;
 
         metrics.recordMeasurement(latency, cpu, memory);
     }
