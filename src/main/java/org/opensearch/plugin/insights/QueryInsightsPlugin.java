@@ -98,7 +98,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             client,
             metricsRegistry,
             xContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService),
+            new QueryInsightsExporterFactory(client, clusterService, repositoriesServiceSupplier),
             new QueryInsightsReaderFactory(client)
         );
         return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));
@@ -168,7 +168,10 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
             QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
             QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
-            QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
+            QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
+            QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
+            QueryInsightsSettings.REMOTE_EXPORTER_PATH,
+            QueryInsightsSettings.REMOTE_EXPORTER_ENABLED
         );
     }
 }

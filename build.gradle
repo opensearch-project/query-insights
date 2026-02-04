@@ -21,6 +21,16 @@ buildscript {
     if (isSnapshot) {
       opensearch_build += "-SNAPSHOT"
     }
+
+    def os_platform = "linux"
+    def artifact_type = "tar"
+    if (System.properties['os.name'].toLowerCase().contains('windows')) {
+      os_platform = "windows"
+      artifact_type = "zip"
+    }
+    opensearch_version_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+    repo_s3_resource_folder = "build/resource/repository-s3"
+    repo_s3_download_url = "https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/${opensearch_version_no_snapshot}/latest/${os_platform}/x64/${artifact_type}/builds/opensearch/core-plugins/repository-s3-${opensearch_version_no_snapshot}.zip"
   }
 
   repositories {
@@ -199,6 +209,27 @@ ext {
   var projectAbsPath = projectDir.getAbsolutePath()
   File downloadedSecurityPlugin = Paths.get(projectAbsPath, 'bin', 'opensearch-security-snapshot.zip').toFile()
 
+  configureS3Plugin = { OpenSearchCluster cluster ->
+    cluster.plugin(provider(new Callable<RegularFile>(){
+      @Override
+      RegularFile call() throws Exception {
+        return new RegularFile() {
+          @Override
+          File getAsFile() {
+            if (new File("$project.rootDir/$repo_s3_resource_folder").exists()) {
+              project.delete(files("$project.rootDir/$repo_s3_resource_folder"))
+            }
+            project.mkdir repo_s3_resource_folder
+            ant.get(src: repo_s3_download_url,
+                    dest: repo_s3_resource_folder,
+                    httpusecaches: false)
+            return fileTree(repo_s3_resource_folder).getSingleFile()
+          }
+        }
+      }
+    }))
+  }
+
   configureSecurityPlugin = { OpenSearchCluster cluster ->
 
     cluster.getNodes().forEach { node ->
@@ -329,6 +360,10 @@ integTest {
   }
   // Exclude QueryInsightsClusterIT from withoutSecurity scenarios
   exclude 'org/opensearch/plugin/insights/QueryInsightsClusterIT.class'
+  // Exclude remote repository tests unless S3 is enabled
+  if (System.getProperty("s3.enabled") == null) {
+    exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
+  }
 }
 
 tasks.named("integTest").configure {
@@ -358,6 +393,13 @@ testClusters.all {
 
 testClusters.integTest {
     numberOfNodes = 2
+    // Optionally install S3 plugin for remote repository exporter tests
+    if (System.getProperty("s3.enabled") != null) {
+        configureS3Plugin(testClusters.integTest)
+        keystore 's3.client.default.access_key', "${System.getProperty("access_key")}"
+        keystore 's3.client.default.secret_key', "${System.getProperty("secret_key")}"
+        keystore 's3.client.default.session_token', "${System.getProperty("session_token")}"
+    }
 }
 
 run {

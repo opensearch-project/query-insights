@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
@@ -46,6 +47,7 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
@@ -100,6 +102,15 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);
+
+        // Mock threadPool executor for remote export tests
+        java.util.concurrent.ExecutorService mockExecutor = mock(java.util.concurrent.ExecutorService.class);
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(mockExecutor).execute(any(Runnable.class));
+        when(threadPool.executor(anyString())).thenReturn(mockExecutor);
     }
 
     public void testIngestQueryDataWithLargeWindow() {
@@ -1069,4 +1080,79 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertNull(record.getAttributes().get(Attribute.USERNAME));
         assertNull(record.getAttributes().get(Attribute.USER_ROLES));
     }
+
+    public void testRemoteExportWhenExporterExists() {
+        // Test remote export when exporter exists and is enabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(true);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation and export
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify remote exporter was called during window rotation
+        verify(mockRemoteExporter, times(1)).export(any());
+    }
+
+    public void testRemoteExportWhenExporterDoesNotExist() {
+        // Test remote export when no exporter exists
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is null
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
+    public void testRemoteExportWhenExporterDisabled() {
+        // Test remote export when exporter exists but is disabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(false);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is disabled
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
 }
