@@ -225,6 +225,31 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         assertEquals("toString should return the wrapped value", testValue, sourceString.toString());
     }
 
+    public void testFromXContentWithFailedField() throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        builder.startObject();
+        builder.field("timestamp", 1706574180000L);
+        builder.field("id", "test-id");
+        builder.field(SearchQueryRecord.FAILED, true);
+        builder.startObject("measurements");
+        builder.startObject("latency");
+        builder.field("number", 1L);
+        builder.field("count", 1);
+        builder.field("aggregationType", "NONE");
+        builder.endObject();
+        builder.endObject();
+        builder.endObject();
+
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            builder.toString()
+        );
+        SearchQueryRecord record = SearchQueryRecord.fromXContent(parser);
+
+        assertEquals(true, record.getAttributes().get(Attribute.FAILED));
+    }
+
     /**
      * Test that all fields added to SearchQueryRecord code are properly mapped in top-queries-record.json.
      * This test validates enum values to ensure mapping completeness independent of test data generation.

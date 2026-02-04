@@ -256,12 +256,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        constructSearchQueryRecord(context, searchRequestContext, false);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        constructSearchQueryRecord(context, searchRequestContext, true);
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -298,7 +298,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private void constructSearchQueryRecord(
+        final SearchPhaseContext context,
+        final SearchRequestContext searchRequestContext,
+        final boolean failed
+    ) {
         if (skipSearchRequest(searchRequestContext)) {
             return;
         }
@@ -346,6 +350,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
             attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
+            attributes.put(Attribute.FAILED, failed);
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(
