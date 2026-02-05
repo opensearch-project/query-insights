@@ -102,7 +102,12 @@ public enum Attribute {
     /**
      * Indicates if the source was truncated due to length limits.
      */
-    SOURCE_TRUNCATED;
+    SOURCE_TRUNCATED,
+
+    /**
+     * The parent task ID for shard tasks.
+     */
+    PARENT_TASK_ID;
 
     /**
      * Read an Attribute from a StreamInput

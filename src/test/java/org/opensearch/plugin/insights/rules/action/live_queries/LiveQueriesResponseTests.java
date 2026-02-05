@@ -11,12 +11,13 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 import static java.util.Collections.emptyMap;
 
 import java.io.IOException;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.opensearch.cluster.ClusterName;
+import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
@@ -35,6 +36,8 @@ import org.opensearch.test.OpenSearchTestCase;
  */
 public class LiveQueriesResponseTests extends OpenSearchTestCase {
 
+    private DiscoveryNode node1;
+
     private List<SearchQueryRecord> createLiveQueriesList(int count, long baseLatency) {
         return IntStream.range(0, count).mapToObj(i -> {
             Map<MetricType, Measurement> measurements = new HashMap<>();
@@ -50,8 +53,19 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
     }
 
     public void testSerialization() throws IOException {
+        node1 = new DiscoveryNode(
+            "node1",
+            buildNewFakeTransportAddress(),
+            java.util.Collections.emptyMap(),
+            java.util.Collections.emptySet(),
+            org.opensearch.test.VersionUtils.randomVersion(random())
+        );
         List<SearchQueryRecord> queries = createLiveQueriesList(3, 1000);
-        LiveQueriesResponse originalResponse = new LiveQueriesResponse(queries);
+        LiveQueriesResponse originalResponse = new LiveQueriesResponse(
+            new ClusterName("test"),
+            List.of(new LiveQueriesNodeResponse(node1, queries)),
+            List.of()
+        );
         BytesStreamOutput out = new BytesStreamOutput();
         originalResponse.writeTo(out);
         StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
@@ -62,6 +76,13 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
     }
 
     public void testToXContent() throws IOException {
+        node1 = new DiscoveryNode(
+            "node1",
+            buildNewFakeTransportAddress(),
+            java.util.Collections.emptyMap(),
+            java.util.Collections.emptySet(),
+            org.opensearch.test.VersionUtils.randomVersion(random())
+        );
         Map<MetricType, Measurement> measurements = Map.of(
             MetricType.LATENCY,
             new Measurement(10L),
@@ -74,7 +95,11 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
         SearchQueryRecord rec2 = new SearchQueryRecord(2L, measurements, emptyMap(), "id2");
         SearchQueryRecord rec3 = new SearchQueryRecord(3L, measurements, emptyMap(), "id3");
         List<SearchQueryRecord> records = List.of(rec2, rec1, rec3);
-        LiveQueriesResponse response = new LiveQueriesResponse(records);
+        LiveQueriesResponse response = new LiveQueriesResponse(
+            new ClusterName("test"),
+            List.of(new LiveQueriesNodeResponse(node1, records)),
+            List.of()
+        );
         XContentBuilder builder = XContentFactory.jsonBuilder();
         response.toXContent(builder, ToXContent.EMPTY_PARAMS);
         String json = builder.toString();
@@ -88,7 +113,7 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
     }
 
     public void testToXContentEmptyList() throws IOException {
-        LiveQueriesResponse response = new LiveQueriesResponse(Collections.emptyList());
+        LiveQueriesResponse response = new LiveQueriesResponse(new ClusterName("test"), List.of(), List.of());
         XContentBuilder builder = XContentFactory.jsonBuilder();
         response.toXContent(builder, ToXContent.EMPTY_PARAMS);
         String json = builder.toString();

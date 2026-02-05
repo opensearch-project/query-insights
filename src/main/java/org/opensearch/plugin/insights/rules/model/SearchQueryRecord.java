@@ -50,6 +50,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final String id;
     private final SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
+    private final List<ShardTaskRecord> shardTasks; // Shard tasks for this search
 
     /**
      * Timestamp
@@ -180,6 +181,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         // SearchSourceBuilder is not available from stream data - only for in-memory categorization
         this.searchSourceBuilder = null;
         this.userPrincipalContext = null;
+        this.shardTasks = in.readList(ShardTaskRecord::new);
     }
 
     /**
@@ -226,6 +228,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.id = id != null ? id : UUID.randomUUID().toString();
         this.searchSourceBuilder = searchSourceBuilder;
         this.userPrincipalContext = userPrincipalContext;
+        this.shardTasks = new ArrayList<>();
     }
 
     /**
@@ -247,6 +250,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.groupingId = other.groupingId;
         this.searchSourceBuilder = other.searchSourceBuilder;
         this.userPrincipalContext = other.userPrincipalContext;
+        this.shardTasks = other.shardTasks;
     }
 
     /**
@@ -566,6 +570,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             entry.getValue().toXContent(builder, params);  // Serialize Measurement object
         }
         builder.endObject();
+
+        // Add shard tasks if present
+        if (!shardTasks.isEmpty()) {
+            builder.startArray("shard_tasks");
+            for (ShardTaskRecord shardTask : shardTasks) {
+                shardTask.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
+
         return builder.endObject();
     }
 
@@ -643,6 +657,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             (stream, attribute) -> Attribute.writeTo(out, attribute),
             (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
         );
+        out.writeList(shardTasks);
     }
 
     /**
@@ -699,6 +714,24 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public boolean isCancelled() {
         return (Boolean) attributes.getOrDefault(Attribute.IS_CANCELLED, false);
+    }
+
+    /**
+     * Add a shard task to this search query record
+     *
+     * @param shardTask the shard task to add
+     */
+    public void addShardTask(ShardTaskRecord shardTask) {
+        this.shardTasks.add(shardTask);
+    }
+
+    /**
+     * Get the list of shard tasks for this search query
+     *
+     * @return unmodifiable list of shard tasks
+     */
+    public List<ShardTaskRecord> getShardTasks() {
+        return Collections.unmodifiableList(shardTasks);
     }
 
     /**
