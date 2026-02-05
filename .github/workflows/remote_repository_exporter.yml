@@ -43,25 +43,18 @@ jobs:
 
       - name: Verify LocalStack is ready
         run: |
-          for i in {1..30}; do
-            if curl --silent --fail http://localhost:4566/_localstack/health; then
-              echo "LocalStack is ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "LocalStack health check failed after 30 seconds"
-              exit 1
-            fi
-            sleep 1
-          done
+          if ! timeout 30 bash -c 'until curl --silent --fail http://localhost:4566/_localstack/health; do sleep 1; done'; then
+            echo "LocalStack health check failed after 30 seconds"
+            exit 1
+          fi
 
       - name: Create S3 Bucket in LocalStack
         run: |
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-bucket
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-bucket --region us-east-1
 
       - name: Run tests
         run: |
-          ./gradlew integTest --tests "org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT.testRemoteRepositoryExporter" -Ds3.enabled=true -Daccess_key=${{ env.AWS_ACCESS_KEY_ID }} -Dsecret_key=${{ env.AWS_SECRET_ACCESS_KEY }} -Dsession_token=${{ env.AWS_SESSION_TOKEN }}
+          ./gradlew integTestRemoteRepository -Daccess_key=${{ env.AWS_ACCESS_KEY_ID }} -Dsecret_key=${{ env.AWS_SECRET_ACCESS_KEY }} -Dsession_token=${{ env.AWS_SESSION_TOKEN }}
 
       - name: Verify S3 exports
         run: |

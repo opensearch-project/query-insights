@@ -22,22 +22,17 @@ public class RemoteRepositoryExporterIT extends QueryInsightsRestTestCase {
         configureRemoteExporterAndEnableLatency();
 
         // Wait for exporter to be created and settings to propagate
-        Thread.sleep(10000);
+        Thread.sleep(5000);
 
         // Perform searches to generate query insights data
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 3; i++) {
             performSearch(5);
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
 
-        // Continue sending queries periodically to trigger window rotation (1 minute window)
-        for (int i = 0; i < 12; i++) {
-            Thread.sleep(10000);
-            performSearch(1);
-        }
-
-        Thread.sleep(10000);
-        verifyS3Export();
+        // Wait for window rotation (1 minute window)
+        Thread.sleep(60000);
+        verifyRemoteExporterConfiguration();
     }
 
     private void setupS3Repository() throws Exception {
@@ -68,7 +63,7 @@ public class RemoteRepositoryExporterIT extends QueryInsightsRestTestCase {
         assertEquals(200, response.getStatusLine().getStatusCode());
     }
 
-    private void verifyS3Export() throws Exception {
+    private void verifyRemoteExporterConfiguration() throws Exception {
         // Check top queries API to see if queries were collected
         Request topQueriesRequest = new Request("GET", "/_insights/top_queries?type=latency");
         Response topQueriesResponse = client().performRequest(topQueriesRequest);

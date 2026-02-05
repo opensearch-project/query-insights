@@ -360,10 +360,8 @@ integTest {
   }
   // Exclude QueryInsightsClusterIT from withoutSecurity scenarios
   exclude 'org/opensearch/plugin/insights/QueryInsightsClusterIT.class'
-  // Exclude remote repository tests unless S3 is enabled
-  if (System.getProperty("s3.enabled") == null) {
-    exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
-  }
+  // Exclude remote repository tests - run separately in integTestRemoteRepository
+  exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
 }
 
 tasks.named("integTest").configure {
@@ -393,17 +391,6 @@ testClusters.all {
 
 testClusters.integTest {
     numberOfNodes = 2
-    // Optionally install S3 plugin for remote repository exporter tests
-    if (System.getProperty("s3.enabled") != null) {
-        configureS3Plugin(testClusters.integTest)
-        keystore 's3.client.default.access_key', "${System.getProperty("access_key")}"
-        keystore 's3.client.default.secret_key', "${System.getProperty("secret_key")}"
-        keystore 's3.client.default.session_token', "${System.getProperty("session_token")}"
-    }
-}
-
-run {
-    useCluster testClusters.integTest
 }
 
 jacocoTestReport {
@@ -471,7 +458,72 @@ task integTestWithSecurity(type: RestIntegTestTask) {
     includeTestsMatching 'org.opensearch.plugin.insights.*IT'
     // QueryInsightsClusterIT requires 2+ nodes; excluded because demo SSL certs don't support multi-node in Java 21
     excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
+    // Exclude remote repository tests - run separately in integTestRemoteRepository
+    excludeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
   }
+}
+
+task integTestRemoteRepository(type: RestIntegTestTask) {
+  useCluster testClusters.integTestRemoteRepository
+
+  systemProperty "cluster.names",
+    getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
+
+  dependsOn project.tasks.bundlePlugin
+  testLogging {
+    events "passed", "skipped", "failed"
+  }
+  afterTest { desc, result ->
+    logger.quiet "${desc.className}.${desc.name}: ${result.resultType} ${(result.getEndTime() - result.getStartTime())/1000}s"
+  }
+
+  systemProperty 'tests.security.manager', 'false'
+  systemProperty 'project.root', project.projectDir.absolutePath
+  systemProperty 'defaultQuerySizeLimit', '10000'
+
+  doFirst {
+    systemProperty 'cluster.debug', getDebug()
+    getClusters().forEach { cluster ->
+      String allTransportSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllTransportPortURI().stream()
+      }.collect(Collectors.joining(","))
+      String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllHttpSocketURI().stream()
+      }.collect(Collectors.joining(","))
+
+      systemProperty "tests.rest.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+      systemProperty "tests.rest.${cluster.name}.transport_hosts", "${-> allTransportSocketURI}"
+    }
+
+    systemProperty "https", "false"
+  }
+
+  if (System.getProperty("test.debug") != null) {
+    jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  }
+
+  filter {
+    includeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
+  }
+}
+
+testClusters.integTestRemoteRepository {
+  configureS3Plugin(testClusters.integTestRemoteRepository)
+  def accessKey = System.getProperty("access_key")
+  def secretKey = System.getProperty("secret_key")
+  def sessionToken = System.getProperty("session_token")
+  if (gradle.startParameter.taskNames.contains('integTestRemoteRepository')) {
+    if (!accessKey || !secretKey || !sessionToken) {
+      throw new GradleException("S3 credentials are required. Run with: -Daccess_key=<key> -Dsecret_key=<key> -Dsession_token=<token>")
+    }
+    keystore 's3.client.default.access_key', accessKey
+    keystore 's3.client.default.secret_key', secretKey
+    keystore 's3.client.default.session_token', sessionToken
+  }
+}
+
+run {
+    useCluster testClusters.integTest
 }
 
 task integTestRemote(type: RestIntegTestTask) {
