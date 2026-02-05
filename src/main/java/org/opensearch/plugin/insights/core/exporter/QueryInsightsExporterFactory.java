@@ -10,14 +10,17 @@ package org.opensearch.plugin.insights.core.exporter;
 
 import java.io.IOException;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.transport.client.Client;
 
 /**
@@ -30,6 +33,7 @@ public class QueryInsightsExporterFactory {
     private final Logger logger = LogManager.getLogger();
     final private Client client;
     final private ClusterService clusterService;
+    final private Supplier<RepositoriesService> repositoriesServiceSupplier;
     /**
      * Maps exporter identifiers to their corresponding exporter sink instances.
      */
@@ -40,10 +44,16 @@ public class QueryInsightsExporterFactory {
      *
      * @param client OS client
      * @param clusterService cluster service
+     * @param repositoriesServiceSupplier supplier for repositories service
      */
-    public QueryInsightsExporterFactory(final Client client, final ClusterService clusterService) {
+    public QueryInsightsExporterFactory(
+        final Client client,
+        final ClusterService clusterService,
+        final Supplier<RepositoriesService> repositoriesServiceSupplier
+    ) {
         this.client = client;
         this.clusterService = clusterService;
+        this.repositoriesServiceSupplier = repositoriesServiceSupplier;
         this.exporters = new HashMap<>();
     }
 
@@ -101,6 +111,26 @@ public class QueryInsightsExporterFactory {
     }
 
     /**
+     * Create a remote exporter based on provided parameters
+     *
+     * @param id id of the exporter so that exporters can be retrieved and reused across services
+     * @param repositoryName repository name (S3, Azure, GCS, etc.)
+     * @param basePath base path for organizing files
+     * @return RemoteRepositoryExporter the created exporter sink
+     */
+    public RemoteRepositoryExporter createRemoteRepositoryExporter(String id, String repositoryName, String basePath) {
+        RemoteRepositoryExporter remoteRepositoryExporter = new RemoteRepositoryExporter(
+            repositoriesServiceSupplier,
+            repositoryName,
+            basePath,
+            DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
+            id
+        );
+        this.exporters.put(id, remoteRepositoryExporter);
+        return remoteRepositoryExporter;
+    }
+
+    /**
      * Update an exporter based on provided parameters
      *
      * @param exporter The exporter to update
@@ -142,7 +172,7 @@ public class QueryInsightsExporterFactory {
      *
      */
     public void closeAllExporters() {
-        for (QueryInsightsExporter exporter : exporters.values()) {
+        for (QueryInsightsExporter exporter : new ArrayList<>(exporters.values())) {
             try {
                 closeExporter(exporter);
             } catch (IOException e) {

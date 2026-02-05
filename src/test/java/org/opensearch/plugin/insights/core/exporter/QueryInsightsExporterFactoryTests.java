@@ -19,6 +19,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
@@ -33,6 +34,7 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
     private final String format = "YYYY.MM.dd";
 
     private final Client client = mock(Client.class);
+    private final RepositoriesService repositoriesService = mock(RepositoriesService.class);
     private QueryInsightsExporterFactory queryInsightsExporterFactory;
     private MetricsRegistry metricsRegistry;
     private ClusterService clusterService;
@@ -44,7 +46,7 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         clusterService = ClusterServiceUtils.createClusterService(settings, clusterSettings, threadPool);
-        queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService);
+        queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService, () -> repositoriesService);
         metricsRegistry = mock(MetricsRegistry.class);
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
             invocation -> mock(Counter.class)
@@ -70,15 +72,30 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         assertTrue(exporter1 instanceof LocalIndexExporter);
         QueryInsightsExporter exporter2 = queryInsightsExporterFactory.createDebugExporter("id-debug");
         assertTrue(exporter2 instanceof DebugExporter);
-        QueryInsightsExporter exporter3 = queryInsightsExporterFactory.createDebugExporter("id-debug2");
-        assertTrue(exporter3 instanceof DebugExporter);
+        QueryInsightsExporter exporter3 = queryInsightsExporterFactory.createRemoteRepositoryExporter("id-s3", "test-repo", "test-path");
+        assertTrue(exporter3 instanceof RemoteRepositoryExporter);
         try {
             queryInsightsExporterFactory.closeExporter(exporter1);
-            queryInsightsExporterFactory.closeExporter(exporter2);
+            assertNull(queryInsightsExporterFactory.getExporter("id-index"));
+            queryInsightsExporterFactory.closeExporter(exporter3);
+            assertNull(queryInsightsExporterFactory.getExporter("id-s3"));
             queryInsightsExporterFactory.closeAllExporters();
         } catch (Exception e) {
             fail("No exception should be thrown when closing exporter");
         }
+    }
+
+    public void testCloseAllExporters() {
+        queryInsightsExporterFactory.createLocalIndexExporter("id-1", format, "");
+        queryInsightsExporterFactory.createRemoteRepositoryExporter("id-3", "test-repo", "test-path");
+
+        assertNotNull(queryInsightsExporterFactory.getExporter("id-1"));
+        assertNotNull(queryInsightsExporterFactory.getExporter("id-3"));
+
+        queryInsightsExporterFactory.closeAllExporters();
+
+        assertNull(queryInsightsExporterFactory.getExporter("id-1"));
+        assertNull(queryInsightsExporterFactory.getExporter("id-3"));
     }
 
     public void testUpdateExporter() {

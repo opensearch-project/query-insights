@@ -296,6 +296,29 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Remote repository exporter settings
+     */
+    public static final Setting<String> REMOTE_EXPORTER_REPOSITORY = Setting.simpleString(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.repository",
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    public static final Setting<String> REMOTE_EXPORTER_PATH = Setting.simpleString(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.path",
+        "query-insights",
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    public static final Setting<Boolean> REMOTE_EXPORTER_ENABLED = Setting.boolSetting(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.enabled",
+        false,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Settings for the list of indices that excluded from top queries.
      */
     public static final Setting<List<String>> TOP_N_QUERIES_EXCLUDED_INDICES = Setting.listSetting(

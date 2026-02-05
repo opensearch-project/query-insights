@@ -23,6 +23,7 @@ import static org.opensearch.plugin.insights.core.service.QueryInsightsService.Q
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.getInitialDelay;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
@@ -66,6 +67,7 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.DebugExporter;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -77,6 +79,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
@@ -97,6 +100,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
     private ThreadPool threadPool;
     private final Client client = mock(Client.class);
+    private final RepositoriesService repositoriesService = mock(RepositoriesService.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsService queryInsightsService;
     private QueryInsightsService queryInsightsServiceSpy;
@@ -107,17 +111,13 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private LocalIndexExporter mockLocalIndexExporter;
     private LocalIndexLifecycleManager mockLocalIndexLifecycleManagerSpy;
     private DebugExporter mockDebugExporter;
+    private RemoteRepositoryExporter mockRemoteRepositoryExporter;
     private QueryInsightsReader mockReader;
     private QueryInsightsExporterFactory queryInsightsExporterFactory;
     private QueryInsightsReaderFactory queryInsightsReaderFactory;
 
     @Before
     public void setup() {
-        queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
-        queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
-        mockLocalIndexExporter = mock(LocalIndexExporter.class);
-        mockDebugExporter = mock(DebugExporter.class);
-        mockReader = mock(QueryInsightsReader.class);
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
@@ -132,7 +132,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         mockLocalIndexLifecycleManagerSpy = spy(
             new LocalIndexLifecycleManager(threadPool, client, QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE)
         );
-        clusterService = new ClusterService(settings, clusterSettings, threadPool);
+        clusterService = ClusterServiceUtils.createClusterService(settings, clusterSettings, threadPool);
+
+        queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
+        queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
+        mockLocalIndexExporter = mock(LocalIndexExporter.class);
+        mockDebugExporter = mock(DebugExporter.class);
+        mockRemoteRepositoryExporter = mock(RemoteRepositoryExporter.class);
+        mockReader = mock(QueryInsightsReader.class);
+
+        // Mock the remote exporter creation that happens in constructor
+        when(queryInsightsExporterFactory.createRemoteRepositoryExporter(eq(TOP_QUERIES_REMOTE_EXPORTER_ID), anyString(), anyString()))
+            .thenReturn(mockRemoteRepositoryExporter);
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteRepositoryExporter);
+
         queryInsightsService = new QueryInsightsService(
             clusterService,
             threadPool,
@@ -720,7 +733,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             client,
             NoopMetricsRegistry.INSTANCE,
             namedXContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService),
+            new QueryInsightsExporterFactory(client, clusterService, () -> repositoriesService),
             new QueryInsightsReaderFactory(client)
         );
         updatedQueryInsightsService.enableCollection(MetricType.LATENCY, true);
