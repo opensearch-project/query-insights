@@ -270,5 +270,4 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         Thread.sleep(6000);
         internalCluster().stopAllNodes();
     }
-
 }

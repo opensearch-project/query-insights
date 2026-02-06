@@ -14,32 +14,32 @@ import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.TaskRecord;
 
 /**
  * A response from a single node containing live queries information
  */
 public class LiveQueriesNodeResponse extends BaseNodeResponse {
 
-    private List<SearchQueryRecord> liveQueries;
+    private List<TaskRecord> tasks;
 
-    public LiveQueriesNodeResponse(DiscoveryNode node, List<SearchQueryRecord> liveQueries) {
+    public LiveQueriesNodeResponse(DiscoveryNode node, List<TaskRecord> tasks) {
         super(node);
-        this.liveQueries = liveQueries;
+        this.tasks = tasks;
     }
 
     public LiveQueriesNodeResponse(StreamInput in) throws IOException {
         super(in);
-        this.liveQueries = in.readList(SearchQueryRecord::new);
+        this.tasks = in.readList(TaskRecord::new);
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeList(liveQueries);
+        out.writeList(tasks);
     }
 
-    public List<SearchQueryRecord> getLiveQueries() {
-        return liveQueries;
+    public List<TaskRecord> getTasks() {
+        return tasks;
     }
 }

@@ -93,9 +93,6 @@
     "source_truncated" : {
       "type" : "boolean"
     },
-    "parent_task_id" : {
-      "type" : "keyword"
-    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {

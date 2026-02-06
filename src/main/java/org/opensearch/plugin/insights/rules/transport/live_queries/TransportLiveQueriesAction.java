@@ -24,11 +24,8 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesNodeR
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesNodeResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
-import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.Measurement;
-import org.opensearch.plugin.insights.rules.model.MetricType;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.rules.model.ShardTaskRecord;
+import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import org.opensearch.plugin.insights.rules.model.TaskRecord;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
@@ -69,62 +66,76 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
         List<FailedNodeException> failures
     ) {
         // Collect all tasks from all nodes
-        List<SearchQueryRecord> allTasks = new ArrayList<>();
+        List<TaskRecord> allTasks = new ArrayList<>();
         for (LiveQueriesNodeResponse nodeResponse : responses) {
-            allTasks.addAll(nodeResponse.getLiveQueries());
+            allTasks.addAll(nodeResponse.getTasks());
         }
 
-        // Group parent and shard tasks globally
-        Map<String, SearchQueryRecord> parentTasks = new HashMap<>();
-        List<SearchQueryRecord> shardTasks = new ArrayList<>();
+        // Group tasks by parent query ID and extract metadata
+        Map<String, List<TaskRecord>> tasksByQuery = new HashMap<>();
+        Map<String, String> queryStatus = new HashMap<>();
+        Map<String, Long> queryStartTime = new HashMap<>();
+        Map<String, String> queryWlmGroupId = new HashMap<>();
 
-        for (SearchQueryRecord task : allTasks) {
-            // Determine task type from stored action in LABELS
-            Map<String, Object> labels = (Map<String, Object>) task.getAttributes().get(Attribute.LABELS);
-            String taskAction = labels != null ? (String) labels.get("action") : null;
-            if (taskAction != null && taskAction.startsWith("indices:data/read/search[phase/")) {
-                shardTasks.add(task);
+        for (TaskRecord task : allTasks) {
+            String queryId;
+            if (task.getParentTaskId() == null) {
+                // This is a coordinator task
+                queryId = task.getTaskId();
+                queryStatus.put(queryId, task.getStatus());
+                queryStartTime.put(queryId, task.getStartTime());
             } else {
-                parentTasks.put(task.getId(), task);
+                // This is a shard task - extract parent ID
+                String parentId = task.getParentTaskId();
+                if (parentId.contains(":")) {
+                    parentId = parentId.substring(parentId.lastIndexOf(":") + 1);
+                }
+                queryId = parentId;
             }
+            tasksByQuery.computeIfAbsent(queryId, k -> new ArrayList<>()).add(task);
         }
 
-        // Attach shard tasks to their parent tasks globally
-        for (SearchQueryRecord shardTask : shardTasks) {
-            String parentTaskId = (String) shardTask.getAttributes().get(Attribute.PARENT_TASK_ID);
-            if (parentTaskId != null) {
-                if (parentTaskId.contains(":")) {
-                    parentTaskId = parentTaskId.substring(parentTaskId.lastIndexOf(":") + 1);
-                }
-                SearchQueryRecord parent = parentTasks.get(parentTaskId);
-                if (parent != null) {
-                    String taskDescription = (String) shardTask.getAttributes().get(Attribute.DESCRIPTION);
-                    String shardId = extractShardIdFromDescription(taskDescription);
-                    Map<String, Object> labels = (Map<String, Object>) shardTask.getAttributes().get(Attribute.LABELS);
-                    String actionName = labels != null ? (String) labels.get("action") : "indices:data/read/search[phase/query]";
-                    ShardTaskRecord shardRecord = new ShardTaskRecord(
-                        shardId,
-                        (String) shardTask.getAttributes().get(Attribute.NODE_ID),
-                        actionName,
-                        shardTask.getMeasurement(MetricType.LATENCY) != null
-                            ? shardTask.getMeasurement(MetricType.LATENCY).longValue()
-                            : 0L,
-                        shardTask.getMeasurement(MetricType.CPU) != null ? shardTask.getMeasurement(MetricType.CPU).longValue() : 0L,
-                        shardTask.getMeasurement(MetricType.MEMORY) != null ? shardTask.getMeasurement(MetricType.MEMORY).longValue() : 0L,
-                        (String) shardTask.getAttributes().get(Attribute.PARENT_TASK_ID)
-                    );
-                    parent.addShardTask(shardRecord);
+        // Build aggregated LiveQueryRecords
+        List<LiveQueryRecord> aggregatedRecords = new ArrayList<>();
+        for (Map.Entry<String, List<TaskRecord>> entry : tasksByQuery.entrySet()) {
+            String queryId = entry.getKey();
+            List<TaskRecord> tasks = entry.getValue();
+
+            // Separate coordinator and shard tasks
+            TaskRecord coordinatorTask = null;
+            List<TaskRecord> shardTasks = new ArrayList<>();
+            String wlmGroupId = null;
+
+            for (TaskRecord task : tasks) {
+                if (task.getParentTaskId() == null && task.getAction().equals("indices:data/read/search")) {
+                    coordinatorTask = task;
+                    wlmGroupId = task.getWlmGroupId();
+                } else {
+                    shardTasks.add(task);
                 }
             }
+
+            // Calculate aggregated metrics
+            long totalLatency = tasks.stream().mapToLong(TaskRecord::getLatency).max().orElse(0L);
+            long totalCpu = tasks.stream().mapToLong(TaskRecord::getCpu).sum();
+            long totalMemory = tasks.stream().mapToLong(TaskRecord::getMemory).sum();
+
+            LiveQueryRecord aggregated = new LiveQueryRecord(
+                queryId,
+                queryStatus.getOrDefault(queryId, "RUNNING"),
+                queryStartTime.getOrDefault(queryId, 0L),
+                wlmGroupId,
+                totalLatency,
+                totalCpu,
+                totalMemory,
+                coordinatorTask,
+                shardTasks
+            );
+            aggregatedRecords.add(aggregated);
         }
 
-        // Replace original responses with grouped results
-        List<LiveQueriesNodeResponse> groupedResponses = new ArrayList<>();
-        if (!parentTasks.isEmpty() && !responses.isEmpty()) {
-            // Use first node to represent all grouped results
-            groupedResponses.add(new LiveQueriesNodeResponse(responses.get(0).getNode(), new ArrayList<>(parentTasks.values())));
-        }
-        return new LiveQueriesResponse(clusterService.getClusterName(), groupedResponses, failures);
+        // Create response with aggregated records
+        return new LiveQueriesResponse(clusterService.getClusterName(), aggregatedRecords, failures);
     }
 
     @Override
@@ -139,42 +150,74 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
 
     @Override
     protected LiveQueriesNodeResponse nodeOperation(LiveQueriesNodeRequest request) {
-        List<SearchQueryRecord> localTasks = getLocalTasks(request.getRequest());
+        List<TaskRecord> localTasks = getLocalTasks(request.getRequest());
         return new LiveQueriesNodeResponse(transportService.getLocalNode(), localTasks);
     }
 
-    private List<SearchQueryRecord> getLocalTasks(LiveQueriesRequest request) {
+    private List<TaskRecord> getLocalTasks(LiveQueriesRequest request) {
         Map<Long, Task> allTasks = transportService.getTaskManager().getTasks();
-        List<SearchQueryRecord> allRecords = new ArrayList<>();
+        List<TaskRecord> taskRecords = new ArrayList<>();
 
         for (Task runningTask : allTasks.values()) {
             if (!isSearchTask(runningTask)) {
                 continue;
             }
 
-            SearchQueryRecord record = createSearchQueryRecord(runningTask, request);
+            TaskRecord record = createTaskRecord(runningTask, request);
             if (record != null) {
-                allRecords.add(record);
+                taskRecords.add(record);
             }
         }
 
-        return allRecords;
+        return taskRecords;
     }
 
     private boolean isSearchTask(Task task) {
         return task.getAction().equals("indices:data/read/search") || task.getAction().startsWith("indices:data/read/search[phase/");
     }
 
-    private SearchQueryRecord createSearchQueryRecord(Task runningTask, LiveQueriesRequest request) {
+    private TaskRecord createTaskRecord(Task runningTask, LiveQueriesRequest request) {
         String wlmGroupId = getWlmGroupId(runningTask);
         if (!isWlmGroupMatched(wlmGroupId, request.getWlmGroupId())) {
             return null;
         }
 
-        Map<MetricType, Measurement> measurements = createMeasurements(runningTask);
-        Map<Attribute, Object> attributes = createAttributes(runningTask, request, wlmGroupId);
+        long runningNanos = System.nanoTime() - runningTask.getStartTimeNanos();
+        long runningMillis = runningNanos / 1_000_000;
+        long cpuNanos = 0L;
+        long memBytes = 0L;
 
-        return new SearchQueryRecord(runningTask.getStartTime(), measurements, attributes, null, null, String.valueOf(runningTask.getId()));
+        try {
+            var totalResourceUsage = runningTask.getTotalResourceStats();
+            if (totalResourceUsage != null) {
+                cpuNanos = totalResourceUsage.getCpuTimeInNanos();
+                memBytes = totalResourceUsage.getMemoryInBytes();
+            }
+        } catch (Exception e) {
+            // Resource stats unavailable
+        }
+
+        String nodeId = transportService.getLocalNode().getId();
+        String parentTaskId = runningTask.getParentTaskId() != null && runningTask.getParentTaskId().getId() != -1
+            ? runningTask.getParentTaskId().toString()
+            : null;
+        String status = "RUNNING";
+        String action = runningTask.getAction();
+
+        // Create TaskRecord
+        return new TaskRecord(
+            String.valueOf(runningTask.getId()),
+            parentTaskId,
+            nodeId,
+            status,
+            action,
+            runningTask.getStartTime(),
+            runningMillis,
+            cpuNanos,
+            memBytes,
+            runningTask.getDescription(),
+            wlmGroupId
+        );
     }
 
     private String getWlmGroupId(Task runningTask) {
@@ -187,77 +230,4 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
     private boolean isWlmGroupMatched(String taskWlmGroupId, String targetWlmGroupId) {
         return targetWlmGroupId == null || targetWlmGroupId.equals(taskWlmGroupId);
     }
-
-    private Map<MetricType, Measurement> createMeasurements(Task runningTask) {
-        long runningNanos = System.nanoTime() - runningTask.getStartTimeNanos();
-        long cpuNanos = 0L;
-        long memBytes = 0L;
-
-        try {
-            var totalResourceUsage = runningTask.getTotalResourceStats();
-            if (totalResourceUsage != null) {
-                cpuNanos = totalResourceUsage.getCpuTimeInNanos();
-                memBytes = totalResourceUsage.getMemoryInBytes();
-            }
-        } catch (Exception e) {
-            // Resource stats unavailable - using zero values
-        }
-
-        Map<MetricType, Measurement> measurements = new HashMap<>();
-        measurements.put(MetricType.LATENCY, new Measurement(runningNanos));
-        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
-        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
-        return measurements;
-    }
-
-    private Map<Attribute, Object> createAttributes(Task runningTask, LiveQueriesRequest request, String wlmGroupId) {
-        Map<Attribute, Object> attributes = new HashMap<>();
-        String nodeId = transportService.getLocalNode().getId();
-        String parentTaskId = runningTask.getParentTaskId() != null && runningTask.getParentTaskId().getId() != -1
-            ? runningTask.getParentTaskId().toString()
-            : null;
-
-        attributes.put(Attribute.NODE_ID, nodeId);
-        attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
-        attributes.put(Attribute.DESCRIPTION, runningTask.getDescription());
-        attributes.put(Attribute.LABELS, Map.of("action", runningTask.getAction()));
-
-        if (parentTaskId != null) {
-            attributes.put(Attribute.PARENT_TASK_ID, parentTaskId);
-        }
-
-        if (runningTask.getAction().startsWith("indices:data/read/search[phase/")) {
-            String[] indices = extractIndicesFromDescription(runningTask.getDescription());
-            attributes.put(Attribute.INDICES, indices.length > 0 ? indices : new String[] { "unknown" });
-        }
-
-        return attributes;
-    }
-
-    private String[] extractIndicesFromDescription(String description) {
-        if (description != null && description.startsWith("indices[")) {
-            int start = description.indexOf("indices[") + 8;
-            int end = description.indexOf("]", start);
-            if (end > start) {
-                String indicesStr = description.substring(start, end);
-                if (!indicesStr.isEmpty()) {
-                    // Clean up the indices string - remove brackets and split by comma
-                    return indicesStr.replaceAll("[\\[\\]]", "").split(",");
-                }
-            }
-        }
-        return new String[0];
-    }
-
-    private String extractShardIdFromDescription(String description) {
-        if (description != null && description.startsWith("shardId[")) {
-            int start = description.indexOf("shardId[") + 8;
-            int end = description.indexOf("]]", start);
-            if (end > start) {
-                return description.substring(start, end + 2);
-            }
-        }
-        return description != null ? description : "unknown_shard";
-    }
-
 }

@@ -18,12 +18,15 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 
 /**
  * Transport response for cluster/node level live queries information.
  */
 public class LiveQueriesResponse extends BaseNodesResponse<LiveQueriesNodeResponse> implements ToXContentObject {
+
+    private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
+    private final List<LiveQueryRecord> liveQueries;
 
     /**
      * Constructor for LiveQueriesResponse.
@@ -33,41 +36,31 @@ public class LiveQueriesResponse extends BaseNodesResponse<LiveQueriesNodeRespon
      */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         super(in);
+        // liveQueries is populated in readNodesFrom via ThreadLocal
+        this.liveQueries = LIVE_QUERIES_HOLDER.get();
+        LIVE_QUERIES_HOLDER.remove();
     }
+
+    private static final ThreadLocal<List<LiveQueryRecord>> LIVE_QUERIES_HOLDER = new ThreadLocal<>();
 
     /**
      * Constructor for LiveQueriesResponse
      *
      * @param clusterName cluster name
-     * @param nodes successful node responses
+     * @param liveQueries aggregated live query records
      * @param failures failed node responses
      */
-    public LiveQueriesResponse(ClusterName clusterName, List<LiveQueriesNodeResponse> nodes, List<FailedNodeException> failures) {
-        super(clusterName, nodes, failures);
+    public LiveQueriesResponse(ClusterName clusterName, List<LiveQueryRecord> liveQueries, List<FailedNodeException> failures) {
+        super(clusterName, new ArrayList<>(), failures);
+        this.liveQueries = liveQueries;
     }
-
-    private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
 
     /**
      * Get the live queries list from all nodes
      * @return the list of live query records
      */
-    public List<SearchQueryRecord> getLiveQueries() {
-        List<SearchQueryRecord> allQueries = new ArrayList<>();
-        for (LiveQueriesNodeResponse nodeResponse : getNodes()) {
-            allQueries.addAll(nodeResponse.getLiveQueries());
-        }
-        return allQueries;
-    }
-
-    @Override
-    protected List<LiveQueriesNodeResponse> readNodesFrom(StreamInput in) throws IOException {
-        return in.readList(LiveQueriesNodeResponse::new);
-    }
-
-    @Override
-    protected void writeNodesTo(StreamOutput out, List<LiveQueriesNodeResponse> nodes) throws IOException {
-        out.writeList(nodes);
+    public List<LiveQueryRecord> getLiveQueries() {
+        return liveQueries;
     }
 
     @Override
@@ -75,11 +68,25 @@ public class LiveQueriesResponse extends BaseNodesResponse<LiveQueriesNodeRespon
         builder.startObject();
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
 
-        for (SearchQueryRecord query : getLiveQueries()) {
+        for (LiveQueryRecord query : liveQueries) {
             query.toXContent(builder, params);
         }
         builder.endArray();
         builder.endObject();
         return builder;
+    }
+
+    @Override
+    protected void writeNodesTo(StreamOutput out, List<LiveQueriesNodeResponse> nodes) throws IOException {
+        // Write the aggregated live queries instead of node responses
+        out.writeList(liveQueries);
+    }
+
+    @Override
+    protected List<LiveQueriesNodeResponse> readNodesFrom(StreamInput in) throws IOException {
+        // Read the aggregated live queries and store in ThreadLocal
+        List<LiveQueryRecord> queries = in.readList(LiveQueryRecord::new);
+        LIVE_QUERIES_HOLDER.set(queries);
+        return new ArrayList<>();
     }
 }

@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 
 import java.io.IOException;
 import org.opensearch.Version;
+import org.opensearch.action.ActionRequestValidationException;
 import org.opensearch.action.support.nodes.BaseNodesRequest;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -25,6 +26,8 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
     private final MetricType sortBy;
     // Maximum number of results to return
     private final int size;
+    // Node IDs to filter queries by
+    private final String[] nodeIds;
     private String wlmGroupId;
 
     /**
@@ -38,6 +41,7 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
         this.verbose = in.readBoolean();
         this.sortBy = MetricType.readFromStream(in);
         this.size = in.readInt();
+        this.nodeIds = in.readStringArray();
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
         }
@@ -57,6 +61,7 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
         this.verbose = verbose;
         this.sortBy = sortBy;
         this.size = size;
+        this.nodeIds = nodeIds;
         this.wlmGroupId = wlmGroupId;
     }
 
@@ -105,8 +110,14 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
         out.writeBoolean(verbose);
         MetricType.writeTo(out, sortBy);
         out.writeInt(size);
+        out.writeStringArray(nodeIds);
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
         }
+    }
+
+    @Override
+    public ActionRequestValidationException validate() {
+        return null;
     }
 }
