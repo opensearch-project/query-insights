@@ -166,10 +166,20 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
                         if ("?size=0".equals(param)) {
                             ok = pList.isEmpty();
                         } else if ("?verbose=false".equals(param)) {
-                            ok = pList.stream().allMatch(q -> !((Map<String, Object>) q).containsKey("description"));
+                            ok = pList.stream().allMatch(q -> {
+                                Map<String, Object> qMap = (Map<String, Object>) q;
+                                if (!qMap.containsKey("coordinator_task")) return true;
+                                Map<String, Object> coordTask = (Map<String, Object>) qMap.get("coordinator_task");
+                                return !coordTask.containsKey("description");
+                            });
                         } else if (param.startsWith("?nodeId=")) {
                             String filterNode = param.substring("?nodeId=".length());
-                            ok = pList.stream().allMatch(q -> filterNode.equals(((Map<String, Object>) q).get("node_id")));
+                            ok = pList.stream().allMatch(q -> {
+                                Map<String, Object> qMap = (Map<String, Object>) q;
+                                if (!qMap.containsKey("coordinator_task")) return false;
+                                Map<String, Object> coordTask = (Map<String, Object>) qMap.get("coordinator_task");
+                                return filterNode.equals(coordTask.get("node_id"));
+                            });
                         } else {
                             ok = !pList.isEmpty();
                         }
@@ -206,44 +216,24 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             // Validate the format of live queries based on LiveQueries.java and LiveQueriesResponse.java
             for (Map<String, Object> query : liveQueries) {
                 // Verify required fields are present
-                assertTrue("Query should have timestamp", query.containsKey("timestamp"));
-                assertTrue("Query should have id", query.containsKey("id"));
-                assertTrue("Query should have node_id", query.containsKey("node_id"));
-                assertTrue("Query should have measurements", query.containsKey("measurements"));
-                assertTrue("Query should have description", query.containsKey("description"));
+                assertTrue("Query should have start_time", query.containsKey("start_time"));
+                assertTrue("Query should have query_id", query.containsKey("query_id"));
+                assertTrue("Query should have status", query.containsKey("status"));
+                assertTrue("Query should have coordinator_task", query.containsKey("coordinator_task"));
 
-                // Validate timestamp is a number
-                assertTrue("Timestamp should be a number", query.get("timestamp") instanceof Number);
+                // Validate start_time is a number
+                assertTrue("start_time should be a number", query.get("start_time") instanceof Number);
 
-                // Validate id is a string
-                assertTrue("ID should be a string", query.get("id") instanceof String);
+                // Validate query_id is a string
+                assertTrue("query_id should be a string", query.get("query_id") instanceof String);
 
-                // Validate node_id is a string
-                assertTrue("Node ID should be a string", query.get("node_id") instanceof String);
+                // Validate status is a string
+                assertTrue("status should be a string", query.get("status") instanceof String);
 
-                // Validate measurements structure
-                Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
-                assertTrue("Measurements should include latency", measurements.containsKey("latency"));
-                assertTrue("Measurements should include cpu", measurements.containsKey("cpu"));
-                assertTrue("Measurements should include memory", measurements.containsKey("memory"));
-
-                // Validate each measurement's structure
-                for (String metricType : new String[] { "latency", "cpu", "memory" }) {
-                    Map<String, Object> metric = (Map<String, Object>) measurements.get(metricType);
-                    assertTrue("Metric should have number", metric.containsKey("number"));
-                    assertTrue("Metric should have count", metric.containsKey("count"));
-                    assertTrue("Metric should have aggregationType", metric.containsKey("aggregationType"));
-
-                    // Validate number is a number
-                    assertTrue("Number should be a number", metric.get("number") instanceof Number);
-
-                    // Validate count is a number
-                    assertTrue("Count should be a number", metric.get("count") instanceof Number);
-
-                    // Validate aggregationType is a string
-                    assertTrue("AggregationType should be a string", metric.get("aggregationType") instanceof String);
-                }
-                assertTrue("Description should be a string", query.get("description") instanceof String);
+                // Validate coordinator_task structure
+                Map<String, Object> coordTask = (Map<String, Object>) query.get("coordinator_task");
+                assertTrue("coordinator_task should have node_id", coordTask.containsKey("node_id"));
+                assertTrue("coordinator_task should have description", coordTask.containsKey("description"));
             }
         } else {
             fail("No live queries found.");

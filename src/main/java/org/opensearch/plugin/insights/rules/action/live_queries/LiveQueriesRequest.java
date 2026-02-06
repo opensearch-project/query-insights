@@ -10,8 +10,8 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 
 import java.io.IOException;
 import org.opensearch.Version;
-import org.opensearch.action.ActionRequest;
 import org.opensearch.action.ActionRequestValidationException;
+import org.opensearch.action.support.nodes.BaseNodesRequest;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -20,7 +20,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 /**
  * A request to get cluster/node level ongoing live queries information.
  */
-public class LiveQueriesRequest extends ActionRequest {
+public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
 
     private final boolean verbose;
     private final MetricType sortBy;
@@ -57,6 +57,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds The node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final MetricType sortBy, final int size, final String[] nodeIds, String wlmGroupId) {
+        super(nodeIds);
         this.verbose = verbose;
         this.sortBy = sortBy;
         this.size = size;
@@ -96,16 +97,8 @@ public class LiveQueriesRequest extends ActionRequest {
     }
 
     /**
-     * Get node IDs to filter by
-     * @return array of node IDs
-     */
-    public String[] nodesIds() {
-        return nodeIds;
-    }
-
-    /**
      * Get Wlm Group to filter by
-     * @return array of node IDs
+     * @return wlm group id
      */
     public String getWlmGroupId() {
         return wlmGroupId;
