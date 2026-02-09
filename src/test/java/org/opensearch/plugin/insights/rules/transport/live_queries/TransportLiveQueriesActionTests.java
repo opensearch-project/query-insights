@@ -4,7 +4,8 @@
 
 package org.opensearch.plugin.insights.rules.transport.live_queries;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.HashMap;
