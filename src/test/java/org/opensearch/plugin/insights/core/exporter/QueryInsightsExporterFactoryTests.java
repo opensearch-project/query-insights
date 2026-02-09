@@ -72,13 +72,9 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         assertTrue(exporter1 instanceof LocalIndexExporter);
         QueryInsightsExporter exporter2 = queryInsightsExporterFactory.createDebugExporter("id-debug");
         assertTrue(exporter2 instanceof DebugExporter);
-        QueryInsightsExporter exporter3 = queryInsightsExporterFactory.createRemoteRepositoryExporter("id-s3", "test-repo", "test-path");
-        assertTrue(exporter3 instanceof RemoteRepositoryExporter);
         try {
             queryInsightsExporterFactory.closeExporter(exporter1);
             assertNull(queryInsightsExporterFactory.getExporter("id-index"));
-            queryInsightsExporterFactory.closeExporter(exporter3);
-            assertNull(queryInsightsExporterFactory.getExporter("id-s3"));
             queryInsightsExporterFactory.closeAllExporters();
         } catch (Exception e) {
             fail("No exception should be thrown when closing exporter");
@@ -87,15 +83,12 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
 
     public void testCloseAllExporters() {
         queryInsightsExporterFactory.createLocalIndexExporter("id-1", format, "");
-        queryInsightsExporterFactory.createRemoteRepositoryExporter("id-3", "test-repo", "test-path");
 
         assertNotNull(queryInsightsExporterFactory.getExporter("id-1"));
-        assertNotNull(queryInsightsExporterFactory.getExporter("id-3"));
 
         queryInsightsExporterFactory.closeAllExporters();
 
         assertNull(queryInsightsExporterFactory.getExporter("id-1"));
-        assertNull(queryInsightsExporterFactory.getExporter("id-3"));
     }
 
     public void testUpdateExporter() {

@@ -66,7 +66,7 @@ PUT _cluster/settings
 {
   "persistent" : {
     "search.insights.top_queries.exporter.remote.repository" : "my-s3-repository",
-    "search.insights.top_queries.exporter.remote.path" : "query-insights/<account-number>/<domain-name>,"
+    "search.insights.top_queries.exporter.remote.path" : "query-insights",
     "search.insights.top_queries.exporter.remote.enabled" : true
   }
 }

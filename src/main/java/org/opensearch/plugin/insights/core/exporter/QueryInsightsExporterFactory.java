@@ -118,13 +118,15 @@ public class QueryInsightsExporterFactory {
      * @param basePath base path for organizing files
      * @return RemoteRepositoryExporter the created exporter sink
      */
-    public RemoteRepositoryExporter createRemoteRepositoryExporter(String id, String repositoryName, String basePath) {
+    public RemoteRepositoryExporter createRemoteRepositoryExporter(String id, String repositoryName, String basePath, Boolean enabled) {
         RemoteRepositoryExporter remoteRepositoryExporter = new RemoteRepositoryExporter(
             repositoriesServiceSupplier,
+            clusterService,
             repositoryName,
             basePath,
             DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
-            id
+            id,
+            enabled
         );
         this.exporters.put(id, remoteRepositoryExporter);
         return remoteRepositoryExporter;

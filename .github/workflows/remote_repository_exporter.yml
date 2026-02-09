@@ -59,8 +59,8 @@ jobs:
       - name: Verify S3 exports
         run: |
           echo "Checking S3 bucket for exported query insights files..."
-          aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/test-account/test-domain/top-queries/ --recursive
-          FILE_COUNT=$(aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/test-account/test-domain/top-queries/ --recursive | wc -l)
+          aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/ --recursive
+          FILE_COUNT=$(aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/ --recursive | wc -l)
           if [ "$FILE_COUNT" -gt 0 ]; then
             echo "Success: Found $FILE_COUNT file(s) exported to S3"
           else

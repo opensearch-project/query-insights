@@ -188,14 +188,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (localIndexLifecycleManager::setDeleteAfterAndDelete),
                 (localIndexLifecycleManager::validateDeleteAfter)
             );
+        queryInsightsExporterFactory.createRemoteRepositoryExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID,
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_PATH),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_ENABLED)
+        );
 
         // Listen for remote repository exporter setting changes - update individual settings
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
-
-        // Create remote repository exporter on initialization
-        queryInsightsExporterFactory.createRemoteRepositoryExporter(TOP_QUERIES_REMOTE_EXPORTER_ID, "", "query-insights");
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);

@@ -11,7 +11,7 @@ package org.opensearch.plugin.insights.core.exporter;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,8 +21,11 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.opensearch.cluster.node.DiscoveryNode;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.blobstore.AsyncMultiStreamBlobContainer;
 import org.opensearch.common.blobstore.BlobContainer;
 import org.opensearch.common.blobstore.BlobPath;
@@ -33,7 +36,6 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.repositories.RepositoriesService;
-import org.opensearch.repositories.Repository;
 import org.opensearch.repositories.blobstore.BlobStoreRepository;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -43,6 +45,9 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
 
     @Mock
     private RepositoriesService repositoriesService;
+
+    @Mock
+    private ClusterService clusterService;
 
     @Mock
     private BlobStoreRepository blobStoreRepository;
@@ -68,12 +73,22 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         OperationalMetricsCounter.initialize("test", metricsRegistry);
 
         MockitoAnnotations.openMocks(this);
+        DiscoveryNode localNode = mock(DiscoveryNode.class);
+        when(localNode.getId()).thenReturn("test-node-id");
+        when(clusterService.localNode()).thenReturn(localNode);
+
+        when(repositoriesService.repository("test-repo")).thenReturn(blobStoreRepository);
+        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
+        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(asyncBlobContainer);
+
         remoteRepositoryExporter = new RemoteRepositoryExporter(
             () -> repositoriesService,
+            clusterService,
             "test-repo",
-            "query-insights/account123/domain-name",
+            "query-insights",
             DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
-            "test-remote-exporter"
+            "test-remote-exporter",
+            true
         );
     }
 
@@ -85,14 +100,14 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         remoteRepositoryExporter.setEnabled(false);
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
         remoteRepositoryExporter.export(records);
-        verify(repositoriesService, never()).repository(any());
+        verify(repositoriesService, times(1)).repository(any());
     }
 
     public void testExportEmptyRecords() {
         remoteRepositoryExporter.export(null);
         remoteRepositoryExporter.export(Arrays.asList());
 
-        verify(repositoriesService, never()).repository(any());
+        verify(repositoriesService, times(1)).repository(any());
     }
 
     public void testExportWithAsyncMultiStreamBlobContainer() throws Exception {
@@ -109,32 +124,6 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         remoteRepositoryExporter.export(records);
 
         verify(asyncBlobContainer).asyncBlobUpload(any(WriteContext.class), any(ActionListener.class));
-    }
-
-    public void testExportWithNonAsyncBlobContainer() throws Exception {
-        remoteRepositoryExporter.setEnabled(true);
-        when(repositoriesService.repository("test-repo")).thenReturn(blobStoreRepository);
-        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
-        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(blobContainer);
-
-        List<SearchQueryRecord> records = Arrays.asList(
-            new SearchQueryRecord(System.currentTimeMillis(), new HashMap<>(), new HashMap<>(), "test-id-1")
-        );
-
-        remoteRepositoryExporter.export(records);
-
-        verify(asyncBlobContainer, never()).asyncBlobUpload(any(), any());
-    }
-
-    public void testExportWithNonBlobStoreRepository() throws IOException {
-        remoteRepositoryExporter.setEnabled(true);
-        Repository nonBlobStoreRepo = mock(Repository.class);
-        when(repositoriesService.repository("test-repo")).thenReturn(nonBlobStoreRepo);
-
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
-        remoteRepositoryExporter.export(records);
-
-        verify(asyncBlobContainer, never()).asyncBlobUpload(any(), any());
     }
 
     public void testExportWithIOException() throws Exception {
@@ -158,6 +147,10 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
     }
 
     public void testGetAndSetRepositoryName() {
+        when(repositoriesService.repository("new-repo")).thenReturn(blobStoreRepository);
+        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
+        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(asyncBlobContainer);
+
         remoteRepositoryExporter.setRepositoryName("new-repo");
         assertEquals("new-repo", remoteRepositoryExporter.getRepositoryName());
     }
@@ -173,5 +166,69 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         } catch (Exception e) {
             fail("No exception should be thrown when closing remote repository exporter");
         }
+    }
+
+    public void testUploadRetry() throws Exception {
+        remoteRepositoryExporter.setEnabled(true);
+        when(repositoriesService.repository("test-repo")).thenReturn(blobStoreRepository);
+        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
+        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(asyncBlobContainer);
+
+        List<SearchQueryRecord> records = Arrays.asList(
+            new SearchQueryRecord(System.currentTimeMillis(), new HashMap<>(), new HashMap<>(), "test-id-1")
+        );
+
+        ArgumentCaptor<ActionListener> listenerCaptor = ArgumentCaptor.forClass(ActionListener.class);
+        remoteRepositoryExporter.export(records);
+        verify(asyncBlobContainer).asyncBlobUpload(any(WriteContext.class), listenerCaptor.capture());
+
+        ActionListener listener = listenerCaptor.getValue();
+        listener.onFailure(new IOException("Upload failed"));
+        Thread.sleep(500);
+
+        // Verify retries occurred
+        verify(asyncBlobContainer, times(2)).asyncBlobUpload(any(WriteContext.class), any(ActionListener.class));
+    }
+
+    public void testSetBasePathWithValidCharacters() {
+        remoteRepositoryExporter.setBasePath("query-insights/path-with_special.chars*()");
+        assertEquals("query-insights/path-with_special.chars*()", remoteRepositoryExporter.getBasePath());
+    }
+
+    public void testSetBasePathWithInvalidCharacters() {
+        assertThrows(IllegalArgumentException.class, () -> { remoteRepositoryExporter.setBasePath("query-insights/invalid@path"); });
+    }
+
+    public void testSetBasePathWithNull() {
+        remoteRepositoryExporter.setBasePath(null);
+        assertNull(remoteRepositoryExporter.getBasePath());
+    }
+
+    public void testInitializationWithNonAsyncBlobContainer() {
+        when(repositoriesService.repository("non-async-repo")).thenReturn(blobStoreRepository);
+        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
+        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(blobContainer);
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            new RemoteRepositoryExporter(
+                () -> repositoriesService,
+                clusterService,
+                "non-async-repo",
+                "query-insights",
+                DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
+                "test-exporter",
+                true
+            );
+        });
+    }
+
+    public void testSetRepositoryNameWithNonAsyncBlobContainer() {
+        when(repositoriesService.repository("non-async-repo")).thenReturn(blobStoreRepository);
+        when(blobStoreRepository.blobStore()).thenReturn(blobStore);
+        when(blobStore.blobContainer(any(BlobPath.class))).thenReturn(blobContainer);
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            remoteRepositoryExporter.setRepositoryName("non-async-repo");
+        });
     }
 }

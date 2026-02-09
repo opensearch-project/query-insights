@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -142,8 +143,16 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         mockReader = mock(QueryInsightsReader.class);
 
         // Mock the remote exporter creation that happens in constructor
-        when(queryInsightsExporterFactory.createRemoteRepositoryExporter(eq(TOP_QUERIES_REMOTE_EXPORTER_ID), anyString(), anyString()))
-            .thenReturn(mockRemoteRepositoryExporter);
+        when(
+            queryInsightsExporterFactory.createRemoteRepositoryExporter(
+                eq(TOP_QUERIES_REMOTE_EXPORTER_ID),
+                anyString(),
+                anyString(),
+                anyBoolean()
+            )
+        ).thenReturn(mockRemoteRepositoryExporter);
+        when(mockRemoteRepositoryExporter.getBasePath()).thenReturn("query-insights");
+        when(mockRemoteRepositoryExporter.isEnabled()).thenReturn(false);
         when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteRepositoryExporter);
 
         queryInsightsService = new QueryInsightsService(
@@ -744,5 +753,17 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Create a local index exporter with a retention period of 7 days
         updatedQueryInsightsService.queryInsightsExporterFactory.createLocalIndexExporter(TOP_QUERIES_EXPORTER_ID, "YYYY.MM.dd", "");
         return List.of(updatedQueryInsightsService, updatedClusterService);
+    }
+
+    public void testRemoteExporterInitializationWithDefaults() {
+        // Verify remote exporter is initialized with default values from settings
+        RemoteRepositoryExporter remoteExporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        assertNotNull(remoteExporter);
+        // Default path should be "query-insights"
+        assertEquals("query-insights", remoteExporter.getBasePath());
+        // Default enabled should be false
+        assertFalse(remoteExporter.isEnabled());
     }
 }

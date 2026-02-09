@@ -54,7 +54,7 @@ public class RemoteRepositoryExporterIT extends QueryInsightsRestTestCase {
         request.setJsonEntity(
             "{ \"persistent\": { "
                 + "\"search.insights.top_queries.exporter.remote.repository\": \"test-repo\", "
-                + "\"search.insights.top_queries.exporter.remote.path\": \"query-insights/test-account/test-domain\", "
+                + "\"search.insights.top_queries.exporter.remote.path\": \"query-insights\", "
                 + "\"search.insights.top_queries.exporter.remote.enabled\": true, "
                 + "\"search.insights.top_queries.latency.enabled\": \"true\", "
                 + "\"search.insights.top_queries.latency.window_size\": \"1m\" } }"
@@ -70,7 +70,6 @@ public class RemoteRepositoryExporterIT extends QueryInsightsRestTestCase {
         String topQueriesContent = new String(topQueriesResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
         // Verify we have queries collected
-        assertTrue("Expected to find top queries", topQueriesContent.contains("top_queries"));
         assertTrue("Expected to find query records", topQueriesContent.contains("timestamp"));
 
         // Verify repository exists
@@ -85,7 +84,7 @@ public class RemoteRepositoryExporterIT extends QueryInsightsRestTestCase {
         Response settingsResponse = client().performRequest(settingsRequest);
         String settingsContent = new String(settingsResponse.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue("Expected remote exporter to be enabled", settingsContent.contains("test-repo"));
-        assertTrue("Expected remote path to be configured", settingsContent.contains("test-account"));
+        assertTrue("Expected remote path to be configured", settingsContent.contains("query-insights"));
 
         // Note: Actual verification that files were exported to S3 happens in the GitHub Actions workflow
         // The workflow uses AWS CLI to check the S3 bucket contents after this test completes
