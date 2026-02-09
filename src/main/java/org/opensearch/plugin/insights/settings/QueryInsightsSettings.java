@@ -79,6 +79,11 @@ public class QueryInsightsSettings {
     public static final String QUERY_INSIGHTS_HEALTH_STATS_URI = PLUGINS_BASE_URI + "/health_stats";
 
     /**
+     * Settings for Query Metrics
+     */
+    public static final String QUERY_METRICS_BASE_URI = PLUGINS_BASE_URI + "/query_metrics";
+
+    /**
      * Settings for Top Queries
      *
      */
