@@ -224,6 +224,8 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.WLM_GROUP_ID, randomAlphaOfLengthBetween(5, 10));
             // Add is_cancelled attribute
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
+            // Add failed attribute
+            attributes.put(Attribute.FAILED, random().nextBoolean());
 
             SearchQueryRecord record = new SearchQueryRecord(
                 timestamp,
@@ -333,6 +335,7 @@ final public class QueryInsightsTestUtils {
         attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
         attributes.put(Attribute.USERNAME, "testuser");
         attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
+        attributes.put(Attribute.FAILED, false);
 
         return new SearchQueryRecord(
             timestamp,
