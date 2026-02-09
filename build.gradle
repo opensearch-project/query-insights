@@ -65,6 +65,10 @@ configurations.all {
         details.requested.name == 'commons-beanutils2') {
         details.useVersion '2.0.0-M2'
       }
+      if (details.requested.group == 'com.google.errorprone' &&
+        details.requested.name == 'error_prone_annotations') {
+        details.useVersion '2.45.0'
+      }
     }
   }
 }
@@ -75,6 +79,8 @@ apply plugin: 'eclipse'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.rest-test'
+apply plugin: 'opensearch.yaml-rest-test'
+apply plugin: 'opensearch.internal-cluster-test'
 apply plugin: 'opensearch.repositories'
 apply plugin: 'opensearch.java-agent'
 apply plugin: 'jacoco'
@@ -265,7 +271,7 @@ test {
 tasks.named("check").configure { dependsOn(integTest) }
 
 integTest {
-  useCluster testClusters.integTest
+  useCluster project, testClusters.integTest
   // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
   if (System.getProperty("test.debug") != null) {
     jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
@@ -336,7 +342,10 @@ tasks.named("integTest").configure {
 }
 
 testClusters.all {
-    testDistribution = "ARCHIVE"
+  testDistribution = "ARCHIVE"
+  if (name != "yamlRestTest") {
+    numberOfNodes = 2
+
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
 
@@ -354,14 +363,11 @@ testClusters.all {
     } else {
       logger.warn("WLM plugin not found at ${wlmPluginFile}")
     }
-}
-
-testClusters.integTest {
-    numberOfNodes = 2
+  }
 }
 
 run {
-    useCluster testClusters.integTest
+    useCluster project, testClusters.integTest
 }
 
 jacocoTestReport {
@@ -376,7 +382,7 @@ check.dependsOn spotlessCheck
 check.dependsOn jacocoTestReport
 
 task integTestWithSecurity(type: RestIntegTestTask) {
-  useCluster testClusters.integTestWithSecurity
+  useCluster project, testClusters.integTestWithSecurity
 
   systemProperty "cluster.names",
     getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
