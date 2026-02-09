@@ -101,6 +101,20 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
             String queryId = entry.getKey();
             List<TaskRecord> tasks = entry.getValue();
 
+            // Filter by taskId if specified
+            if (request.getTaskId() != null && !request.getTaskId().equals(queryId)) {
+                continue;
+            }
+
+            // Filter by nodeId if specified
+            if (request.nodesIds() != null && request.nodesIds().length > 0) {
+                boolean hasMatchingNode = tasks.stream()
+                    .anyMatch(task -> java.util.Arrays.asList(request.nodesIds()).contains(task.getNodeId()));
+                if (!hasMatchingNode) {
+                    continue;
+                }
+            }
+
             // Separate coordinator and shard tasks
             TaskRecord coordinatorTask = null;
             List<TaskRecord> shardTasks = new ArrayList<>();
@@ -134,7 +148,24 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
             aggregatedRecords.add(aggregated);
         }
 
-        // Create response with aggregated records
+        // Sort and limit results based on request parameters
+        aggregatedRecords.sort((a, b) -> {
+            switch (request.getSortBy()) {
+                case CPU:
+                    return Long.compare(b.getTotalCpu(), a.getTotalCpu());
+                case MEMORY:
+                    return Long.compare(b.getTotalMemory(), a.getTotalMemory());
+                default: // LATENCY
+                    return Long.compare(b.getTotalLatency(), a.getTotalLatency());
+            }
+        });
+
+        // Apply size limit
+        if (aggregatedRecords.size() > request.getSize()) {
+            aggregatedRecords = aggregatedRecords.subList(0, request.getSize());
+        }
+
+        // Create response with sorted and limited records
         return new LiveQueriesResponse(clusterService.getClusterName(), aggregatedRecords, failures);
     }
 

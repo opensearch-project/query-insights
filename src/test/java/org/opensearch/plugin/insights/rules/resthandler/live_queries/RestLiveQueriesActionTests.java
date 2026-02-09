@@ -84,7 +84,7 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testPrepareRequestWithCustomParams() {
-        Map<String, String> params = Map.of("nodeId", "node1", "verbose", "false", "sort", "cpu", "size", "3");
+        Map<String, String> params = Map.of("nodeId", "node1", "verbose", "false", "sort", "cpu", "size", "3", "taskId", "task123");
         RestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withPath(
             QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "/node1"
         ).withParams(params).withMethod(RestRequest.Method.GET).build();
@@ -93,6 +93,7 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
         assertFalse(req.isVerbose());
         assertEquals(MetricType.CPU, req.getSortBy());
         assertEquals(3, req.getSize());
+        assertEquals("task123", req.getTaskId());
     }
 
     public void testDefaultSortAndSize() {
@@ -102,6 +103,7 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
         LiveQueriesRequest req = RestLiveQueriesAction.prepareRequest(request);
         assertEquals(MetricType.LATENCY, req.getSortBy());
         assertEquals(QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, req.getSize());
+        assertNull(req.getTaskId());
     }
 
     public void testPrepareRequestInvalidSort() {
@@ -171,5 +173,14 @@ public class RestLiveQueriesActionTests extends OpenSearchTestCase {
             .withMethod(RestRequest.Method.GET)
             .build();
         assertThrows(IllegalArgumentException.class, () -> RestLiveQueriesAction.prepareRequest(request));
+    }
+
+    public void testResponseParams() {
+        java.util.Set<String> params = restLiveQueriesAction.responseParams();
+        assertEquals(org.opensearch.common.settings.Settings.FORMAT_PARAMS, params);
+    }
+
+    public void testCanTripCircuitBreaker() {
+        assertFalse(restLiveQueriesAction.canTripCircuitBreaker());
     }
 }
