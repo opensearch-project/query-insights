@@ -109,7 +109,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         assertEquals(1, records.size());
 
         LiveQueryRecord record = records.get(0);
-        assertEquals("1", record.getQueryId());
+        assertEquals("node1:1", record.getQueryId()); // Fixed: now uses full node:taskId format
         assertEquals("RUNNING", record.getStatus());
         assertEquals(1000L, record.getStartTime());
         assertEquals(100L, record.getTotalLatency());
@@ -160,12 +160,12 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<LiveQueryRecord> records = response.getLiveQueries();
         assertEquals(2, records.size());
 
-        LiveQueryRecord record1 = records.stream().filter(r -> "1".equals(r.getQueryId())).findFirst().orElse(null);
+        LiveQueryRecord record1 = records.stream().filter(r -> "node1:1".equals(r.getQueryId())).findFirst().orElse(null);
         assertNotNull(record1);
         assertEquals(200L, record1.getTotalLatency());
         assertNull(record1.getWlmGroupId());
 
-        LiveQueryRecord record2 = records.stream().filter(r -> "3".equals(r.getQueryId())).findFirst().orElse(null);
+        LiveQueryRecord record2 = records.stream().filter(r -> "node2:3".equals(r.getQueryId())).findFirst().orElse(null);
         assertNotNull(record2);
         assertEquals(150L, record2.getTotalLatency());
         assertEquals("group2", record2.getWlmGroupId());
@@ -220,8 +220,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<LiveQueryRecord> records = response.getLiveQueries();
 
         assertEquals(2, records.size());
-        assertEquals("1", records.get(0).getQueryId()); // Higher CPU first
-        assertEquals("2", records.get(1).getQueryId());
+        assertEquals("node1:1", records.get(0).getQueryId()); // Higher CPU first
+        assertEquals("node1:2", records.get(1).getQueryId());
     }
 
     public void testNewResponseWithSizeLimit() {
@@ -261,11 +261,11 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<LiveQueryRecord> records = response.getLiveQueries();
 
         assertEquals(1, records.size()); // Limited to 1
-        assertEquals("1", records.get(0).getQueryId()); // Highest latency
+        assertEquals("node1:1", records.get(0).getQueryId()); // Highest latency
     }
 
     public void testNewResponseWithTaskIdFilter() {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, 10, new String[0], null, "2");
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, 10, new String[0], null, "node1:2");
 
         TaskRecord task1 = new TaskRecord(
             "1",
@@ -301,7 +301,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<LiveQueryRecord> records = response.getLiveQueries();
 
         assertEquals(1, records.size());
-        assertEquals("2", records.get(0).getQueryId()); // Only task 2
+        assertEquals("node1:2", records.get(0).getQueryId()); // Only task 2
     }
 
     public void testNewResponseWithNodeIdFilter() {
@@ -341,7 +341,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         List<LiveQueryRecord> records = response.getLiveQueries();
 
         assertEquals(1, records.size());
-        assertEquals("2", records.get(0).getQueryId()); // Only task on node2
+        assertEquals("node2:2", records.get(0).getQueryId()); // Only task on node2
     }
 
     public void testNewNodeRequest() {

@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
@@ -38,6 +40,8 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
     LiveQueriesResponse,
     LiveQueriesNodeRequest,
     LiveQueriesNodeResponse> {
+
+    private static final Logger logger = LogManager.getLogger(TransportLiveQueriesAction.class);
 
     @Inject
     public TransportLiveQueriesAction(
@@ -80,17 +84,11 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
         for (TaskRecord task : allTasks) {
             String queryId;
             if (task.getParentTaskId() == null) {
-                // This is a coordinator task
-                queryId = task.getTaskId();
+                queryId = task.getNodeId() + ":" + task.getTaskId();
                 queryStatus.put(queryId, task.getStatus());
                 queryStartTime.put(queryId, task.getStartTime());
             } else {
-                // This is a shard task - extract parent ID
-                String parentId = task.getParentTaskId();
-                if (parentId.contains(":")) {
-                    parentId = parentId.substring(parentId.lastIndexOf(":") + 1);
-                }
-                queryId = parentId;
+                queryId = task.getParentTaskId();
             }
             tasksByQuery.computeIfAbsent(queryId, k -> new ArrayList<>()).add(task);
         }
@@ -100,20 +98,6 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
         for (Map.Entry<String, List<TaskRecord>> entry : tasksByQuery.entrySet()) {
             String queryId = entry.getKey();
             List<TaskRecord> tasks = entry.getValue();
-
-            // Filter by taskId if specified
-            if (request.getTaskId() != null && !request.getTaskId().equals(queryId)) {
-                continue;
-            }
-
-            // Filter by nodeId if specified
-            if (request.nodesIds() != null && request.nodesIds().length > 0) {
-                boolean hasMatchingNode = tasks.stream()
-                    .anyMatch(task -> java.util.Arrays.asList(request.nodesIds()).contains(task.getNodeId()));
-                if (!hasMatchingNode) {
-                    continue;
-                }
-            }
 
             // Separate coordinator and shard tasks
             TaskRecord coordinatorTask = null;
@@ -165,6 +149,19 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
             aggregatedRecords = aggregatedRecords.subList(0, request.getSize());
         }
 
+        // Filter by taskId if specified
+        if (request.getTaskId() != null) {
+            aggregatedRecords.removeIf(record -> !request.getTaskId().equals(record.getQueryId()));
+        }
+
+        // Filter by nodeId if specified
+        if (request.nodesIds() != null && request.nodesIds().length > 0) {
+            List<String> nodeIdList = java.util.Arrays.asList(request.nodesIds());
+            aggregatedRecords.removeIf(
+                record -> record.getCoordinatorTask() == null || !nodeIdList.contains(record.getCoordinatorTask().getNodeId())
+            );
+        }
+
         // Create response with sorted and limited records
         return new LiveQueriesResponse(clusterService.getClusterName(), aggregatedRecords, failures);
     }
@@ -188,8 +185,9 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
     private List<TaskRecord> getLocalTasks(LiveQueriesRequest request) {
         Map<Long, Task> allTasks = transportService.getTaskManager().getTasks();
         List<TaskRecord> taskRecords = new ArrayList<>();
+        List<Task> taskSnapshot = new ArrayList<>(allTasks.values());
 
-        for (Task runningTask : allTasks.values()) {
+        for (Task runningTask : taskSnapshot) {
             if (!isSearchTask(runningTask)) {
                 continue;
             }
@@ -213,7 +211,13 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
             return null;
         }
 
-        long runningNanos = System.nanoTime() - runningTask.getStartTimeNanos();
+        long startTimeNanos = runningTask.getStartTimeNanos();
+        long startTime = runningTask.getStartTime();
+        String taskId = String.valueOf(runningTask.getId());
+        String action = runningTask.getAction();
+        String description = runningTask.getDescription();
+
+        long runningNanos = System.nanoTime() - startTimeNanos;
         long runningMillis = runningNanos / 1_000_000;
         long cpuNanos = 0L;
         long memBytes = 0L;
@@ -233,20 +237,18 @@ public class TransportLiveQueriesAction extends TransportNodesAction<
             ? runningTask.getParentTaskId().toString()
             : null;
         String status = "RUNNING";
-        String action = runningTask.getAction();
 
-        // Create TaskRecord
         return new TaskRecord(
-            String.valueOf(runningTask.getId()),
+            taskId,
             parentTaskId,
             nodeId,
             status,
             action,
-            runningTask.getStartTime(),
+            startTime,
             runningMillis,
             cpuNanos,
             memBytes,
-            runningTask.getDescription(),
+            description,
             wlmGroupId
         );
     }

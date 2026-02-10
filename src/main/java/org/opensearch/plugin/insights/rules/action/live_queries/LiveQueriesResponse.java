@@ -26,22 +26,11 @@ import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 public class LiveQueriesResponse extends BaseNodesResponse<LiveQueriesNodeResponse> implements ToXContentObject {
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
-    private final List<LiveQueryRecord> liveQueries;
+    private List<LiveQueryRecord> liveQueries;
 
-    /**
-     * Constructor for LiveQueriesResponse.
-     *
-     * @param in A {@link StreamInput} object.
-     * @throws IOException if the stream cannot be deserialized.
-     */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         super(in);
-        // liveQueries is populated in readNodesFrom via ThreadLocal
-        this.liveQueries = LIVE_QUERIES_HOLDER.get();
-        LIVE_QUERIES_HOLDER.remove();
     }
-
-    private static final ThreadLocal<List<LiveQueryRecord>> LIVE_QUERIES_HOLDER = new ThreadLocal<>();
 
     /**
      * Constructor for LiveQueriesResponse
@@ -78,15 +67,12 @@ public class LiveQueriesResponse extends BaseNodesResponse<LiveQueriesNodeRespon
 
     @Override
     protected void writeNodesTo(StreamOutput out, List<LiveQueriesNodeResponse> nodes) throws IOException {
-        // Write the aggregated live queries instead of node responses
         out.writeList(liveQueries);
     }
 
     @Override
     protected List<LiveQueriesNodeResponse> readNodesFrom(StreamInput in) throws IOException {
-        // Read the aggregated live queries and store in ThreadLocal
-        List<LiveQueryRecord> queries = in.readList(LiveQueryRecord::new);
-        LIVE_QUERIES_HOLDER.set(queries);
+        this.liveQueries = in.readList(LiveQueryRecord::new);
         return new ArrayList<>();
     }
 }

@@ -82,7 +82,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
-        builder.field("query_id", queryId);
+        builder.field("id", queryId);
         builder.field("status", status);
         builder.field("start_time", startTime);
         if (wlmGroupId != null) {

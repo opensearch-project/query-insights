@@ -105,9 +105,9 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> liveQueriesList = (List<Map<String, Object>>) parsed.get("live_queries");
         assertEquals(records.size(), liveQueriesList.size());
-        assertEquals("id2", liveQueriesList.get(0).get("query_id"));
-        assertEquals("id1", liveQueriesList.get(1).get("query_id"));
-        assertEquals("id3", liveQueriesList.get(2).get("query_id"));
+        assertEquals("id2", liveQueriesList.get(0).get("id"));
+        assertEquals("id1", liveQueriesList.get(1).get("id"));
+        assertEquals("id3", liveQueriesList.get(2).get("id"));
     }
 
     public void testToXContentEmptyList() throws IOException {

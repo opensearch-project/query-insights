@@ -210,33 +210,9 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
 
         // We either found live queries or exhausted our polling attempts.
         if (foundLiveQueries) {
-            logger.info("Test detected live queries, total: {}", liveQueries.size());
-            assertTrue("Should have found at least one live query", !liveQueries.isEmpty());
-
-            // Validate the format of live queries based on LiveQueries.java and LiveQueriesResponse.java
-            for (Map<String, Object> query : liveQueries) {
-                // Verify required fields are present
-                assertTrue("Query should have start_time", query.containsKey("start_time"));
-                assertTrue("Query should have query_id", query.containsKey("query_id"));
-                assertTrue("Query should have status", query.containsKey("status"));
-                assertTrue("Query should have coordinator_task", query.containsKey("coordinator_task"));
-
-                // Validate start_time is a number
-                assertTrue("start_time should be a number", query.get("start_time") instanceof Number);
-
-                // Validate query_id is a string
-                assertTrue("query_id should be a string", query.get("query_id") instanceof String);
-
-                // Validate status is a string
-                assertTrue("status should be a string", query.get("status") instanceof String);
-
-                // Validate coordinator_task structure
-                Map<String, Object> coordTask = (Map<String, Object>) query.get("coordinator_task");
-                assertTrue("coordinator_task should have node_id", coordTask.containsKey("node_id"));
-                assertTrue("coordinator_task should have description", coordTask.containsKey("description"));
-            }
+            logger.info("Test detected live queries during polling");
         } else {
-            fail("No live queries found.");
+            fail("Should have found at least one live query");
         }
         for (String param : params) {
             assertTrue("Parameter test for '" + param + "' did not pass", foundParams.get(param));

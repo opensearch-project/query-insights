@@ -174,7 +174,7 @@ public class LiveQueryRecordTests extends OpenSearchTestCase {
         record.toXContent(builder, null);
         String json = builder.toString();
 
-        assertTrue(json.contains("\"query_id\":\"query-1\""));
+        assertTrue(json.contains("\"id\":\"query-1\""));
         assertTrue(json.contains("\"status\":\"RUNNING\""));
         assertTrue(json.contains("\"start_time\":1000"));
         assertTrue(json.contains("\"wlm_group_id\":\"group1\""));
@@ -192,7 +192,7 @@ public class LiveQueryRecordTests extends OpenSearchTestCase {
         record.toXContent(builder, null);
         String json = builder.toString();
 
-        assertTrue(json.contains("\"query_id\":\"query-1\""));
+        assertTrue(json.contains("\"id\":\"query-1\""));
         assertFalse(json.contains("wlm_group_id"));
         assertFalse(json.contains("coordinator_task"));
         assertTrue(json.contains("\"shard_tasks\":[]"));

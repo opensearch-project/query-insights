@@ -45,6 +45,8 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
         this.nodeIds = in.readStringArray();
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
+        }
+        if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.taskId = in.readOptionalString();
         }
     }
@@ -131,6 +133,8 @@ public class LiveQueriesRequest extends BaseNodesRequest<LiveQueriesRequest> {
         out.writeStringArray(nodeIds);
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
+        }
+        if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeOptionalString(taskId);
         }
     }
