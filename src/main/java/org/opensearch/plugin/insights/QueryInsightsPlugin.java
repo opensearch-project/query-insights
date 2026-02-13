@@ -98,7 +98,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             client,
             metricsRegistry,
             xContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService, repositoriesServiceSupplier),
+            new QueryInsightsExporterFactory(client, clusterService, threadPool, repositoriesServiceSupplier),
             new QueryInsightsReaderFactory(client)
         );
         return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));

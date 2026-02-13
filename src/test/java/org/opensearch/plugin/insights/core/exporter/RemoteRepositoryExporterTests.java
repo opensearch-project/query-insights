@@ -40,6 +40,7 @@ import org.opensearch.repositories.blobstore.BlobStoreRepository;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.threadpool.ThreadPool;
 
 public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
 
@@ -48,6 +49,9 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
 
     @Mock
     private ClusterService clusterService;
+
+    @Mock
+    private ThreadPool threadPool;
 
     @Mock
     private BlobStoreRepository blobStoreRepository;
@@ -84,6 +88,7 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         remoteRepositoryExporter = new RemoteRepositoryExporter(
             () -> repositoriesService,
             clusterService,
+            threadPool,
             "test-repo",
             "query-insights",
             DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
@@ -184,10 +189,9 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
 
         ActionListener listener = listenerCaptor.getValue();
         listener.onFailure(new IOException("Upload failed"));
-        Thread.sleep(500);
 
-        // Verify retries occurred
-        verify(asyncBlobContainer, times(2)).asyncBlobUpload(any(WriteContext.class), any(ActionListener.class));
+        // Verify threadPool.schedule was called for retry
+        verify(threadPool).schedule(any(Runnable.class), any(), any());
     }
 
     public void testSetBasePathWithValidCharacters() {
@@ -213,6 +217,7 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
             new RemoteRepositoryExporter(
                 () -> repositoriesService,
                 clusterService,
+                threadPool,
                 "non-async-repo",
                 "query-insights",
                 DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),

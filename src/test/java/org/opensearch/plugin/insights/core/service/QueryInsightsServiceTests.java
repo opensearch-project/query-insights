@@ -742,7 +742,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             client,
             NoopMetricsRegistry.INSTANCE,
             namedXContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService, () -> repositoriesService),
+            new QueryInsightsExporterFactory(client, clusterService, threadPool, () -> repositoriesService),
             new QueryInsightsReaderFactory(client)
         );
         updatedQueryInsightsService.enableCollection(MetricType.LATENCY, true);

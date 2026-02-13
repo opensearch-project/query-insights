@@ -46,7 +46,7 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         clusterService = ClusterServiceUtils.createClusterService(settings, clusterSettings, threadPool);
-        queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService, () -> repositoriesService);
+        queryInsightsExporterFactory = new QueryInsightsExporterFactory(client, clusterService, threadPool, () -> repositoriesService);
         metricsRegistry = mock(MetricsRegistry.class);
         when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
             invocation -> mock(Counter.class)

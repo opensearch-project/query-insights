@@ -21,6 +21,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.repositories.RepositoriesService;
+import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 
 /**
@@ -33,6 +34,7 @@ public class QueryInsightsExporterFactory {
     private final Logger logger = LogManager.getLogger();
     final private Client client;
     final private ClusterService clusterService;
+    final private ThreadPool threadPool;
     final private Supplier<RepositoriesService> repositoriesServiceSupplier;
     /**
      * Maps exporter identifiers to their corresponding exporter sink instances.
@@ -44,15 +46,18 @@ public class QueryInsightsExporterFactory {
      *
      * @param client OS client
      * @param clusterService cluster service
+     * @param threadPool thread pool
      * @param repositoriesServiceSupplier supplier for repositories service
      */
     public QueryInsightsExporterFactory(
         final Client client,
         final ClusterService clusterService,
+        final ThreadPool threadPool,
         final Supplier<RepositoriesService> repositoriesServiceSupplier
     ) {
         this.client = client;
         this.clusterService = clusterService;
+        this.threadPool = threadPool;
         this.repositoriesServiceSupplier = repositoriesServiceSupplier;
         this.exporters = new HashMap<>();
     }
@@ -122,6 +127,7 @@ public class QueryInsightsExporterFactory {
         RemoteRepositoryExporter remoteRepositoryExporter = new RemoteRepositoryExporter(
             repositoriesServiceSupplier,
             clusterService,
+            threadPool,
             repositoryName,
             basePath,
             DateTimeFormatter.ofPattern("yyyy/MM/dd/HH/mm'UTC'", Locale.ROOT),
