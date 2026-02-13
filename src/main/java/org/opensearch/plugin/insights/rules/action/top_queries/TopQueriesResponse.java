@@ -92,9 +92,7 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
     public String toString() {
         try {
             final XContentBuilder builder = XContentFactory.jsonBuilder().prettyPrint();
-            builder.startObject();
             this.toXContent(builder, EMPTY_PARAMS);
-            builder.endObject();
             return builder.toString();
         } catch (IOException e) {
             return "{ \"error\" : \"" + e.getMessage() + "\"}";
