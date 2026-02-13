@@ -43,6 +43,7 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -73,6 +74,7 @@ public class TopQueriesService {
      * These shared components are uniquely identified by TOP_QUERIES_EXPORTER_ID and TOP_QUERIES_READER_ID
      */
     public static final String TOP_QUERIES_EXPORTER_ID = "top_queries_exporter";
+    public static final String TOP_QUERIES_REMOTE_EXPORTER_ID = "top_queries_remote_exporter";
     public static final String TOP_QUERIES_READER_ID = "top_queries_reader";
     /**
      * Tag value used to identify local index mappings that are specifically created
@@ -524,6 +526,12 @@ public class TopQueriesService {
             QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
             if (exporter != null) {
                 threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> exporter.export(history));
+            }
+
+            // export to remote repository independently if enabled
+            QueryInsightsExporter remoteRepositoryExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID);
+            if (remoteRepositoryExporter != null && ((RemoteRepositoryExporter) remoteRepositoryExporter).isEnabled()) {
+                threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> remoteRepositoryExporter.export(history));
             }
         }
     }

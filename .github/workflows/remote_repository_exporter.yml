@@ -1,0 +1,75 @@
+name: Remote Repository Exporter Integration Tests
+on:
+  push:
+    branches:
+      - "*"
+      - "feature/**"
+  pull_request:
+    branches:
+      - "*"
+      - "feature/**"
+
+jobs:
+  Remote-Repository-Exporter-IT:
+    strategy:
+      matrix:
+        java: [21]
+
+    env:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_SESSION_TOKEN: test
+
+    name: Remote-Repository-Exporter-IT on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout query-insights
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+
+      - name: Pull LocalStack Docker image
+        run: |
+          docker pull localstack/localstack:latest
+
+      - name: Run LocalStack
+        run: |
+          docker run --rm -d --name localstack-query-insights -p 4566:4566 localstack/localstack:latest
+
+      - name: Verify LocalStack is ready
+        run: |
+          if ! timeout 30 bash -c 'until curl --silent --fail http://localhost:4566/_localstack/health; do sleep 1; done'; then
+            echo "LocalStack health check failed after 30 seconds"
+            exit 1
+          fi
+
+      - name: Create S3 Bucket in LocalStack
+        run: |
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-bucket --region us-east-1
+
+      - name: Run tests
+        run: |
+          ./gradlew integTestRemoteRepository -Daccess_key=${{ env.AWS_ACCESS_KEY_ID }} -Dsecret_key=${{ env.AWS_SECRET_ACCESS_KEY }} -Dsession_token=${{ env.AWS_SESSION_TOKEN }}
+
+      - name: Verify S3 exports
+        run: |
+          echo "Checking S3 bucket for exported query insights files..."
+          aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/ --recursive
+          FILE_COUNT=$(aws --endpoint-url=http://localhost:4566 s3 ls s3://test-bucket/query-insights/ --recursive | wc -l)
+          if [ "$FILE_COUNT" -gt 0 ]; then
+            echo "Success: Found $FILE_COUNT file(s) exported to S3"
+          else
+            echo "Error: No files found in S3 bucket"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps -aq | xargs -r docker rm -f
+          docker container prune -f
