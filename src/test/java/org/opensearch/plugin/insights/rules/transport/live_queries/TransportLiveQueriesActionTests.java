@@ -22,11 +22,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
+import org.opensearch.action.admin.cluster.node.tasks.list.TaskGroup;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.cluster.ClusterName;
@@ -42,9 +42,8 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.tasks.resourcetracker.TaskThreadUsage;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
-import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.MetricType;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.VersionUtils;
@@ -97,6 +96,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(transportService.getLocalNode()).thenReturn(node1);
 
         // Mock the client administrative calls
+
         adminClient = mock(AdminClient.class);
         clusterAdminClient = mock(ClusterAdminClient.class);
         when(client.admin()).thenReturn(adminClient);
@@ -175,29 +175,17 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, futureResponse);
         LiveQueriesResponse clusterResponse = futureResponse.actionGet();
-        List<SearchQueryRecord> records = clusterResponse.getLiveQueries();
+        List<LiveQueryRecord> records = clusterResponse.getLiveQueries();
 
         // Verify listTasks was called and DID NOT have node filter set
         ArgumentCaptor<ListTasksRequest> captor = ArgumentCaptor.forClass(ListTasksRequest.class);
         verify(clusterAdminClient).listTasks(captor.capture(), any(ActionListener.class));
         assertEquals(0, captor.getValue().getNodes().length);
 
-        // Verify results - should have 2 search tasks in the flat list
+        // Verify results - should have 2 search tasks
         assertEquals(2, records.size());
-        Map<String, SearchQueryRecord> resultsById = records.stream().collect(Collectors.toMap(SearchQueryRecord::getId, r -> r));
-
-        assertTrue(resultsById.containsKey(task1.getTaskId().toString()));
-        SearchQueryRecord record1 = resultsById.get(task1.getTaskId().toString());
-        assertEquals(task1.getStartTime(), record1.getTimestamp());
-        assertEquals("desc1", record1.getAttributes().get(Attribute.DESCRIPTION));
-        assertEquals(1000000L, record1.getMeasurements().get(MetricType.LATENCY).getMeasurement().longValue());
-        assertEquals(500L, record1.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
-        assertEquals(1024L, record1.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
-
-        assertTrue(resultsById.containsKey(task2.getTaskId().toString()));
-        SearchQueryRecord record2 = resultsById.get(task2.getTaskId().toString());
-        assertEquals(task2.getStartTime(), record2.getTimestamp());
-        assertEquals("desc2", record2.getAttributes().get(Attribute.DESCRIPTION));
+        assertTrue(records.stream().anyMatch(r -> r.getQueryId().equals(task1.getTaskId().toString())));
+        assertTrue(records.stream().anyMatch(r -> r.getQueryId().equals(task2.getTaskId().toString())));
     }
 
     public void testNodeFiltering_SpecificNode() throws IOException {
@@ -210,16 +198,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
         // Mock the listTasks asynchronous call
         doAnswer(invocation -> {
-            ListTasksRequest listRequest = invocation.getArgument(0);
-            // Simulate upstream filtering: only return tasks if node matches
-            if (listRequest.getNodes() != null && listRequest.getNodes().length == 1 && listRequest.getNodes()[0].equals("node2")) {
-                ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
-                listener.onResponse(listTasksResponse);
-            } else {
-                ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
-                // Return empty if node doesn't match
-                listener.onResponse(new ListTasksResponse(Collections.emptyList(), Collections.emptyList(), Collections.emptyList()));
-            }
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
             return null;
         }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
@@ -227,7 +207,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, futureResponse);
         LiveQueriesResponse clusterResponse = futureResponse.actionGet();
-        List<SearchQueryRecord> records = clusterResponse.getLiveQueries();
+        List<LiveQueryRecord> records = clusterResponse.getLiveQueries();
 
         // Verify listTasks was called and HAD node filter set
         ArgumentCaptor<ListTasksRequest> captor = ArgumentCaptor.forClass(ListTasksRequest.class);
@@ -236,9 +216,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
         // Verify results - should only have task2 from node2
         assertEquals(1, records.size());
-        SearchQueryRecord record2 = records.get(0);
-        assertEquals(task2.getTaskId().toString(), record2.getId());
-        assertEquals("desc2", record2.getAttributes().get(Attribute.DESCRIPTION));
+        LiveQueryRecord record2 = records.get(0);
+        assertEquals(task2.getTaskId().toString(), record2.getQueryId());
     }
 
     public void testNodeOperationNonVerbose() throws IOException {
@@ -249,23 +228,15 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         ListTasksResponse listTasksResponse = new ListTasksResponse(tasks, emptyList(), emptyList());
 
         doAnswer(invocation -> {
-            ListTasksRequest listRequest = invocation.getArgument(0);
-            // Simulate upstream filtering: only return tasks if node matches
-            if (listRequest.getNodes() != null && listRequest.getNodes().length == 1 && listRequest.getNodes()[0].equals("node1")) {
-                ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
-                listener.onResponse(listTasksResponse);
-            } else {
-                ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
-                // Return empty if node doesn't match
-                listener.onResponse(new ListTasksResponse(Collections.emptyList(), Collections.emptyList(), Collections.emptyList()));
-            }
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
             return null;
         }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
         PlainActionFuture<LiveQueriesResponse> futureResponse = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, futureResponse);
         LiveQueriesResponse clusterResponse = futureResponse.actionGet();
-        List<SearchQueryRecord> records = clusterResponse.getLiveQueries();
+        List<LiveQueryRecord> records = clusterResponse.getLiveQueries();
 
         // Verify listTasks was called and HAD node filter set
         ArgumentCaptor<ListTasksRequest> captor = ArgumentCaptor.forClass(ListTasksRequest.class);
@@ -273,10 +244,6 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "node1" }, captor.getValue().getNodes());
 
         assertEquals(1, records.size());
-        SearchQueryRecord record = records.get(0);
-        assertEquals(task1.getTaskId().toString(), record.getId());
-        assertNull(record.getAttributes().get(Attribute.DESCRIPTION)); // Description should be null
-        assertEquals(1000000L, record.getMeasurements().get(MetricType.LATENCY).getMeasurement().longValue());
     }
 
     public void testNodeOperationHandlesException() {
@@ -294,7 +261,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testResponseConstructor() {
-        List<SearchQueryRecord> records = Collections.emptyList();
+        List<LiveQueryRecord> records = Collections.emptyList();
         LiveQueriesResponse response = new LiveQueriesResponse(records);
         assertNotNull(response);
         assertEquals(records, response.getLiveQueries());
@@ -320,11 +287,12 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         LiveQueriesResponse response = future.actionGet();
-        List<SearchQueryRecord> records = response.getLiveQueries();
+        List<LiveQueryRecord> records = response.getLiveQueries();
 
         // Should only have the highCpu task
+
         assertEquals(1, records.size());
-        assertEquals(highCpu.getTaskId().toString(), records.get(0).getId());
+        assertEquals(highCpu.getTaskId().toString(), records.get(0).getQueryId());
     }
 
     // Safeguard tests: missing or incomplete resource stats should default CPU/memory to 0
@@ -355,9 +323,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         LiveQueriesResponse response = future.actionGet();
-        SearchQueryRecord rec = response.getLiveQueries().get(0);
-        assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
-        assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+        assertEquals(0L, rec.getTotalCpu());
+        assertEquals(0L, rec.getTotalMemory());
     }
 
     public void testEmptyUsageInfoDefaultsToZero() throws Exception {
@@ -388,9 +356,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         LiveQueriesResponse response = future.actionGet();
-        SearchQueryRecord rec = response.getLiveQueries().get(0);
-        assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
-        assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+        assertEquals(0L, rec.getTotalCpu());
+        assertEquals(0L, rec.getTotalMemory());
     }
 
     public void testMissingTotalUsageDefaultsToZero() throws Exception {
@@ -422,8 +390,253 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         LiveQueriesResponse response = future.actionGet();
-        SearchQueryRecord rec = response.getLiveQueries().get(0);
-        assertEquals(0L, rec.getMeasurements().get(MetricType.CPU).getMeasurement().longValue());
-        assertEquals(0L, rec.getMeasurements().get(MetricType.MEMORY).getMeasurement().longValue());
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+        assertEquals(0L, rec.getTotalCpu());
+        assertEquals(0L, rec.getTotalMemory());
+    }
+
+    public void testTaskGroupAggregation() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "coord", 100L, 200L);
+        TaskInfo shard1 = createTaskInfo(node1, "indices:data/read/search[phase/query]", 100L, 200L, "shard1", 300L, 400L);
+        TaskInfo shard2 = createTaskInfo(node2, "indices:data/read/search[phase/query]", 100L, 200L, "shard2", 500L, 600L);
+
+        TaskGroup group = new TaskGroup(coord, List.of(new TaskGroup(shard1, emptyList()), new TaskGroup(shard2, emptyList())));
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group));
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+
+        assertEquals(900L, rec.getTotalCpu());
+        assertEquals(1200L, rec.getTotalMemory());
+        assertEquals(2, rec.getShardTasks().size());
+    }
+
+    public void testMultipleQueriesMultipleNodes() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord1 = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "q1", 100L, 200L);
+        TaskInfo shard1 = createTaskInfo(node1, "indices:data/read/search[phase/query]", 100L, 200L, "s1", 300L, 400L);
+        TaskInfo coord2 = createTaskInfo(node2, "indices:data/read/search", 100L, 200L, "q2", 500L, 600L);
+        TaskInfo shard2 = createTaskInfo(node2, "indices:data/read/search[phase/query]", 100L, 200L, "s2", 700L, 800L);
+
+        TaskGroup group1 = new TaskGroup(coord1, List.of(new TaskGroup(shard1, emptyList())));
+        TaskGroup group2 = new TaskGroup(coord2, List.of(new TaskGroup(shard2, emptyList())));
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group1, group2));
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        assertEquals(2, response.getLiveQueries().size());
+        assertEquals(400L, response.getLiveQueries().get(0).getTotalCpu());
+        assertEquals(1200L, response.getLiveQueries().get(1).getTotalCpu());
+    }
+
+    public void testEmptyTaskGroups() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(emptyList());
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        assertEquals(0, response.getLiveQueries().size());
+    }
+
+    public void testCoordinatorWithNoShards() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "coord", 100L, 200L);
+        TaskGroup group = new TaskGroup(coord, emptyList());
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group));
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+
+        assertEquals(100L, rec.getTotalCpu());
+        assertEquals(200L, rec.getTotalMemory());
+        assertEquals(0, rec.getShardTasks().size());
+    }
+
+    public void testNegativeSize() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null);
+        TaskInfo task = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "task", 100L, 200L);
+        ListTasksResponse listTasksResponse = new ListTasksResponse(List.of(task), emptyList(), emptyList());
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(listTasksResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        assertEquals(1, response.getLiveQueries().size());
+    }
+
+    public void testShardsMappedToCorrectParent() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord1 = createTaskInfo(
+            node1,
+            "indices:data/read/search",
+            1000L,
+            2000L,
+            "indices[index1], search_type[QUERY_THEN_FETCH]",
+            100L,
+            200L
+        );
+        TaskInfo shard1a = createTaskInfo(node1, "indices:data/read/search[phase/query]", 1000L, 2000L, "shardId[[index1][0]]", 300L, 400L);
+        TaskInfo shard1b = createTaskInfo(node2, "indices:data/read/search[phase/query]", 1000L, 2000L, "shardId[[index1][1]]", 500L, 600L);
+        TaskInfo coord2 = createTaskInfo(
+            node2,
+            "indices:data/read/search",
+            1000L,
+            2000L,
+            "indices[index2], search_type[QUERY_THEN_FETCH]",
+            700L,
+            800L
+        );
+        TaskInfo shard2a = createTaskInfo(
+            node1,
+            "indices:data/read/search[phase/query]",
+            1000L,
+            2000L,
+            "shardId[[index2][0]]",
+            900L,
+            1000L
+        );
+        TaskInfo nonSearch = createTaskInfo(node1, "cluster:monitor/nodes/stats", 1000L, 2000L, "monitoring", 50L, 100L);
+
+        TaskGroup group1 = new TaskGroup(coord1, List.of(new TaskGroup(shard1a, emptyList()), new TaskGroup(shard1b, emptyList())));
+        TaskGroup group2 = new TaskGroup(coord2, List.of(new TaskGroup(shard2a, emptyList())));
+        TaskGroup nonSearchGroup = new TaskGroup(nonSearch, emptyList());
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group1, group2, nonSearchGroup));
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        assertEquals(2, response.getLiveQueries().size());
+        LiveQueryRecord query1 = response.getLiveQueries().get(0);
+        LiveQueryRecord query2 = response.getLiveQueries().get(1);
+
+        assertEquals(coord1.getTaskId().toString(), query1.getQueryId());
+        assertEquals(2, query1.getShardTasks().size());
+        assertEquals(900L, query1.getTotalCpu());
+
+        assertEquals(coord2.getTaskId().toString(), query2.getQueryId());
+        assertEquals(1, query2.getShardTasks().size());
+        assertEquals(1600L, query2.getTotalCpu());
+    }
+
+    public void testCoordinatorAndShardResourceAggregation() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord = createTaskInfo(
+            node1,
+            "indices:data/read/search",
+            1770841884644L,
+            229069667L,
+            "indices[test-index], search_type[QUERY_THEN_FETCH]",
+            11084000L,
+            1719784L
+        );
+        TaskInfo shard1 = createTaskInfo(
+            node2,
+            "indices:data/read/search[phase/fetch/id]",
+            1770841884865L,
+            8365583L,
+            "id[[uvkUqd8wRGqJtO0PCg2FYw][5]], size[354]",
+            6418000L,
+            856072L
+        );
+        TaskInfo shard2 = createTaskInfo(
+            node2,
+            "indices:data/read/search[phase/fetch/id]",
+            1770841884865L,
+            8494708L,
+            "id[[uvkUqd8wRGqJtO0PCg2FYw][3]], size[330]",
+            4564000L,
+            316328L
+        );
+        TaskInfo shard3 = createTaskInfo(
+            node2,
+            "indices:data/read/search[phase/fetch/id]",
+            1770841884865L,
+            8421125L,
+            "id[[uvkUqd8wRGqJtO0PCg2FYw][4]], size[316]",
+            4564000L,
+            351600L
+        );
+
+        TaskGroup group = new TaskGroup(
+            coord,
+            List.of(new TaskGroup(shard1, emptyList()), new TaskGroup(shard2, emptyList()), new TaskGroup(shard3, emptyList()))
+        );
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group));
+
+        doAnswer(invocation -> {
+            ActionListener<ListTasksResponse> listener = invocation.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+        LiveQueryRecord rec = response.getLiveQueries().get(0);
+
+        assertEquals(26630000L, rec.getTotalCpu());
+        assertEquals(3243784L, rec.getTotalMemory());
+        assertEquals(3, rec.getShardTasks().size());
+        assertEquals(
+            11084000L,
+            rec.getCoordinatorTask().getTaskInfo().getResourceStats().getResourceUsageInfo().get("total").getCpuTimeInNanos()
+        );
+        assertEquals(coord.getTaskId().toString(), rec.getQueryId());
+        assertEquals(coord.getTaskId().toString(), rec.getCoordinatorTask().getTaskInfo().getTaskId().toString());
+        assertEquals(shard1.getTaskId().toString(), rec.getShardTasks().get(0).getTaskInfo().getTaskId().toString());
+        assertEquals(shard2.getTaskId().toString(), rec.getShardTasks().get(1).getTaskInfo().getTaskId().toString());
+        assertEquals(shard3.getTaskId().toString(), rec.getShardTasks().get(2).getTaskInfo().getTaskId().toString());
     }
 }
