@@ -147,6 +147,47 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(searchSourceBuilder.toString(), generatedRecord.getSearchSourceBuilder().toString());
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
+        assertEquals(false, generatedRecord.getAttributes().get(Attribute.FAILED));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnRequestFailure() {
+        Long timestamp = System.currentTimeMillis() - 100L;
+        SearchType searchType = SearchType.QUERY_THEN_FETCH;
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(0);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        String[] indices = new String[] { "index-1", "index-2" };
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("query", 20L);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(searchType);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchRequest.indices()).thenReturn(indices);
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(10);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+
+        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord generatedRecord = captor.getValue();
+        assertEquals(true, generatedRecord.getAttributes().get(Attribute.FAILED));
     }
 
     public void testConcurrentOnRequestEnd() throws InterruptedException {
