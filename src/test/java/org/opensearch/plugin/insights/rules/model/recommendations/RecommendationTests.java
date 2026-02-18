@@ -242,11 +242,10 @@ public class RecommendationTests extends OpenSearchTestCase {
 
     private ImpactVector createTestImpact() {
         return ImpactVector.builder()
-            .correctness(Direction.INCREASE)
-            .latency(Direction.NEUTRAL)
-            .cpu(Direction.NEUTRAL)
-            .memory(Direction.NEUTRAL)
-            .confidence(0.98)
+            .correctness(new Impact(Direction.INCREASE))
+            .latency(new Impact(Direction.NEUTRAL))
+            .cpu(new Impact(Direction.NEUTRAL))
+            .memory(new Impact(Direction.NEUTRAL))
             .estimatedImprovement("Returns correct results")
             .build();
     }

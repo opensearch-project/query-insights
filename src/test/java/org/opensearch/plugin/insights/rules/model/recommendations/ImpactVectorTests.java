@@ -22,31 +22,44 @@ public class ImpactVectorTests extends OpenSearchTestCase {
 
     public void testBuilder() {
         ImpactVector impact = ImpactVector.builder()
-            .latency(Direction.DECREASE)
-            .cpu(Direction.DECREASE)
-            .memory(Direction.NEUTRAL)
-            .correctness(Direction.INCREASE)
-            .confidence(0.95)
+            .latency(new Impact(Direction.DECREASE))
+            .cpu(new Impact(Direction.DECREASE))
+            .memory(new Impact(Direction.NEUTRAL))
+            .correctness(new Impact(Direction.INCREASE))
             .estimatedImprovement("50% latency reduction")
             .build();
 
-        assertEquals(Direction.DECREASE, impact.getLatency());
-        assertEquals(Direction.DECREASE, impact.getCpu());
-        assertEquals(Direction.NEUTRAL, impact.getMemory());
-        assertEquals(Direction.INCREASE, impact.getCorrectness());
-        assertEquals(0.95, impact.getConfidence(), 0.001);
+        assertEquals(Direction.DECREASE, impact.getLatency().getDirection());
+        assertEquals(Direction.DECREASE, impact.getCpu().getDirection());
+        assertEquals(Direction.NEUTRAL, impact.getMemory().getDirection());
+        assertEquals(Direction.INCREASE, impact.getCorrectness().getDirection());
         assertEquals("50% latency reduction", impact.getEstimatedImprovement());
     }
 
     public void testBuilderDefaults() {
         ImpactVector impact = ImpactVector.builder().build();
 
-        assertEquals(Direction.NEUTRAL, impact.getLatency());
-        assertEquals(Direction.NEUTRAL, impact.getCpu());
-        assertEquals(Direction.NEUTRAL, impact.getMemory());
-        assertEquals(Direction.NEUTRAL, impact.getCorrectness());
-        assertEquals(1.0, impact.getConfidence(), 0.001);
+        assertEquals(Direction.NEUTRAL, impact.getLatency().getDirection());
+        assertEquals(Direction.NEUTRAL, impact.getCpu().getDirection());
+        assertEquals(Direction.NEUTRAL, impact.getMemory().getDirection());
+        assertEquals(Direction.NEUTRAL, impact.getCorrectness().getDirection());
         assertNull(impact.getEstimatedImprovement());
+    }
+
+    public void testBuilderWithImpactValues() {
+        ImpactVector impact = ImpactVector.builder()
+            .latency(new Impact(Direction.DECREASE, 0.5))
+            .cpu(new Impact(Direction.DECREASE, 0.3))
+            .memory(new Impact(Direction.NEUTRAL))
+            .correctness(new Impact(Direction.INCREASE))
+            .build();
+
+        assertEquals(Direction.DECREASE, impact.getLatency().getDirection());
+        assertEquals(0.5, impact.getLatency().getValue(), 0.001);
+        assertEquals(Direction.DECREASE, impact.getCpu().getDirection());
+        assertEquals(0.3, impact.getCpu().getValue(), 0.001);
+        assertNull(impact.getMemory().getValue());
+        assertNull(impact.getCorrectness().getValue());
     }
 
     public void testSerialization() throws IOException {
@@ -58,16 +71,30 @@ public class ImpactVectorTests extends OpenSearchTestCase {
         assertEquals(original.getCpu(), deserialized.getCpu());
         assertEquals(original.getMemory(), deserialized.getMemory());
         assertEquals(original.getCorrectness(), deserialized.getCorrectness());
-        assertEquals(original.getConfidence(), deserialized.getConfidence(), 0.001);
         assertEquals(original.getEstimatedImprovement(), deserialized.getEstimatedImprovement());
     }
 
     public void testSerializationWithNullImprovement() throws IOException {
-        ImpactVector original = ImpactVector.builder().latency(Direction.DECREASE).build();
+        ImpactVector original = ImpactVector.builder().latency(new Impact(Direction.DECREASE)).build();
         ImpactVector deserialized = roundTrip(original);
 
         assertEquals(original, deserialized);
         assertNull(deserialized.getEstimatedImprovement());
+    }
+
+    public void testSerializationWithImpactValues() throws IOException {
+        ImpactVector original = ImpactVector.builder()
+            .latency(new Impact(Direction.DECREASE, 0.5))
+            .cpu(new Impact(Direction.NEUTRAL))
+            .memory(new Impact(Direction.NEUTRAL))
+            .correctness(new Impact(Direction.INCREASE, 0.9))
+            .build();
+        ImpactVector deserialized = roundTrip(original);
+
+        assertEquals(original, deserialized);
+        assertEquals(0.5, deserialized.getLatency().getValue(), 0.001);
+        assertNull(deserialized.getCpu().getValue());
+        assertEquals(0.9, deserialized.getCorrectness().getValue(), 0.001);
     }
 
     public void testEquals() {
@@ -86,11 +113,10 @@ public class ImpactVectorTests extends OpenSearchTestCase {
         assertNotEquals(
             base,
             ImpactVector.builder()
-                .latency(Direction.INCREASE)
-                .cpu(Direction.DECREASE)
-                .memory(Direction.NEUTRAL)
-                .correctness(Direction.INCREASE)
-                .confidence(0.95)
+                .latency(new Impact(Direction.INCREASE))
+                .cpu(new Impact(Direction.DECREASE))
+                .memory(new Impact(Direction.NEUTRAL))
+                .correctness(new Impact(Direction.INCREASE))
                 .estimatedImprovement("50% latency reduction")
                 .build()
         );
@@ -98,23 +124,10 @@ public class ImpactVectorTests extends OpenSearchTestCase {
         assertNotEquals(
             base,
             ImpactVector.builder()
-                .latency(Direction.DECREASE)
-                .cpu(Direction.DECREASE)
-                .memory(Direction.NEUTRAL)
-                .correctness(Direction.INCREASE)
-                .confidence(0.5)
-                .estimatedImprovement("50% latency reduction")
-                .build()
-        );
-
-        assertNotEquals(
-            base,
-            ImpactVector.builder()
-                .latency(Direction.DECREASE)
-                .cpu(Direction.DECREASE)
-                .memory(Direction.NEUTRAL)
-                .correctness(Direction.INCREASE)
-                .confidence(0.95)
+                .latency(new Impact(Direction.DECREASE))
+                .cpu(new Impact(Direction.DECREASE))
+                .memory(new Impact(Direction.NEUTRAL))
+                .correctness(new Impact(Direction.INCREASE))
                 .estimatedImprovement("different")
                 .build()
         );
@@ -134,32 +147,46 @@ public class ImpactVectorTests extends OpenSearchTestCase {
         impact.toXContent(builder, null);
         String json = builder.toString();
 
-        assertTrue(json.contains("\"latency\":\"decrease\""));
-        assertTrue(json.contains("\"cpu\":\"decrease\""));
-        assertTrue(json.contains("\"memory\":\"neutral\""));
-        assertTrue(json.contains("\"correctness\":\"increase\""));
-        assertTrue(json.contains("\"confidence\":0.95"));
+        assertTrue(json.contains("\"latency\":{\"direction\":\"decrease\"}"));
+        assertTrue(json.contains("\"cpu\":{\"direction\":\"decrease\"}"));
+        assertTrue(json.contains("\"memory\":{\"direction\":\"neutral\"}"));
+        assertTrue(json.contains("\"correctness\":{\"direction\":\"increase\"}"));
         assertTrue(json.contains("\"estimated_improvement\":\"50% latency reduction\""));
     }
 
-    public void testToXContentWithoutEstimatedImprovement() throws IOException {
-        ImpactVector impact = ImpactVector.builder().latency(Direction.DECREASE).build();
+    public void testToXContentWithValues() throws IOException {
+        ImpactVector impact = ImpactVector.builder()
+            .latency(new Impact(Direction.DECREASE, 0.5))
+            .cpu(new Impact(Direction.NEUTRAL))
+            .memory(new Impact(Direction.NEUTRAL))
+            .correctness(new Impact(Direction.INCREASE))
+            .build();
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
         impact.toXContent(builder, null);
         String json = builder.toString();
 
-        assertTrue(json.contains("\"latency\":\"decrease\""));
+        assertTrue(json.contains("\"latency\":{\"direction\":\"decrease\",\"value\":0.5}"));
+        assertTrue(json.contains("\"cpu\":{\"direction\":\"neutral\"}"));
+    }
+
+    public void testToXContentWithoutEstimatedImprovement() throws IOException {
+        ImpactVector impact = ImpactVector.builder().latency(new Impact(Direction.DECREASE)).build();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        impact.toXContent(builder, null);
+        String json = builder.toString();
+
+        assertTrue(json.contains("\"latency\":{\"direction\":\"decrease\"}"));
         assertFalse(json.contains("estimated_improvement"));
     }
 
     private ImpactVector createTestImpactVector() {
         return ImpactVector.builder()
-            .latency(Direction.DECREASE)
-            .cpu(Direction.DECREASE)
-            .memory(Direction.NEUTRAL)
-            .correctness(Direction.INCREASE)
-            .confidence(0.95)
+            .latency(new Impact(Direction.DECREASE))
+            .cpu(new Impact(Direction.DECREASE))
+            .memory(new Impact(Direction.NEUTRAL))
+            .correctness(new Impact(Direction.INCREASE))
             .estimatedImprovement("50% latency reduction")
             .build();
     }
