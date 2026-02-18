@@ -114,7 +114,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
                 QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
                 QueryInsightsSettings.REMOTE_EXPORTER_PATH,
-                QueryInsightsSettings.REMOTE_EXPORTER_ENABLED
+                QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
+                QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE
             ),
             queryInsightsPlugin.getSettings()
         );

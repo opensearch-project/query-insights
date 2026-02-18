@@ -74,6 +74,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -701,6 +702,30 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Queue should still NOT be cleared
         healthStats = queryInsightsService.getHealthStats();
         assertEquals(5, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testGetFilterByMode_defaultIsNone() {
+        assertEquals(FilterByMode.NONE, queryInsightsService.getFilterByMode());
+    }
+
+    public void testSetFilterByMode_username() {
+        queryInsightsService.setFilterByMode("username");
+        assertEquals(FilterByMode.USERNAME, queryInsightsService.getFilterByMode());
+    }
+
+    public void testSetFilterByMode_backendRoles() {
+        queryInsightsService.setFilterByMode("backend_roles");
+        assertEquals(FilterByMode.BACKEND_ROLES, queryInsightsService.getFilterByMode());
+    }
+
+    public void testValidateFilterByMode_validValues() {
+        queryInsightsService.validateFilterByMode("none");
+        queryInsightsService.validateFilterByMode("username");
+        queryInsightsService.validateFilterByMode("backend_roles");
+    }
+
+    public void testValidateFilterByMode_invalidValue() {
+        assertThrows(IllegalArgumentException.class, () -> queryInsightsService.validateFilterByMode("invalid"));
     }
 
     // Util functions

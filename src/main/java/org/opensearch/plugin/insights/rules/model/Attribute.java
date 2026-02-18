@@ -100,6 +100,11 @@ public enum Attribute {
     USER_ROLES,
 
     /**
+     * The backend roles of the user who initiated the search query.
+     */
+    BACKEND_ROLES,
+
+    /**
      * Indicates if the source was truncated due to length limits.
      */
     SOURCE_TRUNCATED,

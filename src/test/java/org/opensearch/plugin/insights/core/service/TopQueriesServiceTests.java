@@ -1030,6 +1030,36 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
     }
 
+    public void testSetUserInfoWithBackendRoles() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // threadPool already has user info from createMockThreadPool()
+        // Format: "testuser|role1,role2|admin,user|tenant1|access1"
+        // backend_roles (index 1) = "role1,role2"
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNotNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+        assertArrayEquals(new String[] { "role1", "role2" }, (String[]) record.getAttributes().get(Attribute.BACKEND_ROLES));
+    }
+
     public void testSetUserInfoWithNullUserPrincipalContext() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(100);

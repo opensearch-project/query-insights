@@ -1,5 +1,6 @@
 import org.opensearch.gradle.test.RestIntegTestTask
 import org.opensearch.gradle.testclusters.OpenSearchCluster
+import org.opensearch.gradle.testclusters.RunTask
 
 import groovy.xml.XmlParser
 import java.nio.file.Paths
@@ -401,6 +402,20 @@ testClusters.all {
 
 run {
     useCluster project, testClusters.integTest
+}
+
+// Cluster and task for running OpenSearch with security plugin enabled
+testClusters.register('runWithSecurity') {
+    numberOfNodes = 2
+}
+
+configureSecurityPlugin(testClusters.'runWithSecurity')
+
+tasks.register('runWithSecurity', RunTask) {
+    dependsOn(project.tasks.bundlePlugin)
+    useCluster testClusters.'runWithSecurity'
+    description = 'Runs OpenSearch with security plugin in the foreground'
+    group = 'Verification'
 }
 
 jacocoTestReport {

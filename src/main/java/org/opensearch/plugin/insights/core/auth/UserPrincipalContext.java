@@ -44,7 +44,7 @@ public class UserPrincipalContext {
     /**
      * Parses the stored user string into {@link UserPrincipalInfo}.
      * User String format is pipe separated: user_name|backendroles|roles|...
-     * We only extract the username (index 0) and roles (index 2).
+     * We extract the username (index 0), backend roles (index 1), and roles (index 2).
      */
     public UserPrincipalInfo extractUserInfo() {
         if (Strings.isNullOrEmpty(userString)) {
@@ -57,13 +57,18 @@ public class UserPrincipalContext {
         }
 
         String userName = unescapePipe(strs[0].trim());
+        List<String> backendRoles = List.of();
         List<String> roles = List.of();
+
+        if (strs.length > 1 && !Strings.isNullOrEmpty(strs[1])) {
+            backendRoles = Arrays.stream(strs[1].split(",")).map(this::unescapePipe).toList();
+        }
 
         if (strs.length > 2 && !Strings.isNullOrEmpty(strs[2])) {
             roles = Arrays.stream(strs[2].split(",")).map(this::unescapePipe).toList();
         }
 
-        return new UserPrincipalInfo(userName, roles);
+        return new UserPrincipalInfo(userName, backendRoles, roles);
     }
 
     private String unescapePipe(String input) {
@@ -71,19 +76,25 @@ public class UserPrincipalContext {
     }
 
     /**
-     * Holds parsed user information (username and roles).
+     * Holds parsed user information (username, backend roles, and roles).
      */
     public static class UserPrincipalInfo {
         private final String userName;
+        private final List<String> backendRoles;
         private final List<String> roles;
 
-        UserPrincipalInfo(String userName, List<String> roles) {
+        public UserPrincipalInfo(String userName, List<String> backendRoles, List<String> roles) {
             this.userName = userName;
+            this.backendRoles = List.copyOf(backendRoles);
             this.roles = List.copyOf(roles);
         }
 
         public String getUserName() {
             return userName;
+        }
+
+        public List<String> getBackendRoles() {
+            return backendRoles;
         }
 
         public List<String> getRoles() {

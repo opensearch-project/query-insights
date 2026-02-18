@@ -1,7 +1,7 @@
 {
   "dynamic": true,
   "_meta": {
-    "schema_version": 1,
+    "schema_version": 2,
     "query_insights_feature_space": "top_n_queries"
   },
   "properties": {
@@ -21,6 +21,9 @@
       "type" : "keyword"
     },
     "user_roles" : {
+      "type" : "keyword"
+    },
+    "backend_roles" : {
       "type" : "keyword"
     },
     "timestamp" : {
