@@ -143,6 +143,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Query Group hashcode
      */
     public static final String QUERY_GROUP_HASHCODE = "query_group_hashcode";
+    /**
+     * Indicates if the search request failed during execution
+     */
+    public static final String FAILED = "failed";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -330,6 +334,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case IS_CANCELLED:
                         attributes.put(Attribute.IS_CANCELLED, parser.booleanValue());
+                        break;
+                    case FAILED:
+                        attributes.put(Attribute.FAILED, parser.booleanValue());
                         break;
                     case WLM_GROUP_ID:
                         attributes.put(Attribute.WLM_GROUP_ID, parser.text());
