@@ -406,7 +406,6 @@ run {
 
 // Cluster and task for running OpenSearch with security plugin enabled
 testClusters.register('runWithSecurity') {
-    numberOfNodes = 2
 }
 
 configureSecurityPlugin(testClusters.'runWithSecurity')

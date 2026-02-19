@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.transport.top_queries;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -222,8 +223,16 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 log.warn("Failed to extract user info for RBAC filtering", e);
             }
             if (userInfo == null) {
-                log.warn("User info unavailable with filter_by_mode [{}], falling back to no filtering", filterByMode);
-                filterByMode = FilterByMode.NONE;
+                log.warn("User info unavailable with filter_by_mode [{}], denying access", filterByMode);
+                finalListener.onResponse(
+                    new TopQueriesResponse(
+                        clusterService.getClusterName(),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        request.getMetricType()
+                    )
+                );
+                return;
             }
         }
 
