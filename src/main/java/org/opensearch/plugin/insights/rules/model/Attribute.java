@@ -102,7 +102,12 @@ public enum Attribute {
     /**
      * Indicates if the source was truncated due to length limits.
      */
-    SOURCE_TRUNCATED;
+    SOURCE_TRUNCATED,
+
+    /**
+     * Indicates if the search request failed during execution.
+     */
+    FAILED;
 
     /**
      * Read an Attribute from a StreamInput
