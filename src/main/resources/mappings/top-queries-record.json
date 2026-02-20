@@ -23,6 +23,9 @@
     "user_roles" : {
       "type" : "keyword"
     },
+    "backend_roles" : {
+      "type" : "keyword"
+    },
     "timestamp" : {
       "type" : "date",
       "format": "epoch_millis"

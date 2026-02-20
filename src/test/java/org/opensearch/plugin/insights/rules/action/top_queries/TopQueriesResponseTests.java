@@ -74,6 +74,7 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
             + "\"failed\":false,"
             + "\"username\":\"testuser\","
             + "\"user_roles\":[\"admin\",\"user\"],"
+            + "\"backend_roles\":[\"role1\",\"role2\"],"
             + "\"measurements\":{"
             + "\"latency\":{"
             + "\"number\":1,"

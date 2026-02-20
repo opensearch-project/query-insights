@@ -17,7 +17,9 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +37,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
@@ -42,6 +45,7 @@ import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -331,5 +335,212 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         // Verify the duplicate record (by ID) is not in the historical results
         boolean containsDuplicateId = deduplicatedHistoricalRecords.stream().anyMatch(record -> record.getId().equals("duplicate_entry"));
         assertFalse(containsDuplicateId);
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_noneModePassesThrough() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.NONE, null);
+
+        // When mode is NONE, the delegate should be returned directly
+        assertSame(finalListener, wrapped);
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_usernameMode_filtersRecords() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user1", List.of("br1"), List.of("role1"));
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.USERNAME, userInfo);
+
+        // Create records — one for user1 and one for user2
+        Map<Attribute, Object> attrs1 = new HashMap<>();
+        attrs1.put(Attribute.USERNAME, "user1");
+        attrs1.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(1.0D, AggregationType.AVERAGE)),
+            attrs1,
+            "rec1"
+        );
+
+        Map<Attribute, Object> attrs2 = new HashMap<>();
+        attrs2.put(Attribute.USERNAME, "user2");
+        attrs2.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(2.0D, AggregationType.AVERAGE)),
+            attrs2,
+            "rec2"
+        );
+
+        List<SearchQueryRecord> records = new ArrayList<>();
+        records.add(record1);
+        records.add(record2);
+        TopQueries topQueries = new TopQueries(node1, records);
+        TopQueriesResponse response = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(topQueries),
+            Collections.emptyList(),
+            MetricType.LATENCY
+        );
+
+        wrapped.onResponse(response);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse filteredResponse = responseCaptor.getValue();
+        assertEquals(1, filteredResponse.getNodes().size());
+        // Only record1 (user1) should remain
+        assertEquals(1, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
+        assertEquals("rec1", filteredResponse.getNodes().get(0).getTopQueriesRecord().get(0).getId());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_adminBypass() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+        UserPrincipalInfo adminInfo = new UserPrincipalInfo("admin_user", List.of("admin_br"), List.of("all_access"));
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.USERNAME, adminInfo);
+
+        Map<Attribute, Object> attrs1 = new HashMap<>();
+        attrs1.put(Attribute.USERNAME, "user1");
+        attrs1.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(1.0D, AggregationType.AVERAGE)),
+            attrs1,
+            "rec1"
+        );
+
+        Map<Attribute, Object> attrs2 = new HashMap<>();
+        attrs2.put(Attribute.USERNAME, "user2");
+        attrs2.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(2.0D, AggregationType.AVERAGE)),
+            attrs2,
+            "rec2"
+        );
+
+        List<SearchQueryRecord> records = new ArrayList<>();
+        records.add(record1);
+        records.add(record2);
+        TopQueries topQueries = new TopQueries(node1, records);
+        TopQueriesResponse response = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(topQueries),
+            Collections.emptyList(),
+            MetricType.LATENCY
+        );
+
+        wrapped.onResponse(response);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse filteredResponse = responseCaptor.getValue();
+        // Admin sees all records
+        assertEquals(2, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_backendRolesMode_filtersRecords() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user1", List.of("team_a"), List.of("role1"));
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.BACKEND_ROLES, userInfo);
+
+        Map<Attribute, Object> attrs1 = new HashMap<>();
+        attrs1.put(Attribute.BACKEND_ROLES, new String[] { "team_a", "team_b" });
+        attrs1.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(1.0D, AggregationType.AVERAGE)),
+            attrs1,
+            "rec1"
+        );
+
+        Map<Attribute, Object> attrs2 = new HashMap<>();
+        attrs2.put(Attribute.BACKEND_ROLES, new String[] { "team_c" });
+        attrs2.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(2.0D, AggregationType.AVERAGE)),
+            attrs2,
+            "rec2"
+        );
+
+        List<SearchQueryRecord> records = new ArrayList<>();
+        records.add(record1);
+        records.add(record2);
+        TopQueries topQueries = new TopQueries(node1, records);
+        TopQueriesResponse response = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(topQueries),
+            Collections.emptyList(),
+            MetricType.LATENCY
+        );
+
+        wrapped.onResponse(response);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse filteredResponse = responseCaptor.getValue();
+        assertEquals(1, filteredResponse.getNodes().size());
+        assertEquals(1, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
+        assertEquals("rec1", filteredResponse.getNodes().get(0).getTopQueriesRecord().get(0).getId());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_onFailure_propagates() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user1", List.of("br1"), List.of("role1"));
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.USERNAME, userInfo);
+
+        RuntimeException error = new RuntimeException("test error");
+        wrapped.onFailure(error);
+
+        verify(finalListener).onFailure(error);
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_nullUserInfo_returnsEmpty() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.USERNAME, null);
+
+        Map<Attribute, Object> attrs1 = new HashMap<>();
+        attrs1.put(Attribute.USERNAME, "user1");
+        attrs1.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(1.0D, AggregationType.AVERAGE)),
+            attrs1,
+            "rec1"
+        );
+
+        List<SearchQueryRecord> records = new ArrayList<>();
+        records.add(record1);
+        TopQueries topQueries = new TopQueries(node1, records);
+        TopQueriesResponse response = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(topQueries),
+            Collections.emptyList(),
+            MetricType.LATENCY
+        );
+
+        wrapped.onResponse(response);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse filteredResponse = responseCaptor.getValue();
+        assertEquals(1, filteredResponse.getNodes().size());
+        assertEquals(0, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
     }
 }
