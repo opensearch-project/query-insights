@@ -643,21 +643,27 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
             TOP_QUERIES_REMOTE_EXPORTER_ID
         );
-        exporter.setEnabled(enabled != null ? enabled : false);
+        if (exporter != null) {
+            exporter.setEnabled(enabled != null ? enabled : false);
+        }
     }
 
     private void updateRemoteExporterRepository(String repository) {
         RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
             TOP_QUERIES_REMOTE_EXPORTER_ID
         );
-        exporter.setRepositoryName(repository);
+        if (exporter != null) {
+            exporter.setRepositoryName(repository);
+        }
     }
 
     private void updateRemoteExporterPath(String path) {
         RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
             TOP_QUERIES_REMOTE_EXPORTER_ID
         );
-        exporter.setBasePath(path);
+        if (exporter != null) {
+            exporter.setBasePath(path);
+        }
     }
 
     /**

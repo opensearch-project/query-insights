@@ -1103,7 +1103,7 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         topQueriesService.consumeRecords(newRecords);
 
         // Verify remote exporter was called during window rotation
-        verify(mockRemoteExporter, times(1)).export(any());
+        verify(mockRemoteExporter, times(1)).export(any(), any());
     }
 
     public void testRemoteExportWhenExporterDoesNotExist() {

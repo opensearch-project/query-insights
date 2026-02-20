@@ -33,6 +33,7 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.repositories.Repository;
@@ -97,12 +98,7 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
         this.dateTimeFormatter = dateTimeFormatter;
         this.id = id;
         this.enabled = enabled;
-        if (repositoryName != null && !repositoryName.isEmpty()) {
-            AsyncMultiStreamBlobContainer container = validateRepository(repositoryName, basePath);
-            this.repositoryState = new AtomicReference<>(new RepositoryState(repositoryName, basePath, container));
-        } else {
-            this.repositoryState = new AtomicReference<>(new RepositoryState(repositoryName, basePath, null));
-        }
+        this.repositoryState = new AtomicReference<>(new RepositoryState(repositoryName, basePath, null));
     }
 
     @Override
@@ -117,12 +113,39 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
      */
     @Override
     public void export(final List<SearchQueryRecord> records) {
+        export(records, null);
+    }
+
+    /**
+     * Export a list of SearchQueryRecord to remote repository
+     *
+     * @param records list of {@link SearchQueryRecord}
+     * @param metricType the metric type for the records
+     */
+    public void export(final List<SearchQueryRecord> records, final MetricType metricType) {
         RepositoryState state = repositoryState.get();
-        if (!enabled || records == null || records.isEmpty() || state.blobContainer == null) {
+        if (!enabled || records == null || records.isEmpty()) {
             return;
         }
+
+        // Lazy initialization if blob container is null but repository is configured
+        if (state.blobContainer == null && state.repositoryName != null && !state.repositoryName.isEmpty()) {
+            try {
+                AsyncMultiStreamBlobContainer container = validateRepository(state.repositoryName, state.basePath);
+                repositoryState.compareAndSet(state, new RepositoryState(state.repositoryName, state.basePath, container));
+                state = repositoryState.get();
+            } catch (Exception e) {
+                logger.error("Failed to initialize repository: {}. Please update the remote repository settings.", state.repositoryName, e);
+                return;
+            }
+        }
+
+        if (state.blobContainer == null) {
+            return;
+        }
+
         try {
-            uploadAsync(state.blobContainer, records);
+            uploadAsync(state.blobContainer, records, metricType);
         } catch (Exception e) {
             logger.error("Failed to export query insights data to remote repository", e);
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.REMOTE_REPOSITORY_EXPORTER_EXCEPTIONS);
@@ -134,9 +157,11 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
      *
      * @param asyncContainer async multi-stream blob container
      * @param records list of records to upload
+     * @param metricType metric type
      * @throws IOException if upload fails
      */
-    private void uploadAsync(AsyncMultiStreamBlobContainer asyncContainer, List<SearchQueryRecord> records) throws IOException {
+    private void uploadAsync(AsyncMultiStreamBlobContainer asyncContainer, List<SearchQueryRecord> records, MetricType metricType)
+        throws IOException {
         StringBuilder jsonBuilder = new StringBuilder();
         for (SearchQueryRecord record : records) {
             jsonBuilder.append(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS).toString()).append("\n");
@@ -150,7 +175,7 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
             1
         );
 
-        String fileName = buildObjectKey();
+        String fileName = buildObjectKey(metricType);
         WriteContext writeContext = new WriteContext.Builder().fileName(fileName)
             .streamContextSupplier(partSize -> streamContext)
             .fileSize((long) data.length)
@@ -225,11 +250,14 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Build object key: yyyy/MM/dd/HH/mm'UTC'/{node-id}.json
+     * Build object key: yyyy/MM/dd/HH/mm'UTC'/{node-id}-{metric-type}.json or yyyy/MM/dd/HH/mm'UTC'/{node-id}.json
      */
-    private String buildObjectKey() {
+    private String buildObjectKey(MetricType metricType) {
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
         String nodeId = clusterService.localNode().getId();
+        if (metricType != null) {
+            return dateTimeFormatter.format(now) + "/" + nodeId + "-" + metricType.toString() + ".json";
+        }
         return dateTimeFormatter.format(now) + "/" + nodeId + ".json";
     }
 
@@ -242,8 +270,13 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
     public void setRepositoryName(String repositoryName) {
         repositoryState.updateAndGet(current -> {
             if (repositoryName != null && !repositoryName.isEmpty()) {
-                AsyncMultiStreamBlobContainer container = validateRepository(repositoryName, current.basePath);
-                return new RepositoryState(repositoryName, current.basePath, container);
+                try {
+                    AsyncMultiStreamBlobContainer container = validateRepository(repositoryName, current.basePath);
+                    return new RepositoryState(repositoryName, current.basePath, container);
+                } catch (Exception e) {
+                    logger.error("Failed to validate repository: {}. Repository will be set but validation deferred.", repositoryName, e);
+                    return new RepositoryState(repositoryName, current.basePath, null);
+                }
             } else {
                 return new RepositoryState(repositoryName, current.basePath, null);
             }
@@ -268,8 +301,17 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
         }
         repositoryState.updateAndGet(current -> {
             if (current.repositoryName != null && !current.repositoryName.isEmpty()) {
-                AsyncMultiStreamBlobContainer container = validateRepository(current.repositoryName, basePath);
-                return new RepositoryState(current.repositoryName, basePath, container);
+                try {
+                    AsyncMultiStreamBlobContainer container = validateRepository(current.repositoryName, basePath);
+                    return new RepositoryState(current.repositoryName, basePath, container);
+                } catch (Exception e) {
+                    logger.error(
+                        "Failed to validate repository with new base path: {}. Path will be set but validation deferred.",
+                        basePath,
+                        e
+                    );
+                    return new RepositoryState(current.repositoryName, basePath, null);
+                }
             } else {
                 return new RepositoryState(current.repositoryName, basePath, null);
             }

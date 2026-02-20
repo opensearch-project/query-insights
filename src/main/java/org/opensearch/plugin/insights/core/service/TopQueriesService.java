@@ -531,7 +531,8 @@ public class TopQueriesService {
             // export to remote repository independently if enabled
             QueryInsightsExporter remoteRepositoryExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID);
             if (remoteRepositoryExporter != null && ((RemoteRepositoryExporter) remoteRepositoryExporter).isEnabled()) {
-                threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> remoteRepositoryExporter.export(history));
+                threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
+                    .execute(() -> ((RemoteRepositoryExporter) remoteRepositoryExporter).export(history, metricType));
             }
         }
     }

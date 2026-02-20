@@ -766,4 +766,40 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Default enabled should be false
         assertFalse(remoteExporter.isEnabled());
     }
+
+    public void testUpdateRemoteExporterEnabledWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.enabled", true).build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
+    }
+
+    public void testUpdateRemoteExporterRepositoryWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.repository", "new-repo").build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
+    }
+
+    public void testUpdateRemoteExporterPathWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.path", "new-path").build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
+    }
 }
