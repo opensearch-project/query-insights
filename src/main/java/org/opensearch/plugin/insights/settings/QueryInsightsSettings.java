@@ -11,6 +11,7 @@ package org.opensearch.plugin.insights.settings;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -125,6 +126,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_LATENCY_QUERIES_SIZE = Setting.intSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        0,
+        new TopNSizeValidator(),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -132,9 +135,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by latency.
      */
-    public static final Setting<TimeValue> TOP_N_LATENCY_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_LATENCY_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -189,6 +194,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_CPU_QUERIES_SIZE = Setting.intSetting(
         TOP_N_CPU_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        0,
+        new TopNSizeValidator(),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -196,9 +203,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by cpu.
      */
-    public static final Setting<TimeValue> TOP_N_CPU_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_CPU_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_CPU_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -219,6 +228,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_MEMORY_QUERIES_SIZE = Setting.intSetting(
         TOP_N_MEMORY_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        0,
+        new TopNSizeValidator(),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -226,9 +237,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by memory.
      */
-    public static final Setting<TimeValue> TOP_N_MEMORY_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_MEMORY_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_MEMORY_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -385,4 +398,57 @@ public class QueryInsightsSettings {
      * Default constructor
      */
     public QueryInsightsSettings() {}
+
+    /**
+     * Validates the Query Insights top_n_size value.
+     */
+    static final class TopNSizeValidator implements Setting.Validator<Integer> {
+        @Override
+        public void validate(Integer topNSize) throws IllegalArgumentException {
+            if (topNSize < 1 || topNSize > MAX_N_SIZE) {
+                throw new IllegalArgumentException(
+                    String.format("Top N size setting should be between 1 and %d, was (%d)",
+                        MAX_N_SIZE,
+                        topNSize)
+                );
+            }
+        }
+
+        @Override
+        public Iterator<Setting<?>> settings () {
+            final List<Setting<?>> settings = List.of(TOP_N_LATENCY_QUERIES_SIZE, TOP_N_CPU_QUERIES_SIZE, TOP_N_MEMORY_QUERIES_SIZE);
+            return settings.iterator();
+        }
+    }
+
+    /**
+     * Validates the Query Insights window_size value.
+     */
+    static final class WindowSizeValidator implements Setting.Validator<TimeValue> {
+        @Override
+        public void validate(TimeValue windowSize) throws IllegalArgumentException {
+            if (windowSize.compareTo(MAX_WINDOW_SIZE) > 0
+                || windowSize.compareTo(MIN_WINDOW_SIZE) < 0) {
+                throw new IllegalArgumentException(
+                    String.format("Window size should be between [%s,%s], was (%s)",
+                        MIN_WINDOW_SIZE,
+                        MAX_WINDOW_SIZE,
+                        windowSize)
+                );
+            }
+            if (!(VALID_WINDOW_SIZES_IN_MINUTES.contains(windowSize) || windowSize.getMinutes() % 60 == 0)) {
+                throw new IllegalArgumentException(
+                    String.format("Window size should be a multiple of 1 hour, or one of %s, was (%s)",
+                        VALID_WINDOW_SIZES_IN_MINUTES,
+                        windowSize)
+                );
+            }
+        }
+
+        @Override
+        public Iterator<Setting<?>> settings () {
+            final List<Setting<?>> settings = List.of(TOP_N_LATENCY_QUERIES_WINDOW_SIZE, TOP_N_CPU_QUERIES_WINDOW_SIZE, TOP_N_CPU_QUERIES_ENABLED);
+            return settings.iterator();
+        }
+    }
 }

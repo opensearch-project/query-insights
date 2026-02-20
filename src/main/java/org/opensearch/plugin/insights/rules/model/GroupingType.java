@@ -45,6 +45,7 @@ public enum GroupingType {
      * @return GroupingType
      */
     public static GroupingType getGroupingTypeFromSettingAndValidate(String settingValue) {
+        // remove here
         try {
             return GroupingType.valueOf(settingValue.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {

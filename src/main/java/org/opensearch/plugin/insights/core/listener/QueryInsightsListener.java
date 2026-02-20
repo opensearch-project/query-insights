@@ -121,13 +121,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 .addSettingsUpdateConsumer(
                     getTopNSizeSetting(type),
                     v -> this.queryInsightsService.setTopNSize(type, v),
-                    v -> this.queryInsightsService.validateTopNSize(type, v)
+                    v -> this.queryInsightsService.validateTopNSize(type, v) // remove here
                 );
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(
                     getTopNWindowSizeSetting(type),
                     v -> this.queryInsightsService.setWindowSize(type, v),
-                    v -> this.queryInsightsService.validateWindowSize(type, v)
+                    v -> this.queryInsightsService.validateWindowSize(type, v) // remove here
                 );
 
             this.setEnableTopQueries(type, clusterService.getClusterSettings().get(getTopNEnabledSetting(type)));
@@ -142,7 +142,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .addSettingsUpdateConsumer(
                 TOP_N_QUERIES_GROUP_BY,
                 v -> this.queryInsightsService.setGrouping(v),
-                v -> this.queryInsightsService.validateGrouping(v)
+                v -> this.queryInsightsService.validateGrouping(v) // remove here
             );
         this.queryInsightsService.validateGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
         this.queryInsightsService.setGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
@@ -151,7 +151,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .addSettingsUpdateConsumer(
                 TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
                 v -> this.queryInsightsService.setMaximumGroups(v),
-                v -> this.queryInsightsService.validateMaximumGroups(v)
+                v -> this.queryInsightsService.validateMaximumGroups(v) // remove here
             );
         this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
         this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
@@ -160,7 +160,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .addSettingsUpdateConsumer(
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
                 this::setExcludedIndices,
-                this::validateExcludedIndices
+                this::validateExcludedIndices // remove here
             );
         validateExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
         setExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
