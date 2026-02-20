@@ -50,6 +50,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final String id;
     private final SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
+    private boolean streaming;
 
     /**
      * Timestamp
@@ -702,6 +703,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public String getGroupingId() {
         return this.groupingId;
+    }
+
+    public boolean isStreaming() {
+        return streaming;
+    }
+
+    public void setStreaming(boolean streaming) {
+        this.streaming = streaming;
     }
 
     public boolean isCancelled() {

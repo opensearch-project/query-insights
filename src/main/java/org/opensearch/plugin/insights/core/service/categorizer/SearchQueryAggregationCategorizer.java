@@ -37,26 +37,32 @@ public class SearchQueryAggregationCategorizer {
      *
      * @param aggregatorFactories input aggregations
      * @param measurements latency, cpu, memory measurements
+     * @param isStreaming whether the query is a streaming request
      */
     public void incrementSearchQueryAggregationCounters(
         Collection<AggregationBuilder> aggregatorFactories,
-        Map<MetricType, Measurement> measurements
+        Map<MetricType, Measurement> measurements,
+        boolean isStreaming
     ) {
         for (AggregationBuilder aggregationBuilder : aggregatorFactories) {
-            incrementCountersRecursively(aggregationBuilder, measurements);
+            incrementCountersRecursively(aggregationBuilder, measurements, isStreaming);
         }
     }
 
-    private void incrementCountersRecursively(AggregationBuilder aggregationBuilder, Map<MetricType, Measurement> measurements) {
+    private void incrementCountersRecursively(
+        AggregationBuilder aggregationBuilder,
+        Map<MetricType, Measurement> measurements,
+        boolean isStreaming
+    ) {
         // Increment counters for the current aggregation
         String aggregationType = aggregationBuilder.getType();
-        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, aggregationType), measurements);
+        searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, aggregationType), measurements, isStreaming);
 
         // Recursively process sub-aggregations if any
         Collection<AggregationBuilder> subAggregations = aggregationBuilder.getSubAggregations();
         if (subAggregations != null && !subAggregations.isEmpty()) {
             for (AggregationBuilder subAggregation : subAggregations) {
-                incrementCountersRecursively(subAggregation, measurements);
+                incrementCountersRecursively(subAggregation, measurements, isStreaming);
             }
         }
 
@@ -64,7 +70,12 @@ public class SearchQueryAggregationCategorizer {
         Collection<PipelineAggregationBuilder> pipelineAggregations = aggregationBuilder.getPipelineAggregations();
         for (PipelineAggregationBuilder pipelineAggregation : pipelineAggregations) {
             String pipelineAggregationType = pipelineAggregation.getType();
-            searchQueryCounters.incrementAggCounter(1, Tags.create().addTag(AGGREGATION_TYPE_TAG, pipelineAggregationType), measurements);
+            searchQueryCounters.incrementAggCounter(
+                1,
+                Tags.create().addTag(AGGREGATION_TYPE_TAG, pipelineAggregationType),
+                measurements,
+                isStreaming
+            );
         }
     }
 }
