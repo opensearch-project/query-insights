@@ -129,6 +129,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
         when(searchRequest.indices()).thenReturn(indices);
         when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchRequestContext.isStreamingRequest()).thenReturn(true);
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(numberOfShards);
         when(searchPhaseContext.getTask()).thenReturn(task);
@@ -141,6 +142,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
+        assertTrue(generatedRecord.isStreaming());
         // SOURCE attribute should be null initially (set asynchronously in drainRecords)
         assertNull(generatedRecord.getAttributes().get(Attribute.SOURCE));
         // But SearchSourceBuilder should be available for async processing

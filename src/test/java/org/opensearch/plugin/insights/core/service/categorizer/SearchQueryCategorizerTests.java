@@ -16,6 +16,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.plugin.insights.QueryInsightsTestUtils.generateQueryInsightRecords;
 import static org.opensearch.plugin.insights.core.service.categorizer.SearchQueryAggregationCategorizer.AGGREGATION_TYPE_TAG;
+import static org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCounters.IS_STREAMING_TAG;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -102,6 +103,7 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         sourceBuilder.size(0);
 
         SearchQueryRecord record = generateQueryInsightRecords(1, sourceBuilder).get(0);
+        record.setStreaming(true);
         searchQueryCategorizer.categorize(record);
 
         verifyMeasurementHistogramsIncremented(record, 1);
@@ -114,10 +116,12 @@ public final class SearchQueryCategorizerTests extends OpenSearchTestCase {
         verify(searchQueryCategorizer.getSearchQueryCounters().getAggCounter()).add(valueCaptor.capture(), tagsCaptor.capture());
 
         double actualValue = valueCaptor.getValue();
-        String actualTag = (String) tagsCaptor.getValue().getTagsMap().get(AGGREGATION_TYPE_TAG);
+        String actualAggTag = (String) tagsCaptor.getValue().getTagsMap().get(AGGREGATION_TYPE_TAG);
+        String actualStreamingTag = (String) tagsCaptor.getValue().getTagsMap().get(IS_STREAMING_TAG);
 
         assertEquals(1.0d, actualValue, 0.0001);
-        assertEquals(MULTI_TERMS_AGGREGATION, actualTag);
+        assertEquals(MULTI_TERMS_AGGREGATION, actualAggTag);
+        assertEquals("true", actualStreamingTag);
     }
 
     public void testBoolQuery() {
