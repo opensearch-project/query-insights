@@ -36,6 +36,8 @@ public class OperationalMetricsTests extends OpenSearchTestCase {
         assertEquals("DATA_INGEST_EXCEPTIONS", OperationalMetric.DATA_INGEST_EXCEPTIONS.toString());
         assertEquals("QUERY_CATEGORIZE_EXCEPTIONS", OperationalMetric.QUERY_CATEGORIZE_EXCEPTIONS.toString());
         assertEquals("EXPORTER_FAIL_TO_CLOSE_EXCEPTION", OperationalMetric.EXPORTER_FAIL_TO_CLOSE_EXCEPTION.toString());
+        assertEquals("REMOTE_REPOSITORY_EXPORTER_EXCEPTIONS", OperationalMetric.REMOTE_REPOSITORY_EXPORTER_EXCEPTIONS.toString());
+        assertEquals("REMOTE_REPOSITORY_EXPORTER_UPLOAD_FAILURES", OperationalMetric.REMOTE_REPOSITORY_EXPORTER_UPLOAD_FAILURES.toString());
         assertEquals("TOP_N_QUERIES_USAGE_COUNT", OperationalMetric.TOP_N_QUERIES_USAGE_COUNT.toString());
         assertEquals("TOP_N_QUERIES_SOURCE_TRUNCATION", OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION.toString());
     }

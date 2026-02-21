@@ -38,6 +38,7 @@ import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLive
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestHandler;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -110,13 +111,17 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
-                QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
+                QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
+                QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
+                QueryInsightsSettings.REMOTE_EXPORTER_PATH,
+                QueryInsightsSettings.REMOTE_EXPORTER_ENABLED
             ),
             queryInsightsPlugin.getSettings()
         );
     }
 
     public void testCreateComponent() {
+        RepositoriesService repositoriesService = mock(RepositoriesService.class);
         List<Object> components = (List<Object>) queryInsightsPlugin.createComponents(
             client,
             clusterService,
@@ -128,7 +133,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             null,
             null,
-            null,
+            () -> repositoriesService,
             null,
             metricsRegistry
         );

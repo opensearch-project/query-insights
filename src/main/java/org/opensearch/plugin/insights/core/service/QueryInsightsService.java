@@ -10,9 +10,13 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_READER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_ENABLED;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_PATH;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
 
@@ -41,6 +45,7 @@ import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -183,6 +188,17 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (localIndexLifecycleManager::setDeleteAfterAndDelete),
                 (localIndexLifecycleManager::validateDeleteAfter)
             );
+        queryInsightsExporterFactory.createRemoteRepositoryExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID,
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_PATH),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_ENABLED)
+        );
+
+        // Listen for remote repository exporter setting changes - update individual settings
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
@@ -618,6 +634,36 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     void setLocalIndexLifecycleManager(final LocalIndexLifecycleManager localIndexLifecycleManager) {
         this.localIndexLifecycleManager = localIndexLifecycleManager;
+    }
+
+    /**
+     * Update remote repository exporter with the given settings
+     */
+    private void updateRemoteExporterEnabled(Boolean enabled) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setEnabled(enabled != null ? enabled : false);
+        }
+    }
+
+    private void updateRemoteExporterRepository(String repository) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setRepositoryName(repository);
+        }
+    }
+
+    private void updateRemoteExporterPath(String path) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setBasePath(path);
+        }
     }
 
     /**

@@ -48,7 +48,7 @@ GET /_insights/top_queries
 
 You can configure your desired exporter to export top N query data to different sinks, allowing for better monitoring and analysis of your OpenSearch queries.
 
-A local index exporter allows you to export the top N queries to local OpenSearch indexes. To configure the local index exporter for the top N queiries by latency, send the following request:
+A local index exporter allows you to export the top N queries to local OpenSearch indexes. To configure the local index exporter for the top N queries by latency, send the following request:
 
 ```
 PUT _cluster/settings
@@ -58,6 +58,20 @@ PUT _cluster/settings
   }
 }
 ```
+
+A remote repository exporter allows you to export the top N queries to blob store repositories supported by OpenSearch. Note: The remote repository exporter requires async multi-stream blob upload support, currently available only in the repository-s3 plugin. You must first configure a blob store repository with OpenSearch to use the remote repository exporter. Then, to export top N queries to remote repository exporter, send the following request:
+
+```
+PUT _cluster/settings
+{
+  "persistent" : {
+    "search.insights.top_queries.exporter.remote.repository" : "my-s3-repository",
+    "search.insights.top_queries.exporter.remote.path" : "query-insights",
+    "search.insights.top_queries.exporter.remote.enabled" : true
+  }
+}
+```
+
 You can refer to the [official document](https://opensearch.org/docs/latest/observing-your-data/query-insights/index/) for more detailed usage of query-insights plugin.
 
 ## Development
