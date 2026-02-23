@@ -18,6 +18,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Transport response for cluster/node level live queries information.
@@ -26,7 +27,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
     private final List<LiveQueryRecord> liveQueries;
-    private final List<LiveQueryRecord> finishedQueries;
+    private final List<SearchQueryRecord> finishedQueries;
     private final boolean useFinishedCache;
 
     public LiveQueriesResponse(final StreamInput in) throws IOException {
@@ -36,7 +37,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
             this.liveQueries = Collections.emptyList();
         }
         this.useFinishedCache = in.readBoolean();
-        this.finishedQueries = useFinishedCache ? in.readList(LiveQueryRecord::new) : List.of();
+        this.finishedQueries = useFinishedCache ? in.readList(SearchQueryRecord::new) : List.of();
     }
 
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
@@ -45,7 +46,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         this.useFinishedCache = false;
     }
 
-    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<LiveQueryRecord> finishedQueries, boolean useFinishedCache) {
+    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<SearchQueryRecord> finishedQueries, boolean useFinishedCache) {
         this.liveQueries = liveQueries;
         this.finishedQueries = finishedQueries;
         this.useFinishedCache = useFinishedCache;
@@ -76,7 +77,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         builder.endArray();
         if (useFinishedCache) {
             builder.startArray("finished_queries");
-            for (LiveQueryRecord query : finishedQueries) {
+            for (SearchQueryRecord query : finishedQueries) {
                 query.toXContent(builder, params);
             }
             builder.endArray();

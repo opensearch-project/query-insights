@@ -732,7 +732,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testNegativeSize() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, false);
         TaskInfo task = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "task", 100L, 200L);
         ListTasksResponse listTasksResponse = new ListTasksResponse(List.of(task), emptyList(), emptyList());
 
