@@ -136,13 +136,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private volatile FinishedQueriesCache finishedQueriesCache;
     private volatile boolean finishedQueriesCacheStarted = false;
-    private volatile long finishedQueriesLastAccessTime = 0;
-    private volatile Scheduler.Cancellable finishedQueriesIdleCheckTask;
-    private QueryInsightsListener queryInsightsListener;
-    private FinishedQueriesListener finishedQueriesListener;
-
-    private static final long IDLE_TIMEOUT_MS = 300000; // 5 minutes
-    private static final TimeValue IDLE_CHECK_INTERVAL = new TimeValue(60, TimeUnit.SECONDS);
     private volatile Scheduler.Cancellable cacheIdleCheckTask;
 
     SinkType sinkType;
@@ -217,12 +210,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.groupingType = DEFAULT_GROUPING_TYPE;
 
         // Initialize caches
-        this.finishedQueriesCache = null; // Will be created lazily with default settings
-        // Add settings consumer for finished queries cache
+        this.finishedQueriesCache = null; // Will be created lazily
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED, this::setFinishedQueriesCacheEnabled);
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD, this::setFinishedQueriesRetention);
+            .addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+                FinishedQueriesCache cache = finishedQueriesCache;
+                if (cache != null) cache.setIdleTimeout(v.millis());
+            });
     }
 
     /**
@@ -603,16 +596,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         synchronized (this) {
-            if (finishedQueriesCache != null && finishedQueriesCacheStarted) {
-                finishedQueriesCacheStarted = false;
-                if (finishedQueriesListener != null) {
-                    finishedQueriesListener.disable();
-                }
-            }
-            if (finishedQueriesIdleCheckTask != null) {
-                finishedQueriesIdleCheckTask.cancel();
-                finishedQueriesIdleCheckTask = null;
-            }
+            finishedQueriesCacheStarted = false;
             if (cacheIdleCheckTask != null) {
                 cacheIdleCheckTask.cancel();
                 cacheIdleCheckTask = null;
@@ -719,11 +703,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (finishedQueriesCache == null) {
             synchronized (this) {
                 if (finishedQueriesCache == null) {
-                    finishedQueriesCache = new FinishedQueriesCache(
-                        clusterService.getClusterSettings().get(QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD).millis(),
-                        clusterService,
-                        threadPool
-                    );
+                    finishedQueriesCache = new FinishedQueriesCache(clusterService);
                     startCacheIdleCheck();
                 }
             }
@@ -739,35 +719,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         return finishedQueriesCache;
     }
 
-    public void setQueryInsightsListener(QueryInsightsListener queryInsightsListener) {
-        this.queryInsightsListener = queryInsightsListener;
+    public boolean isFinishedQueriesCacheStarted() {
+        return finishedQueriesCacheStarted;
     }
 
-    public void setFinishedQueriesListener(FinishedQueriesListener finishedQueriesListener) {
-        this.finishedQueriesListener = finishedQueriesListener;
-    }
+    public void setQueryInsightsListener(Object queryInsightsListener) {}
 
-    private void startFinishedQueriesIdleCheck() {
-        if (finishedQueriesIdleCheckTask != null) {
-            finishedQueriesIdleCheckTask.cancel();
-        }
-        finishedQueriesIdleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
-            synchronized (this) {
-                if (finishedQueriesCacheStarted && System.currentTimeMillis() - finishedQueriesLastAccessTime > IDLE_TIMEOUT_MS) {
-                    finishedQueriesCacheStarted = false;
-                    finishedQueriesLastAccessTime = 0;
-                    finishedQueriesCache = null;
-                    if (finishedQueriesListener != null) {
-                        finishedQueriesListener.disable();
-                    }
-                    if (finishedQueriesIdleCheckTask != null) {
-                        finishedQueriesIdleCheckTask.cancel();
-                        finishedQueriesIdleCheckTask = null;
-                    }
-                }
-            }
-        }, IDLE_CHECK_INTERVAL, QUERY_INSIGHTS_EXECUTOR);
-    }
+    public void setFinishedQueriesListener(Object finishedQueriesListener) {}
+
+    private void startFinishedQueriesIdleCheck() {}
 
     private void startCacheIdleCheck() {
         if (cacheIdleCheckTask == null) {
@@ -787,6 +747,5 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }, TimeValue.timeValueMinutes(1), QUERY_INSIGHTS_EXECUTOR);
         }
-    }
     }
 }
