@@ -31,6 +31,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
     private final long totalMemory;
     private final TaskDetails coordinatorTask;
     private final List<TaskDetails> shardTasks;
+    private final String topNId;
 
     public LiveQueryRecord(
         String liveQueryRecordId,
@@ -43,6 +44,21 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         TaskDetails coordinatorTask,
         List<TaskDetails> shardTasks
     ) {
+        this(liveQueryRecordId, status, startTime, wlmGroupId, totalLatency, totalCpu, totalMemory, coordinatorTask, shardTasks, null);
+    }
+
+    public LiveQueryRecord(
+        String liveQueryRecordId,
+        String status,
+        long startTime,
+        String wlmGroupId,
+        long totalLatency,
+        long totalCpu,
+        long totalMemory,
+        TaskDetails coordinatorTask,
+        List<TaskDetails> shardTasks,
+        String topNId
+    ) {
         this.liveQueryRecordId = liveQueryRecordId;
         this.status = status;
         this.startTime = startTime;
@@ -52,6 +68,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.totalMemory = totalMemory;
         this.coordinatorTask = coordinatorTask;
         this.shardTasks = shardTasks != null ? shardTasks : new ArrayList<>();
+        this.topNId = topNId;
     }
 
     public LiveQueryRecord(StreamInput in) throws IOException {
@@ -64,6 +81,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.totalMemory = in.readLong();
         this.coordinatorTask = in.readOptionalWriteable(TaskDetails::new);
         this.shardTasks = in.readList(TaskDetails::new);
+        this.topNId = in.readOptionalString();
     }
 
     @Override
@@ -77,12 +95,16 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         out.writeLong(totalMemory);
         out.writeOptionalWriteable(coordinatorTask);
         out.writeList(shardTasks);
+        out.writeOptionalString(topNId);
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject();
         builder.field("id", liveQueryRecordId);
+        if (topNId != null) {
+            builder.field("top_n_id", topNId);
+        }
         builder.field("status", status);
         builder.field("start_time", startTime);
         if (wlmGroupId != null) {
@@ -102,6 +124,10 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         builder.endArray();
         builder.endObject();
         return builder;
+    }
+
+    public String getTopNId() {
+        return topNId;
     }
 
     public String getQueryId() {

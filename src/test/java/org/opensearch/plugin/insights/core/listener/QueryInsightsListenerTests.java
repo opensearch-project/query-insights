@@ -83,6 +83,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
         ClusterServiceUtils.setState(clusterService, state);
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(queryInsightsService.getTopQueriesService(MetricType.LATENCY)).thenReturn(topQueriesService);
         when(searchRequestContext.getRequest()).thenReturn(searchRequest);
         ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
@@ -471,6 +472,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
     public void testExcludeInternalIndex() {
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
         // Search request having internal index
@@ -484,6 +486,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search top_queries* index along with other indices
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(2);
@@ -509,6 +512,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test when request indices is null
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(null);
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
@@ -516,6 +520,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search with empty indices array should not skip
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(new String[0]);
         when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
             new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("index-2", "uuid-2")))

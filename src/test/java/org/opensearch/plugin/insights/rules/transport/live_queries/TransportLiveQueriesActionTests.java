@@ -40,6 +40,8 @@ import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.tasks.resourcetracker.TaskThreadUsage;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
@@ -70,6 +72,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     private ActionFilters actionFilters;
     private AdminClient adminClient;
     private ClusterAdminClient clusterAdminClient;
+    private QueryInsightsService queryInsightsService;
 
     @Before
     public void setup() {
@@ -102,7 +105,11 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.cluster()).thenReturn(clusterAdminClient);
 
-        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters);
+        queryInsightsService = mock(QueryInsightsService.class);
+        FinishedQueriesCache finishedQueriesCache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
+
+        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
     }
 
     private TaskInfo createTaskInfo(
@@ -382,7 +389,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, null, false);
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo lowShard = createTaskInfo(
