@@ -5,17 +5,9 @@
 package org.opensearch.plugin.insights.core.service;
 
 import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import org.opensearch.action.search.SearchPhaseContext;
-import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.plugin.insights.rules.model.Attribute;
-import org.opensearch.plugin.insights.rules.model.Measurement;
-import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
@@ -92,51 +84,4 @@ public class FinishedQueriesCache {
         }
     }
 
-    public void captureQuery(SearchPhaseContext context, SearchRequestContext searchRequestContext, String topNId, boolean failed) {
-        List<TaskResourceInfo> tasksResourceUsages = searchRequestContext.getPhaseResourceUsage();
-        long cpuNanos = 0L;
-        long memBytes = 0L;
-        long taskId = context.getTask().getId();
-        String nodeId = clusterService.localNode().getId();
-
-        for (TaskResourceInfo taskInfo : tasksResourceUsages) {
-            cpuNanos += taskInfo.getTaskResourceUsage().getCpuTimeInNanos();
-            memBytes += taskInfo.getTaskResourceUsage().getMemoryInBytes();
-            if (taskInfo.getParentTaskId() == -1) {
-                taskId = taskInfo.getTaskId();
-                nodeId = taskInfo.getNodeId();
-            }
-        }
-
-        long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - searchRequestContext.getAbsoluteStartNanos());
-        String liveQueryId = nodeId + ":" + taskId;
-        boolean isCancelled = context.getTask().isCancelled();
-        String status = isCancelled ? "cancelled" : (failed ? "failed" : "completed");
-        String wlmGroupId = null;
-
-        if (context.getTask() instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
-            wlmGroupId = workloadTask.getWorkloadGroupId();
-        }
-
-        Map<MetricType, Measurement> measurements = new HashMap<>();
-        measurements.put(MetricType.LATENCY, new Measurement(latencyMs));
-        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
-        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
-
-        Map<Attribute, Object> attributes = new HashMap<>();
-        attributes.put(Attribute.NODE_ID, nodeId);
-        attributes.put(Attribute.IS_CANCELLED, isCancelled);
-        attributes.put(Attribute.FAILED, failed);
-        attributes.put(Attribute.DESCRIPTION, context.getRequest().source() != null ? context.getRequest().source().toString() : "");
-        if (wlmGroupId != null) attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
-        if (topNId != null) attributes.put(Attribute.TOP_N_ID, topNId);
-        attributes.put(Attribute.STATUS, status);
-
-        addFinishedQuery(new SearchQueryRecord(
-            context.getRequest().getOrCreateAbsoluteStartMillis(),
-            measurements,
-            attributes,
-            liveQueryId
-        ));
-    }
 }
