@@ -44,6 +44,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -72,6 +73,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final ThreadPool threadPool;
+    private static final ThreadLocal<String> recordIdThreadLocal = new ThreadLocal<>();
 
     /**
      * Constructor for QueryInsightsListener
@@ -256,12 +258,63 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, false);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        SearchQueryRecord record = null;
+        try {
+            record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
+        if (record != null) {
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
+            if (cache != null) {
+                String liveQueryId = context.getTask().getParentTaskId().getNodeId().isEmpty()
+                    ? clusterService.localNode().getId() + ":" + context.getTask().getId()
+                    : context.getTask().getParentTaskId().getNodeId() + ":" + context.getTask().getId();
+                SearchQueryRecord finishedRecord = new SearchQueryRecord(
+                    record.getTimestamp(), new java.util.HashMap<>(record.getMeasurements()),
+                    new java.util.HashMap<>(record.getAttributes()), record.getSearchSourceBuilder(),
+                    record.getUserPrincipalContext(), liveQueryId
+                );
+                finishedRecord.getAttributes().put(Attribute.TOP_N_ID, record.getId());
+                finishedRecord.getAttributes().put(Attribute.STATUS, context.getTask().isCancelled() ? "cancelled" : "completed");
+                cache.addFinishedQuery(finishedRecord);
+            }
+        }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, true);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        SearchQueryRecord record = null;
+        try {
+            record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
+        if (record != null) {
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
+            if (cache != null) {
+                String liveQueryId = context.getTask().getParentTaskId().getNodeId().isEmpty()
+                    ? clusterService.localNode().getId() + ":" + context.getTask().getId()
+                    : context.getTask().getParentTaskId().getNodeId() + ":" + context.getTask().getId();
+                SearchQueryRecord finishedRecord = new SearchQueryRecord(
+                    record.getTimestamp(), new java.util.HashMap<>(record.getMeasurements()),
+                    new java.util.HashMap<>(record.getAttributes()), record.getSearchSourceBuilder(),
+                    record.getUserPrincipalContext(), liveQueryId
+                );
+                boolean isCancelled = context.getTask().isCancelled();
+                finishedRecord.getAttributes().put(Attribute.TOP_N_ID, record.getId());
+                finishedRecord.getAttributes().put(Attribute.STATUS, isCancelled ? "cancelled" : "failed");
+                cache.addFinishedQuery(finishedRecord);
+            }
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -298,13 +351,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(
+    private SearchQueryRecord constructSearchQueryRecord(
         final SearchPhaseContext context,
         final SearchRequestContext searchRequestContext,
+        final String recordId,
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return;
+            return null;
         }
 
         SearchTask searchTask = context.getTask();
@@ -389,13 +443,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 attributes,
                 request.source(),
                 userPrincipalContext,
-                null
+                recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);
+            return record;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
-            log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
+            return null;
         }
     }
 

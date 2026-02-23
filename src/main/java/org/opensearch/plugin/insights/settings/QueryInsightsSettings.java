@@ -121,7 +121,6 @@ public class QueryInsightsSettings {
         Setting.Property.NodeScope
     );
 
-
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
     /** Default prefix for top N queries grouping feature */

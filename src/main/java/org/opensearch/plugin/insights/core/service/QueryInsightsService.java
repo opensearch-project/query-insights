@@ -135,7 +135,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     private volatile FinishedQueriesCache finishedQueriesCache;
-    private volatile boolean finishedQueriesCacheStarted = false;
     private volatile Scheduler.Cancellable cacheIdleCheckTask;
 
     SinkType sinkType;
@@ -596,7 +595,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         synchronized (this) {
-            finishedQueriesCacheStarted = false;
             if (cacheIdleCheckTask != null) {
                 cacheIdleCheckTask.cancel();
                 cacheIdleCheckTask = null;
@@ -720,14 +718,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     public boolean isFinishedQueriesCacheStarted() {
-        return finishedQueriesCacheStarted;
+        return finishedQueriesCache != null;
     }
-
-    public void setQueryInsightsListener(Object queryInsightsListener) {}
-
-    public void setFinishedQueriesListener(Object finishedQueriesListener) {}
-
-    private void startFinishedQueriesIdleCheck() {}
 
     private void startCacheIdleCheck() {
         if (cacheIdleCheckTask == null) {

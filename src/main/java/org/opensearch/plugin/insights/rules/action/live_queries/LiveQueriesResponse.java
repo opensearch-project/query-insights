@@ -33,11 +33,13 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
+            this.useFinishedCache = in.readBoolean();
+            this.finishedQueries = useFinishedCache ? in.readList(SearchQueryRecord::new) : List.of();
         } else {
             this.liveQueries = Collections.emptyList();
+            this.useFinishedCache = false;
+            this.finishedQueries = List.of();
         }
-        this.useFinishedCache = in.readBoolean();
-        this.finishedQueries = useFinishedCache ? in.readList(SearchQueryRecord::new) : List.of();
     }
 
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
@@ -60,10 +62,10 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     public void writeTo(final StreamOutput out) throws IOException {
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeList(liveQueries);
-        }
-        out.writeBoolean(useFinishedCache);
-        if (useFinishedCache) {
-            out.writeList(finishedQueries);
+            out.writeBoolean(useFinishedCache);
+            if (useFinishedCache) {
+                out.writeList(finishedQueries);
+            }
         }
     }
 
