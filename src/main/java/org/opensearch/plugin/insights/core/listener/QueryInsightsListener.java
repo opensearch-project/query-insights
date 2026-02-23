@@ -44,6 +44,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -71,6 +72,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final ThreadPool threadPool;
+    private static final ThreadLocal<String> recordIdThreadLocal = new ThreadLocal<>();
 
     /**
      * Constructor for QueryInsightsListener
@@ -155,6 +157,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
+
+        // Setting for live queries cache idle timeout
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
+                v -> this.setLiveQueriesCacheIdleTimeout(v.millis())
+            );
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -196,17 +205,19 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     /**
      * Update the query insights service state based on the enabled features.
-     * If any feature is enabled, it starts the service. If no features are enabled, it stops the service.
+     * Listener is enabled/disabled based on whether any features are enabled.
+     * QueryInsightsService is started/stopped based on top queries and search metrics features.
      */
     private void updateQueryInsightsState() {
         boolean anyFeatureEnabled = queryInsightsService.isAnyFeatureEnabled();
 
-        if (anyFeatureEnabled && !super.isEnabled()) {
-            super.setEnabled(true);
-            queryInsightsService.stop(); // Ensures a clean restart
+        // Enable/disable listener based on feature state
+        super.setEnabled(anyFeatureEnabled);
+
+        if (anyFeatureEnabled) {
+            queryInsightsService.stop();
             queryInsightsService.start();
-        } else if (!anyFeatureEnabled && super.isEnabled()) {
-            super.setEnabled(false);
+        } else {
             queryInsightsService.stop();
         }
     }
@@ -230,12 +241,36 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, false);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        try {
+            constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache != null) {
+            cache.captureQuery(context, searchRequestContext, recordId, false);
+        }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, true);
+        String recordId = java.util.UUID.randomUUID().toString();
+        recordIdThreadLocal.set(recordId);
+        try {
+            constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        } finally {
+            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
+                recordIdThreadLocal.remove();
+            }
+        }
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache != null) {
+            cache.captureQuery(context, searchRequestContext, recordId, true);
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -275,6 +310,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private void constructSearchQueryRecord(
         final SearchPhaseContext context,
         final SearchRequestContext searchRequestContext,
+        final String recordId,
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext)) {
@@ -363,7 +399,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 attributes,
                 request.source(),
                 userPrincipalContext,
-                null
+                recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);

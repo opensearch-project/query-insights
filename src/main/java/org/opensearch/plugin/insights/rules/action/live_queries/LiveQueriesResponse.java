@@ -26,34 +26,31 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
     private final List<LiveQueryRecord> liveQueries;
+    private final List<LiveQueryRecord> finishedQueries;
+    private final boolean useFinishedCache;
 
-    /**
-     * Constructor for LiveQueriesResponse.
-     *
-     * @param in A {@link StreamInput} object.
-     * @throws IOException if the stream cannot be deserialized.
-     */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
         } else {
             this.liveQueries = Collections.emptyList();
         }
+        this.useFinishedCache = in.readBoolean();
+        this.finishedQueries = useFinishedCache ? in.readList(LiveQueryRecord::new) : List.of();
     }
 
-    /**
-     * Constructor for LiveQueriesResponse
-     *
-     * @param liveQueries A flat list containing live queries results from relevant nodes
-     */
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
         this.liveQueries = liveQueries;
+        this.finishedQueries = List.of();
+        this.useFinishedCache = false;
     }
 
-    /**
-     * Get the live queries list
-     * @return the list of live query records
-     */
+    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<LiveQueryRecord> finishedQueries, boolean useFinishedCache) {
+        this.liveQueries = liveQueries;
+        this.finishedQueries = finishedQueries;
+        this.useFinishedCache = useFinishedCache;
+    }
+
     public List<LiveQueryRecord> getLiveQueries() {
         return liveQueries;
     }
@@ -62,6 +59,10 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     public void writeTo(final StreamOutput out) throws IOException {
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeList(liveQueries);
+        }
+        out.writeBoolean(useFinishedCache);
+        if (useFinishedCache) {
+            out.writeList(finishedQueries);
         }
     }
 
@@ -73,6 +74,13 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
             query.toXContent(builder, params);
         }
         builder.endArray();
+        if (useFinishedCache) {
+            builder.startArray("finished_queries");
+            for (LiveQueryRecord query : finishedQueries) {
+                query.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
         builder.endObject();
         return builder;
     }

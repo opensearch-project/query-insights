@@ -101,7 +101,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsExporterFactory(client, clusterService, threadPool, repositoriesServiceSupplier),
             new QueryInsightsReaderFactory(client)
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        return List.of(queryInsightsService, queryInsightsListener);
     }
 
     @Override
@@ -168,6 +169,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
             QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
             QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
+            QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED,
+            QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD,
             QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
             QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
             QueryInsightsSettings.REMOTE_EXPORTER_PATH,
@@ -176,7 +179,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
             QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
             QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
-            QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES
+            QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES,
+            QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT
         );
     }
 }
