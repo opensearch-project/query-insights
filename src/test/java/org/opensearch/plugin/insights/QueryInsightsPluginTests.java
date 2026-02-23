@@ -111,8 +111,6 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
-                QueryInsightsSettings.FINISHED_QUERIES_CACHE_ENABLED,
-                QueryInsightsSettings.FINISHED_QUERIES_RETENTION_PERIOD,
                 QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
                 QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
                 QueryInsightsSettings.REMOTE_EXPORTER_PATH,

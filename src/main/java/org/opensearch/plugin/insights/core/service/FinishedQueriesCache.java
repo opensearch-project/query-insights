@@ -5,17 +5,18 @@
 package org.opensearch.plugin.insights.core.service;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequestContext;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
-import org.opensearch.plugin.insights.core.auth.PrincipalExtractor;
-import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
-import org.opensearch.plugin.insights.rules.model.TaskDetails;
-import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Cache for recently finished queries
@@ -24,35 +25,32 @@ public class FinishedQueriesCache {
 
     private static final int MAX_FINISHED_QUERIES = 1000;
     private static final int MAX_RETURNED_QUERIES = 50;
+    private static final long RETENTION_MS = TimeUnit.MINUTES.toMillis(5);
 
     private final ArrayDeque<FinishedQuery> finishedQueries = new ArrayDeque<>();
     private volatile long lastAccessTime = 0;
-    private volatile long retentionPeriodMs;
     private volatile long idleTimeoutMs;
     private final ClusterService clusterService;
-    private final PrincipalExtractor principalExtractor;
 
-    public FinishedQueriesCache(long retentionPeriodMs, ClusterService clusterService, ThreadPool threadPool) {
-        this.retentionPeriodMs = retentionPeriodMs;
+    public FinishedQueriesCache(ClusterService clusterService) {
         this.idleTimeoutMs = clusterService.getClusterSettings()
             .get(org.opensearch.plugin.insights.settings.QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT)
             .millis();
         this.clusterService = clusterService;
-        this.principalExtractor = threadPool != null ? new PrincipalExtractor(threadPool) : null;
         this.lastAccessTime = System.currentTimeMillis();
     }
 
     private static class FinishedQuery {
-        final LiveQueryRecord record;
+        final SearchQueryRecord record;
         final long timestamp;
 
-        FinishedQuery(LiveQueryRecord record) {
+        FinishedQuery(SearchQueryRecord record) {
             this.record = record;
             this.timestamp = System.currentTimeMillis();
         }
     }
 
-    public void addFinishedQuery(LiveQueryRecord record) {
+    public void addFinishedQuery(SearchQueryRecord record) {
         synchronized (finishedQueries) {
             removeExpiredQueries();
             finishedQueries.addLast(new FinishedQuery(record));
@@ -64,7 +62,7 @@ public class FinishedQueriesCache {
 
     private void removeExpiredQueries() {
         long currentTime = System.currentTimeMillis();
-        while (!finishedQueries.isEmpty() && currentTime - finishedQueries.peekFirst().timestamp > retentionPeriodMs) {
+        while (!finishedQueries.isEmpty() && currentTime - finishedQueries.peekFirst().timestamp > RETENTION_MS) {
             finishedQueries.removeFirst();
         }
     }
@@ -76,16 +74,12 @@ public class FinishedQueriesCache {
         return System.currentTimeMillis() - lastAccessTime > idleTimeoutMs;
     }
 
-    public List<LiveQueryRecord> getFinishedQueries(boolean enableListener) {
+    public List<SearchQueryRecord> getFinishedQueries(boolean enableListener) {
         synchronized (finishedQueries) {
             lastAccessTime = System.currentTimeMillis();
             removeExpiredQueries();
             return finishedQueries.stream().limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
         }
-    }
-
-    public void setRetentionPeriod(long retentionPeriodMs) {
-        this.retentionPeriodMs = retentionPeriodMs;
     }
 
     public void setIdleTimeout(long idleTimeoutMs) {
@@ -124,19 +118,25 @@ public class FinishedQueriesCache {
             wlmGroupId = workloadTask.getWorkloadGroupId();
         }
 
-        LiveQueryRecord record = new LiveQueryRecord(
-            liveQueryId,
-            status,
-            context.getRequest().getOrCreateAbsoluteStartMillis(),
-            wlmGroupId,
-            latencyMs,
-            cpuNanos,
-            memBytes,
-            null,
-            new ArrayList<>(),
-            topNId
-        );
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latencyMs));
+        measurements.put(MetricType.CPU, new Measurement(cpuNanos));
+        measurements.put(MetricType.MEMORY, new Measurement(memBytes));
 
-        addFinishedQuery(record);
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.NODE_ID, nodeId);
+        attributes.put(Attribute.IS_CANCELLED, isCancelled);
+        attributes.put(Attribute.FAILED, failed);
+        attributes.put(Attribute.DESCRIPTION, context.getRequest().source() != null ? context.getRequest().source().toString() : "");
+        if (wlmGroupId != null) attributes.put(Attribute.WLM_GROUP_ID, wlmGroupId);
+        if (topNId != null) attributes.put(Attribute.TOP_N_ID, topNId);
+        attributes.put(Attribute.STATUS, status);
+
+        addFinishedQuery(new SearchQueryRecord(
+            context.getRequest().getOrCreateAbsoluteStartMillis(),
+            measurements,
+            attributes,
+            liveQueryId
+        ));
     }
 }
