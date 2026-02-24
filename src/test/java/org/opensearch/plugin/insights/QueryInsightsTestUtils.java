@@ -452,6 +452,11 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY);
         clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_PATH);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
+        // Recommendation settings
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES);
     }
 
     /**

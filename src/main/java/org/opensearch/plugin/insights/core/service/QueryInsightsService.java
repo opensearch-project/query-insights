@@ -53,6 +53,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -132,6 +133,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     private QueryShapeGenerator queryShapeGenerator;
 
+    /**
+     * Recommendation service for generating query recommendations
+     */
+    private final RecommendationService recommendationService;
+
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     SinkType sinkType;
@@ -177,6 +183,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (v -> setExporterAndReaderType(SinkType.parse(v))),
                 (this::validateExporterType)
             );
+
+        // Initialize recommendation service
+        this.recommendationService = new RecommendationService(clusterService, namedXContentRegistry);
+
+        // Initialize lifecycle manager
         this.localIndexLifecycleManager = new LocalIndexLifecycleManager(
             threadPool,
             client,
@@ -355,6 +366,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     public GroupingType getGrouping() {
         return groupingType;
+    }
+
+    /**
+     * Get the recommendation service
+     * @return the recommendation service
+     */
+    public RecommendationService getRecommendationService() {
+        return recommendationService;
     }
 
     /**
@@ -621,6 +640,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
         this.queryShapeGenerator = queryShapeGenerator;
+        this.recommendationService.setQueryShapeGenerator(queryShapeGenerator);
     }
 
     /**
