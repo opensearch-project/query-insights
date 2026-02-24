@@ -28,6 +28,7 @@ import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.TaskDetails;
@@ -177,7 +178,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
                     }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
 
-                    List<SearchQueryRecord> finishedRecords = new ArrayList<>();
+                    List<FinishedQueryRecord> finishedRecords = new ArrayList<>();
                     if (request.isUseFinishedCache()) {
                         FinishedQueriesCache finishedCache = queryInsightsService.getFinishedQueriesCache();
                         if (finishedCache != null) {
@@ -185,7 +186,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
                     }
 
-                    List<SearchQueryRecord> finalFinishedRecords = finishedRecords.stream()
+                    List<FinishedQueryRecord> finalFinishedRecords = finishedRecords.stream()
                         .sorted((a, b) -> SearchQueryRecord.compare(b, a, request.getSortBy()))
                         .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
                         .toList();

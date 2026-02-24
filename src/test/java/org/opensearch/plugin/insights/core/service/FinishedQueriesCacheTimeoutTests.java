@@ -8,28 +8,40 @@
 
 package org.opensearch.plugin.insights.core.service;
 
-import java.util.ArrayList;
-import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import java.util.HashMap;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.OpenSearchTestCase;
 
 public class FinishedQueriesCacheTimeoutTests extends OpenSearchTestCase {
 
-    private LiveQueryRecord createRecord(String id) {
-        return new LiveQueryRecord(id, "completed", System.currentTimeMillis(), null, 100L, 200L, 300L, null, new ArrayList<>());
+    private FinishedQueryRecord createRecord(String id) {
+        var measurements = new HashMap<MetricType, Measurement>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        measurements.put(MetricType.CPU, new Measurement(200L));
+        measurements.put(MetricType.MEMORY, new Measurement(300L));
+        SearchQueryRecord base = new SearchQueryRecord(System.currentTimeMillis(), measurements, new HashMap<>(), id);
+        return new FinishedQueryRecord(base, "topn-uuid", "completed", "nodeId:51");
     }
 
-    public void testCacheRetainsQueriesWithinRetention() {
-        // Use a mock ClusterService - just verify basic add/get works
-        // Since ClusterService is required, we test the logic indirectly
-        LiveQueryRecord record = createRecord("task-1");
-        assertNotNull(record);
-        assertEquals("task-1", record.getQueryId());
-    }
-
-    public void testCacheExpiresOldQueries() throws InterruptedException {
-        // Retention is hardcoded to 5 minutes - verify record structure
-        LiveQueryRecord record = createRecord("task-1");
+    public void testFinishedQueryRecordHasTopNId() {
+        FinishedQueryRecord record = createRecord("nodeId:51");
+        assertEquals("nodeId:51", record.getId());
+        assertEquals("topn-uuid", record.getTopNId());
         assertEquals("completed", record.getStatus());
-        assertEquals(100L, record.getTotalLatency());
+    }
+
+    public void testFinishedQueryRecordStatuses() {
+        var measurements = new HashMap<MetricType, Measurement>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        measurements.put(MetricType.CPU, new Measurement(200L));
+        measurements.put(MetricType.MEMORY, new Measurement(300L));
+        SearchQueryRecord base = new SearchQueryRecord(System.currentTimeMillis(), measurements, new HashMap<>(), "id");
+
+        assertEquals("failed", new FinishedQueryRecord(base, null, "failed", "id:1").getStatus());
+        assertEquals("cancelled", new FinishedQueryRecord(base, null, "cancelled", "id:1").getStatus());
+        assertEquals("completed", new FinishedQueryRecord(base, null, "completed", "id:1").getStatus());
     }
 }
