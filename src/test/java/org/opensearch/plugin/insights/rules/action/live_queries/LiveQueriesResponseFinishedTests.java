@@ -19,6 +19,7 @@ import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -31,17 +32,21 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
         return new LiveQueryRecord(id, "running", System.currentTimeMillis(), null, latency, 200L, 300L, null, new ArrayList<>());
     }
 
-    private SearchQueryRecord createFinishedRecord(String id, long latency) {
+    private FinishedQueryRecord createFinishedRecord(String id, long latency) {
         Map<MetricType, Measurement> measurements = new HashMap<>();
         measurements.put(MetricType.LATENCY, new Measurement(latency));
         measurements.put(MetricType.CPU, new Measurement(200L));
         measurements.put(MetricType.MEMORY, new Measurement(300L));
-        return new SearchQueryRecord(System.currentTimeMillis(), measurements, new HashMap<>(), id);
+        SearchQueryRecord base = new SearchQueryRecord(System.currentTimeMillis(), measurements, new HashMap<>(), id);
+        return new FinishedQueryRecord(base, "topn-" + id, "completed", id);
     }
 
     public void testToXContentWithFinishedQueries() throws IOException {
         List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
-        List<SearchQueryRecord> finishedQueries = List.of(createFinishedRecord("finished1", 100L), createFinishedRecord("finished2", 200L));
+        List<FinishedQueryRecord> finishedQueries = List.of(
+            createFinishedRecord("finished1", 100L),
+            createFinishedRecord("finished2", 200L)
+        );
 
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries, finishedQueries, true);
 
@@ -59,6 +64,8 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> finishedList = (List<Map<String, Object>>) parsed.get("finished_queries");
         assertEquals(2, finishedList.size());
+        assertEquals("topn-finished1", finishedList.get(0).get("top_n_id"));
+        assertEquals("completed", finishedList.get(0).get("status"));
     }
 
     public void testToXContentWithOnlyLiveQueries() throws IOException {
@@ -91,7 +98,7 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
 
     public void testConstructorWithFinishedQueries() {
         List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
-        List<SearchQueryRecord> finishedQueries = List.of(createFinishedRecord("finished1", 100L));
+        List<FinishedQueryRecord> finishedQueries = List.of(createFinishedRecord("finished1", 100L));
 
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries, finishedQueries, true);
         assertEquals(1, response.getLiveQueries().size());

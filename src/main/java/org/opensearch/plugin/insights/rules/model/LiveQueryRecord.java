@@ -31,6 +31,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
     private final long totalMemory;
     private final TaskDetails coordinatorTask;
     private final List<TaskDetails> shardTasks;
+
     public LiveQueryRecord(
         String liveQueryRecordId,
         String status,

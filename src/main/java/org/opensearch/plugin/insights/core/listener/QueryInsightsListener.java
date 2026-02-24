@@ -44,6 +44,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -259,21 +260,25 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = java.util.UUID.randomUUID().toString();
         recordIdThreadLocal.set(recordId);
-        try {
-            constructSearchQueryRecord(context, searchRequestContext, recordId, false);
-        } finally {
-            recordIdThreadLocal.remove();
-        }
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        addToFinishedCache(context, record, false);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = java.util.UUID.randomUUID().toString();
         recordIdThreadLocal.set(recordId);
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        addToFinishedCache(context, record, true);
+    }
+
+    private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record, boolean failed) {
         try {
-            constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+            if (cache == null || record == null) return;
+            cache.capture(record, failed, context.getTask().isCancelled(), context.getTask().getId());
         } finally {
-            recordIdThreadLocal.remove();
+            removeRecordId();
         }
     }
 
@@ -311,14 +316,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(
+    private SearchQueryRecord constructSearchQueryRecord(
         final SearchPhaseContext context,
         final SearchRequestContext searchRequestContext,
         final String recordId,
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return;
+            return null;
         }
 
         SearchTask searchTask = context.getTask();
@@ -407,10 +412,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);
-            return;
+            return record;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
+            return null;
         }
     }
 
@@ -432,8 +438,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         }
     }
 
-    public static String getRecordId() {
+    static String getRecordId() {
         return recordIdThreadLocal.get();
+    }
+
+    static void removeRecordId() {
+        recordIdThreadLocal.remove();
     }
 
 }

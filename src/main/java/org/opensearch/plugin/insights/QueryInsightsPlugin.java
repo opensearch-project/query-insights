@@ -28,7 +28,6 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
-import org.opensearch.plugin.insights.core.listener.FinishedQueriesListener;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
@@ -103,8 +102,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsReaderFactory(client)
         );
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
-        FinishedQueriesListener finishedQueriesListener = new FinishedQueriesListener(clusterService, queryInsightsService, threadPool);
-        return List.of(queryInsightsService, queryInsightsListener, finishedQueriesListener);
+        return List.of(queryInsightsService, queryInsightsListener);
     }
 
     @Override
