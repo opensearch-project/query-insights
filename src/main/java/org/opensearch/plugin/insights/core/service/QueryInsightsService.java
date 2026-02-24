@@ -143,7 +143,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     private volatile FinishedQueriesCache finishedQueriesCache;
-    private volatile Scheduler.Cancellable cacheIdleCheckTask;
 
     SinkType sinkType;
 
@@ -219,11 +218,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         // Initialize caches
         this.finishedQueriesCache = null; // Will be created lazily
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
-                FinishedQueriesCache cache = finishedQueriesCache;
-                if (cache != null) cache.setIdleTimeout(v.millis());
-            });
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+            FinishedQueriesCache cache = finishedQueriesCache;
+            if (cache != null) cache.setIdleTimeout(v.millis());
+        });
     }
 
     /**
@@ -572,11 +570,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         synchronized (this) {
-            if (cacheIdleCheckTask != null) {
-                cacheIdleCheckTask.cancel();
-                cacheIdleCheckTask = null;
+            if (finishedQueriesCache != null) {
+                finishedQueriesCache.stop();
+                finishedQueriesCache = null;
             }
-            finishedQueriesCache = null;
         }
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);
@@ -679,8 +676,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (finishedQueriesCache == null) {
             synchronized (this) {
                 if (finishedQueriesCache == null) {
-                    finishedQueriesCache = new FinishedQueriesCache(clusterService);
-                    startCacheIdleCheck();
+                    finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
+                    finishedQueriesCache.setOnExpired(() -> {
+                        synchronized (this) {
+                            finishedQueriesCache = null;
+                        }
+                    });
                 }
             }
         }
@@ -695,27 +696,4 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         return finishedQueriesCache;
     }
 
-    public boolean isFinishedQueriesCacheStarted() {
-        return finishedQueriesCache != null;
-    }
-
-    private void startCacheIdleCheck() {
-        if (cacheIdleCheckTask == null) {
-            cacheIdleCheckTask = threadPool.scheduleWithFixedDelay(() -> {
-                FinishedQueriesCache cache = finishedQueriesCache;
-                if (cache != null && cache.isExpired()) {
-                    synchronized (this) {
-                        if (finishedQueriesCache != null && finishedQueriesCache.isExpired()) {
-                            finishedQueriesCache.clear();
-                            finishedQueriesCache = null;
-                            if (cacheIdleCheckTask != null) {
-                                cacheIdleCheckTask.cancel();
-                                cacheIdleCheckTask = null;
-                            }
-                        }
-                    }
-                }
-            }, TimeValue.timeValueMinutes(1), QUERY_INSIGHTS_EXECUTOR);
-        }
-    }
 }

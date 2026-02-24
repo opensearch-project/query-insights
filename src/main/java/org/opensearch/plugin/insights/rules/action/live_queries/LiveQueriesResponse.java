@@ -17,8 +17,8 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
-import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 
 /**
  * Transport response for cluster/node level live queries information.
@@ -27,14 +27,14 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
     private final List<LiveQueryRecord> liveQueries;
-    private final List<SearchQueryRecord> finishedQueries;
+    private final List<FinishedQueryRecord> finishedQueries;
     private final boolean useFinishedCache;
 
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
             this.useFinishedCache = in.readBoolean();
-            this.finishedQueries = useFinishedCache ? in.readList(SearchQueryRecord::new) : List.of();
+            this.finishedQueries = useFinishedCache ? in.readList(FinishedQueryRecord::new) : List.of();
         } else {
             this.liveQueries = Collections.emptyList();
             this.useFinishedCache = false;
@@ -48,7 +48,11 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         this.useFinishedCache = false;
     }
 
-    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<SearchQueryRecord> finishedQueries, boolean useFinishedCache) {
+    public LiveQueriesResponse(
+        final List<LiveQueryRecord> liveQueries,
+        final List<FinishedQueryRecord> finishedQueries,
+        boolean useFinishedCache
+    ) {
         this.liveQueries = liveQueries;
         this.finishedQueries = finishedQueries;
         this.useFinishedCache = useFinishedCache;
@@ -79,7 +83,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         builder.endArray();
         if (useFinishedCache) {
             builder.startArray("finished_queries");
-            for (SearchQueryRecord query : finishedQueries) {
+            for (FinishedQueryRecord query : finishedQueries) {
                 query.toXContent(builder, params);
             }
             builder.endArray();
