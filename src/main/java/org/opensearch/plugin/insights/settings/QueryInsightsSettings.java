@@ -357,6 +357,67 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Recommendation Engine Settings
+     */
+
+    /**
+     * Base URI for recommendations
+     */
+    public static final String RECOMMENDATIONS_BASE_URI = PLUGINS_BASE_URI + "/recommendations";
+
+    /**
+     * Setting prefix for recommendations
+     */
+    public static final String RECOMMENDATIONS_SETTING_PREFIX = "search.insights.recommendations";
+
+    /**
+     * Setting to enable/disable the recommendation engine
+     */
+    public static final Setting<Boolean> RECOMMENDATIONS_ENABLED = Setting.boolSetting(
+        RECOMMENDATIONS_SETTING_PREFIX + ".enabled",
+        true,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Setting for minimum confidence threshold to show recommendations
+     * Recommendations with confidence below this threshold will not be shown
+     */
+    public static final Setting<Double> RECOMMENDATIONS_MIN_CONFIDENCE = Setting.doubleSetting(
+        RECOMMENDATIONS_SETTING_PREFIX + ".min_confidence",
+        0.5,
+        0.0,
+        1.0,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Setting for maximum number of recommendations to return per query
+     */
+    public static final Setting<Integer> RECOMMENDATIONS_MAX_COUNT = Setting.intSetting(
+        RECOMMENDATIONS_SETTING_PREFIX + ".max_count",
+        10,
+        1,
+        100,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Setting to enable/disable specific rules (comma-separated list of rule IDs)
+     * Empty list means all rules are enabled
+     */
+    public static final Setting<List<String>> RECOMMENDATIONS_ENABLED_RULES = Setting.listSetting(
+        RECOMMENDATIONS_SETTING_PREFIX + ".enabled_rules",
+        Collections.emptyList(),
+        Function.identity(),
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
      * Get the enabled setting based on type
      * @param type MetricType
      * @return enabled setting

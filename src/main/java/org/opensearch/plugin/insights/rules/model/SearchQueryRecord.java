@@ -48,7 +48,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
     private final String id;
-    private final SearchSourceBuilder searchSourceBuilder;
+    private SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
     private boolean streaming;
 
@@ -503,6 +503,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public SearchSourceBuilder getSearchSourceBuilder() {
         return searchSourceBuilder;
+    }
+
+    /**
+     * Sets the SearchSourceBuilder, used to late-bind a reconstructed SSB
+     * on transported or historical records where the in-memory SSB was lost during serialization.
+     *
+     * @param searchSourceBuilder the reconstructed SearchSourceBuilder
+     */
+    public void setSearchSourceBuilder(SearchSourceBuilder searchSourceBuilder) {
+        this.searchSourceBuilder = searchSourceBuilder;
     }
 
     /**
