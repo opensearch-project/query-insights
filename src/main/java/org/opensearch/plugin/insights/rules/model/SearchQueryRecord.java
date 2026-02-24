@@ -51,6 +51,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
     private boolean streaming;
+    private String topNId;
+    private String queryStatus;
 
     /**
      * Timestamp
@@ -561,7 +563,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         builder.startObject();
         builder.field("timestamp", timestamp);
         builder.field("id", id);
-
+        if (topNId != null) builder.field("top_n_id", topNId);
+        if (queryStatus != null) builder.field("status", queryStatus);
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.TOP_N_QUERY) { // Always skip TOP_N_QUERY attribute
                 continue;
@@ -704,6 +707,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     public String getGroupingId() {
         return this.groupingId;
     }
+
+    public void setTopNId(String topNId) { this.topNId = topNId; }
+    public void setQueryStatus(String queryStatus) { this.queryStatus = queryStatus; }
 
     public boolean isStreaming() {
         return streaming;

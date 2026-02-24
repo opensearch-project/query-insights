@@ -44,7 +44,6 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -260,29 +259,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = java.util.UUID.randomUUID().toString();
         recordIdThreadLocal.set(recordId);
-        SearchQueryRecord record = null;
         try {
-            record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+            constructSearchQueryRecord(context, searchRequestContext, recordId, false);
         } finally {
-            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
-                recordIdThreadLocal.remove();
-            }
-        }
-        if (record != null) {
-            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
-            if (cache != null) {
-                String liveQueryId = context.getTask().getParentTaskId().getNodeId().isEmpty()
-                    ? clusterService.localNode().getId() + ":" + context.getTask().getId()
-                    : context.getTask().getParentTaskId().getNodeId() + ":" + context.getTask().getId();
-                SearchQueryRecord finishedRecord = new SearchQueryRecord(
-                    record.getTimestamp(), new java.util.HashMap<>(record.getMeasurements()),
-                    new java.util.HashMap<>(record.getAttributes()), record.getSearchSourceBuilder(),
-                    record.getUserPrincipalContext(), liveQueryId
-                );
-                finishedRecord.getAttributes().put(Attribute.TOP_N_ID, record.getId());
-                finishedRecord.getAttributes().put(Attribute.STATUS, context.getTask().isCancelled() ? "cancelled" : "completed");
-                cache.addFinishedQuery(finishedRecord);
-            }
+            recordIdThreadLocal.remove();
         }
     }
 
@@ -290,30 +270,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = java.util.UUID.randomUUID().toString();
         recordIdThreadLocal.set(recordId);
-        SearchQueryRecord record = null;
         try {
-            record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+            constructSearchQueryRecord(context, searchRequestContext, recordId, true);
         } finally {
-            if (!queryInsightsService.isFinishedQueriesCacheStarted()) {
-                recordIdThreadLocal.remove();
-            }
-        }
-        if (record != null) {
-            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
-            if (cache != null) {
-                String liveQueryId = context.getTask().getParentTaskId().getNodeId().isEmpty()
-                    ? clusterService.localNode().getId() + ":" + context.getTask().getId()
-                    : context.getTask().getParentTaskId().getNodeId() + ":" + context.getTask().getId();
-                SearchQueryRecord finishedRecord = new SearchQueryRecord(
-                    record.getTimestamp(), new java.util.HashMap<>(record.getMeasurements()),
-                    new java.util.HashMap<>(record.getAttributes()), record.getSearchSourceBuilder(),
-                    record.getUserPrincipalContext(), liveQueryId
-                );
-                boolean isCancelled = context.getTask().isCancelled();
-                finishedRecord.getAttributes().put(Attribute.TOP_N_ID, record.getId());
-                finishedRecord.getAttributes().put(Attribute.STATUS, isCancelled ? "cancelled" : "failed");
-                cache.addFinishedQuery(finishedRecord);
-            }
+            recordIdThreadLocal.remove();
         }
     }
 
@@ -351,14 +311,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private SearchQueryRecord constructSearchQueryRecord(
+    private void constructSearchQueryRecord(
         final SearchPhaseContext context,
         final SearchRequestContext searchRequestContext,
         final String recordId,
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return null;
+            return;
         }
 
         SearchTask searchTask = context.getTask();
@@ -447,10 +407,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);
-            return record;
+            return;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
-            return null;
+            log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
         }
     }
 
@@ -470,6 +430,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 throw new IllegalArgumentException("Index name must be lowercase.");
             }
         }
+    }
+
+    public static String getRecordId() {
+        return recordIdThreadLocal.get();
     }
 
 }

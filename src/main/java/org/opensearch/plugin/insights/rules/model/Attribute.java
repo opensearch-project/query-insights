@@ -107,17 +107,7 @@ public enum Attribute {
     /**
      * Indicates if the search request failed during execution.
      */
-    FAILED,
-
-    /**
-     * The Top N record ID (UUID) linking this finished query to its Top N record.
-     */
-    TOP_N_ID,
-
-    /**
-     * The status of the finished query (completed, failed, cancelled).
-     */
-    STATUS;
+    FAILED;
 
     /**
      * Read an Attribute from a StreamInput

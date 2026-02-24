@@ -11,27 +11,37 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.common.xcontent.json.JsonXContent;
-import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.test.OpenSearchTestCase;
 
 public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
 
-    private LiveQueryRecord createRecord(String id, long latency) {
-        return new LiveQueryRecord(id, "completed", System.currentTimeMillis(), null, latency, 200L, 300L, null, new ArrayList<>());
+    private LiveQueryRecord createLiveRecord(String id, long latency) {
+        return new LiveQueryRecord(id, "running", System.currentTimeMillis(), null, latency, 200L, 300L, null, new ArrayList<>());
+    }
+
+    private SearchQueryRecord createFinishedRecord(String id, long latency) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latency));
+        measurements.put(MetricType.CPU, new Measurement(200L));
+        measurements.put(MetricType.MEMORY, new Measurement(300L));
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements, new HashMap<>(), id);
     }
 
     public void testToXContentWithFinishedQueries() throws IOException {
-        List<LiveQueryRecord> liveQueries = List.of(createRecord("live1", 500L));
-        List<LiveQueryRecord> finishedQueries = List.of(createRecord("finished1", 100L), createRecord("finished2", 200L));
+        List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
+        List<SearchQueryRecord> finishedQueries = List.of(createFinishedRecord("finished1", 100L), createFinishedRecord("finished2", 200L));
 
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries, finishedQueries, true);
 
@@ -52,7 +62,7 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
     }
 
     public void testToXContentWithOnlyLiveQueries() throws IOException {
-        List<LiveQueryRecord> liveQueries = List.of(createRecord("live1", 500L));
+        List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries);
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
@@ -65,7 +75,7 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
     }
 
     public void testToXContentWithEmptyFinishedQueries() throws IOException {
-        List<LiveQueryRecord> liveQueries = List.of(createRecord("live1", 500L));
+        List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries, Collections.emptyList(), true);
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
@@ -79,22 +89,9 @@ public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
         assertTrue(finishedList.isEmpty());
     }
 
-    public void testSerializationWithFinishedQueries() throws IOException {
-        List<LiveQueryRecord> liveQueries = List.of(createRecord("live1", 500L));
-        List<LiveQueryRecord> finishedQueries = List.of(createRecord("finished1", 100L));
-
-        LiveQueriesResponse original = new LiveQueriesResponse(liveQueries, finishedQueries, true);
-        BytesStreamOutput out = new BytesStreamOutput();
-        original.writeTo(out);
-        StreamInput in = StreamInput.wrap(out.bytes().toBytesRef().bytes);
-        LiveQueriesResponse deserialized = new LiveQueriesResponse(in);
-
-        assertEquals(original.getLiveQueries().size(), deserialized.getLiveQueries().size());
-    }
-
     public void testConstructorWithFinishedQueries() {
-        List<LiveQueryRecord> liveQueries = List.of(createRecord("live1", 500L));
-        List<LiveQueryRecord> finishedQueries = List.of(createRecord("finished1", 100L));
+        List<LiveQueryRecord> liveQueries = List.of(createLiveRecord("live1", 500L));
+        List<SearchQueryRecord> finishedQueries = List.of(createFinishedRecord("finished1", 100L));
 
         LiveQueriesResponse response = new LiveQueriesResponse(liveQueries, finishedQueries, true);
         assertEquals(1, response.getLiveQueries().size());
