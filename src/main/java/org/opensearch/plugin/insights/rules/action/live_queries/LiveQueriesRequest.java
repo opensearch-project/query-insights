@@ -47,7 +47,7 @@ public class LiveQueriesRequest extends ActionRequest {
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
         }
-        if (in.getVersion().onOrAfter(Version.V_3_5_0)) {
+        if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.taskId = in.readOptionalString();
             this.useFinishedCache = in.readBoolean();
         } else {
@@ -155,7 +155,7 @@ public class LiveQueriesRequest extends ActionRequest {
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
         }
-        if (out.getVersion().onOrAfter(Version.V_3_5_0)) {
+        if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeOptionalString(taskId);
             out.writeBoolean(useFinishedCache);
         }
