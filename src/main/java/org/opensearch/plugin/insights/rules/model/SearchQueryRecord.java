@@ -129,6 +129,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String USER_ROLES = "user_roles";
     /**
+     * The backend roles of the user who initiated the search query
+     */
+    public static final String BACKEND_ROLES = "backend_roles";
+    /**
      * Indicates if the source was truncated due to length limits
      */
     public static final String SOURCE_TRUNCATED = "source_truncated";
@@ -352,6 +356,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             userRoles.add(parser.text());
                         }
                         attributes.put(Attribute.USER_ROLES, userRoles.toArray(new String[0]));
+                        break;
+                    case BACKEND_ROLES:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
+                        List<String> backendRoles = new ArrayList<>();
+                        while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
+                            backendRoles.add(parser.text());
+                        }
+                        attributes.put(Attribute.BACKEND_ROLES, backendRoles.toArray(new String[0]));
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);

@@ -357,6 +357,22 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Default filter by mode for top queries RBAC filtering
+     */
+    public static final String DEFAULT_FILTER_BY_MODE = "none";
+
+    /**
+     * Setting for RBAC filter mode on top queries API.
+     * Valid values: none, username, backend_roles
+     */
+    public static final Setting<String> TOP_N_QUERIES_FILTER_BY_MODE = Setting.simpleString(
+        TOP_N_QUERIES_SETTING_PREFIX + ".filter_by_mode",
+        DEFAULT_FILTER_BY_MODE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Get the enabled setting based on type
      * @param type MetricType
      * @return enabled setting

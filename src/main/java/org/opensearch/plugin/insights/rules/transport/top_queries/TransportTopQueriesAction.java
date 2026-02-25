@@ -10,9 +10,13 @@ package org.opensearch.plugin.insights.rules.transport.top_queries;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
@@ -22,11 +26,15 @@ import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.plugin.insights.core.auth.TopQueriesRbacFilter;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
@@ -41,6 +49,8 @@ public class TransportTopQueriesAction extends TransportNodesAction<
     TopQueriesResponse,
     TransportTopQueriesAction.NodeRequest,
     TopQueries> {
+
+    private static final Logger log = LogManager.getLogger(TransportTopQueriesAction.class);
 
     private final QueryInsightsService queryInsightsService;
 
@@ -202,7 +212,68 @@ public class TransportTopQueriesAction extends TransportNodesAction<
 
     @Override
     protected void doExecute(Task task, TopQueriesRequest request, ActionListener<TopQueriesResponse> finalListener) {
-        super.doExecute(task, request, createInMemoryDataCollectionListener(request, finalListener));
+        // Capture filter mode and user info before super.doExecute() which may stash context
+        FilterByMode filterByMode = queryInsightsService.getFilterByMode();
+        UserPrincipalInfo userInfo = null;
+
+        if (filterByMode != FilterByMode.NONE) {
+            try {
+                userInfo = new UserPrincipalContext(threadPool).extractUserInfo();
+            } catch (Exception e) {
+                log.warn("Failed to extract user info for RBAC filtering", e);
+            }
+            if (userInfo == null) {
+                log.warn("User info unavailable with filter_by_mode [{}], denying access", filterByMode);
+                finalListener.onResponse(
+                    new TopQueriesResponse(
+                        clusterService.getClusterName(),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        request.getMetricType()
+                    )
+                );
+                return;
+            }
+        }
+
+        ActionListener<TopQueriesResponse> rbacListener = wrapWithRbacFilter(finalListener, filterByMode, userInfo);
+        super.doExecute(task, request, createInMemoryDataCollectionListener(request, rbacListener));
+    }
+
+    /**
+     * Wraps the final listener with an RBAC filtering step that filters records in each node's response.
+     */
+    ActionListener<TopQueriesResponse> wrapWithRbacFilter(
+        ActionListener<TopQueriesResponse> delegate,
+        FilterByMode filterByMode,
+        UserPrincipalInfo userInfo
+    ) {
+        if (filterByMode == FilterByMode.NONE) {
+            return delegate;
+        }
+        final FilterByMode mode = filterByMode;
+        final UserPrincipalInfo info = userInfo;
+        return new ActionListener<TopQueriesResponse>() {
+            @Override
+            public void onResponse(TopQueriesResponse response) {
+                try {
+                    List<TopQueries> filteredNodes = response.getNodes().stream().map(topQueries -> {
+                        List<SearchQueryRecord> filtered = TopQueriesRbacFilter.filterRecords(topQueries.getTopQueriesRecord(), mode, info);
+                        return new TopQueries(topQueries.getNode(), filtered);
+                    }).collect(Collectors.toList());
+                    delegate.onResponse(
+                        new TopQueriesResponse(response.getClusterName(), filteredNodes, response.failures(), response.getMetricType())
+                    );
+                } catch (Exception e) {
+                    delegate.onFailure(e);
+                }
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                delegate.onFailure(e);
+            }
+        };
     }
 
     @Override

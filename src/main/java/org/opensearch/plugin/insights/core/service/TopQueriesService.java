@@ -41,6 +41,7 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
@@ -479,17 +480,20 @@ public class TopQueriesService {
         }
     }
 
-    // Add Username and User Roles attributes to record
+    // Add Username, User Roles, and Backend Roles attributes to record
     public static void setUserInfo(final SearchQueryRecord record) {
         UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
         if (userPrincipalContext != null) {
-            UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+            UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
             if (userInfo != null) {
                 if (userInfo.getUserName() != null) {
                     record.addAttribute(Attribute.USERNAME, userInfo.getUserName());
                 }
                 if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
                     record.addAttribute(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                }
+                if (userInfo.getBackendRoles() != null && !userInfo.getBackendRoles().isEmpty()) {
+                    record.addAttribute(Attribute.BACKEND_ROLES, userInfo.getBackendRoles().toArray(new String[0]));
                 }
             }
         }
