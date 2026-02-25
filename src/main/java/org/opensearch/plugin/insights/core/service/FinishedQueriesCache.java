@@ -37,13 +37,13 @@ public class FinishedQueriesCache {
     private final ClusterService clusterService;
     private final ThreadPool threadPool;
     private volatile Scheduler.Cancellable idleCheckTask;
+    private volatile boolean started = false;
 
     public FinishedQueriesCache(ClusterService clusterService, ThreadPool threadPool) {
         this.idleTimeoutMs = clusterService.getClusterSettings().get(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT).millis();
         this.clusterService = clusterService;
         this.threadPool = threadPool;
         this.lastAccessTime = System.currentTimeMillis();
-        startIdleCheck();
     }
 
     private void startIdleCheck() {
@@ -90,12 +90,19 @@ public class FinishedQueriesCache {
                 }
             }
         }
+        if (record.getAttributes().get(Attribute.SOURCE) == null && record.getSearchSourceBuilder() != null) {
+            TopQueriesService.setSourceAndTruncation(record, Integer.MAX_VALUE);
+        }
         String status = cancelled ? "cancelled" : (failed ? "failed" : "completed");
         addFinishedQuery(new FinishedQueryRecord(record, record.getId(), status, liveQueryId));
     }
 
     public void addFinishedQuery(FinishedQueryRecord record) {
         synchronized (finishedQueries) {
+            if (!started) {
+                started = true;
+                startIdleCheck();
+            }
             removeExpiredQueries();
             finishedQueries.addLast(new FinishedQuery(record));
             if (finishedQueries.size() > MAX_FINISHED_QUERIES) {
@@ -112,15 +119,21 @@ public class FinishedQueriesCache {
     }
 
     public boolean isExpired() {
-        if (idleTimeoutMs == -1) return false;
+        if (idleTimeoutMs == 0) return false;
         return System.currentTimeMillis() - lastAccessTime > idleTimeoutMs;
     }
 
-    public List<FinishedQueryRecord> getFinishedQueries(boolean enableListener) {
+    public List<FinishedQueryRecord> getFinishedQueries() {
         synchronized (finishedQueries) {
             lastAccessTime = System.currentTimeMillis();
             removeExpiredQueries();
             return finishedQueries.stream().limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
+        }
+    }
+
+    public int size() {
+        synchronized (finishedQueries) {
+            return finishedQueries.size();
         }
     }
 
