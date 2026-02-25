@@ -44,8 +44,11 @@ import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.tasks.TaskInfo;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.VersionUtils;
@@ -851,6 +854,165 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
             1000L,
             query2.getShardTasks().get(0).getTaskInfo().getResourceStats().getResourceUsageInfo().get("total").getMemoryInBytes()
         );
+    }
+
+    public void testNestedChildTasksRecursiveCollection() throws Exception {
+        // coordinator -> shard -> grandchild (fetch sub-task)
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo coord = createTaskInfo(node1, "indices:data/read/search", 100L, 1_000_000L, "coord", 100L, 200L);
+        TaskInfo shard = createTaskInfo(node1, "indices:data/read/search[phase/query]", 100L, 500_000L, "shard", 300L, 400L);
+        TaskInfo grandchild = createTaskInfo(node2, "indices:data/read/search[phase/fetch]", 100L, 200_000L, "fetch", 500L, 600L);
+
+        TaskGroup group = new TaskGroup(coord, List.of(new TaskGroup(shard, List.of(new TaskGroup(grandchild, emptyList())))));
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group));
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueryRecord rec = future.actionGet().getLiveQueries().get(0);
+
+        assertEquals(2, rec.getShardTasks().size()); // shard + grandchild both collected
+        assertEquals(900L, rec.getTotalCpu());        // 100 + 300 + 500
+        assertEquals(1200L, rec.getTotalMemory());    // 200 + 400 + 600
+    }
+
+    public void testCancelledCoordinatorAndShardStatus() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        TaskInfo cancelledCoord = new TaskInfo(
+            new TaskId(node1.getId(), randomLong()),
+            "t",
+            "indices:data/read/search",
+            "d",
+            null,
+            100L,
+            1_000_000L,
+            true,
+            true,
+            TaskId.EMPTY_TASK_ID,
+            Collections.emptyMap(),
+            null
+        );
+        TaskInfo cancelledShard = new TaskInfo(
+            new TaskId(node1.getId(), randomLong()),
+            "t",
+            "indices:data/read/search[phase/query]",
+            "d",
+            null,
+            100L,
+            500_000L,
+            true,
+            true,
+            TaskId.EMPTY_TASK_ID,
+            Collections.emptyMap(),
+            null
+        );
+        TaskGroup group = new TaskGroup(cancelledCoord, List.of(new TaskGroup(cancelledShard, emptyList())));
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(group));
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueryRecord rec = future.actionGet().getLiveQueries().get(0);
+
+        assertEquals("cancelled", rec.getStatus());
+        assertEquals("cancelled", rec.getShardTasks().get(0).getStatus());
+    }
+
+    public void testSortByMemory() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.MEMORY, 1, new String[0], null, null, false);
+        TaskInfo low = createTaskInfo(node1, "indices:data/read/search", 100L, 1000L, "low", 100L, 100L);
+        TaskInfo high = createTaskInfo(node1, "indices:data/read/search", 100L, 2000L, "high", 200L, 9000L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(low, emptyList()), new TaskGroup(high, emptyList())));
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueryRecord rec = future.actionGet().getLiveQueries().get(0);
+
+        assertEquals(high.getTaskId().toString(), rec.getQueryId());
+        assertEquals(9000L, rec.getTotalMemory());
+    }
+
+    public void testWlmGroupIdFilter() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "wlm-group-1", null, false);
+        TaskInfo task = createTaskInfo(node1, "indices:data/read/search", 100L, 1000L, "task", 100L, 200L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(task, emptyList())));
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        // task has no WLM group (null), request filters for "wlm-group-1" -> should be excluded
+        assertEquals(0, future.actionGet().getLiveQueries().size());
+    }
+
+    public void testFinishedCacheIncludedAndSorted() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, true);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(emptyList());
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        FinishedQueriesCache cache = mock(FinishedQueriesCache.class);
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(cache);
+
+        Map<MetricType, Measurement> m1 = new HashMap<>();
+        m1.put(MetricType.LATENCY, new Measurement(100L));
+        Map<MetricType, Measurement> m2 = new HashMap<>();
+        m2.put(MetricType.LATENCY, new Measurement(500L));
+        Map<MetricType, Measurement> m3 = new HashMap<>(); // no latency measurement
+
+        SearchQueryRecord base1 = new SearchQueryRecord(1L, m1, new HashMap<>(), "id1");
+        SearchQueryRecord base2 = new SearchQueryRecord(2L, m2, new HashMap<>(), "id2");
+        SearchQueryRecord base3 = new SearchQueryRecord(3L, m3, new HashMap<>(), "id3");
+        FinishedQueryRecord f1 = new FinishedQueryRecord(base1, "t1", "completed", "id1");
+        FinishedQueryRecord f2 = new FinishedQueryRecord(base2, "t2", "completed", "id2");
+        FinishedQueryRecord f3 = new FinishedQueryRecord(base3, "t3", "completed", "id3");
+        when(cache.getFinishedQueries()).thenReturn(List.of(f1, f2, f3));
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // f2 (500) > f1 (100) > f3 (null, sorted last)
+        List<org.opensearch.plugin.insights.rules.model.FinishedQueryRecord> finished = response.getFinishedQueries();
+        assertEquals(3, finished.size());
+        assertEquals("id2", finished.get(0).getId());
+        assertEquals("id1", finished.get(1).getId());
+        assertEquals("id3", finished.get(2).getId());
+    }
+
+    public void testFinishedCacheNotQueriedWhenFlagFalse() throws Exception {
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, false);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(emptyList());
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(), any());
+
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        future.actionGet();
+
+        verify(queryInsightsService, org.mockito.Mockito.never()).getFinishedQueriesCache();
     }
 
     public void testCoordinatorAndShardResourceAggregation() throws Exception {
