@@ -451,6 +451,7 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_ENABLED);
         clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY);
         clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_PATH);
+        clusterSettings.registerSetting(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
     }
 

@@ -17,6 +17,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 
 /**
@@ -26,6 +27,8 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "live_queries";
     private final List<LiveQueryRecord> liveQueries;
+    private final List<FinishedQueryRecord> finishedQueries;
+    private final boolean useFinishedCache;
 
     /**
      * Constructor for LiveQueriesResponse.
@@ -36,8 +39,12 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
+            this.useFinishedCache = in.readBoolean();
+            this.finishedQueries = useFinishedCache ? in.readList(FinishedQueryRecord::new) : List.of();
         } else {
             this.liveQueries = Collections.emptyList();
+            this.useFinishedCache = false;
+            this.finishedQueries = List.of();
         }
     }
 
@@ -48,6 +55,25 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
      */
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
         this.liveQueries = liveQueries;
+        this.finishedQueries = List.of();
+        this.useFinishedCache = false;
+    }
+
+    /**
+     * Constructor for LiveQueriesResponse
+     *
+     * @param liveQueries A flat list containing live queries results from relevant nodes
+     * @param finishedQueries A flat list containing finished queries results
+     * @param useFinishedCache whether the finished queries cache was used
+     */
+    public LiveQueriesResponse(
+        final List<LiveQueryRecord> liveQueries,
+        final List<FinishedQueryRecord> finishedQueries,
+        boolean useFinishedCache
+    ) {
+        this.liveQueries = liveQueries;
+        this.finishedQueries = finishedQueries;
+        this.useFinishedCache = useFinishedCache;
     }
 
     /**
@@ -58,10 +84,26 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         return liveQueries;
     }
 
+    /**
+     * Get the finished queries list
+     * @return the list of finished query records
+     */
+    public List<FinishedQueryRecord> getFinishedQueries() {
+        return finishedQueries;
+    }
+
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeList(liveQueries);
+            out.writeBoolean(useFinishedCache);
+            if (useFinishedCache) {
+                out.writeList(finishedQueries);
+            }
+        } else {
+            // Older nodes expect nothing written; response will be empty on their side
+            // (pre-3.6 nodes used SearchQueryRecord list — incompatible type, return empty)
+            out.writeVInt(0);
         }
     }
 
@@ -73,6 +115,13 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
             query.toXContent(builder, params);
         }
         builder.endArray();
+        if (useFinishedCache) {
+            builder.startArray("finished_queries");
+            for (FinishedQueryRecord query : finishedQueries) {
+                query.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
         builder.endObject();
         return builder;
     }

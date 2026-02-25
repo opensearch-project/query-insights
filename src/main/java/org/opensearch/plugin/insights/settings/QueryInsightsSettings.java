@@ -99,6 +99,28 @@ public class QueryInsightsSettings {
      */
     public static final TimeValue DEFAULT_SEARCH_REQUEST_TIMEOUT = new TimeValue(10, TimeUnit.SECONDS);
 
+    /**
+     * Default idle timeout for live queries cache (5 minutes)
+     */
+    public static final TimeValue DEFAULT_LIVE_QUERIES_CACHE_IDLE_TIMEOUT = new TimeValue(5, TimeUnit.MINUTES);
+
+    /**
+     * Setting for live queries cache idle timeout.
+     * Set to 0 to disable auto-stop. Minimum is 2 minutes, maximum is 10 minutes.
+     */
+    public static final Setting<TimeValue> LIVE_QUERIES_CACHE_IDLE_TIMEOUT = Setting.timeSetting(
+        "search.insights.live_queries.cache.idle_timeout",
+        DEFAULT_LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
+        TimeValue.ZERO,
+        value -> {
+            if (value.millis() != 0 && (value.millis() < TimeUnit.MINUTES.toMillis(2) || value.millis() > TimeUnit.MINUTES.toMillis(10))) {
+                throw new IllegalArgumentException("Live queries cache idle timeout must be 0 (disabled) or between 2 and 10 minutes");
+            }
+        },
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
     /** Default prefix for top N queries feature */
     public static final String TOP_N_QUERIES_SETTING_PREFIX = "search.insights.top_queries";
     /** Default prefix for top N queries grouping feature */

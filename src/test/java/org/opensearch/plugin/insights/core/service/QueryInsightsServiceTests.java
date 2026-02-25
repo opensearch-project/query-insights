@@ -755,6 +755,16 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         return List.of(updatedQueryInsightsService, updatedClusterService);
     }
 
+    public void testGetFinishedQueriesCache() {
+        // Test lazy initialization
+        FinishedQueriesCache cache1 = queryInsightsService.getFinishedQueriesCache();
+        assertNotNull(cache1);
+
+        // Test that subsequent calls return the same instance
+        FinishedQueriesCache cache2 = queryInsightsService.getFinishedQueriesCache();
+        assertSame(cache1, cache2);
+    }
+
     public void testRemoteExporterInitializationWithDefaults() {
         // Verify remote exporter is initialized with default values from settings
         RemoteRepositoryExporter remoteExporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
