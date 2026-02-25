@@ -106,15 +106,15 @@ public class QueryInsightsSettings {
 
     /**
      * Setting for live queries cache idle timeout.
-     * Set to -1 to disable auto-stop. Minimum is 2 minutes, maximum is 10 minutes.
+     * Set to 0 to disable auto-stop. Minimum is 2 minutes, maximum is 10 minutes.
      */
     public static final Setting<TimeValue> LIVE_QUERIES_CACHE_IDLE_TIMEOUT = Setting.timeSetting(
         "search.insights.live_queries.cache.idle_timeout",
         DEFAULT_LIVE_QUERIES_CACHE_IDLE_TIMEOUT,
-        new TimeValue(-1, TimeUnit.MILLISECONDS),
+        TimeValue.ZERO,
         value -> {
-            if (value.millis() != -1 && (value.millis() < TimeUnit.MINUTES.toMillis(2) || value.millis() > TimeUnit.MINUTES.toMillis(10))) {
-                throw new IllegalArgumentException("Live queries cache idle timeout must be -1 (disabled) or between 2 and 10 minutes");
+            if (value.millis() != 0 && (value.millis() < TimeUnit.MINUTES.toMillis(2) || value.millis() > TimeUnit.MINUTES.toMillis(10))) {
+                throw new IllegalArgumentException("Live queries cache idle timeout must be 0 (disabled) or between 2 and 10 minutes");
             }
         },
         Setting.Property.Dynamic,

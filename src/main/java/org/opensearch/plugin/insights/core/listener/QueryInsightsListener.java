@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -258,28 +259,32 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        String recordId = java.util.UUID.randomUUID().toString();
-        recordIdThreadLocal.set(recordId);
-        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
-        addToFinishedCache(context, record, false);
+        String recordId = UUID.randomUUID().toString();
+        try {
+            recordIdThreadLocal.set(recordId);
+            SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+            addToFinishedCache(context, record, false);
+        } finally {
+            recordIdThreadLocal.remove();
+        }
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        String recordId = java.util.UUID.randomUUID().toString();
-        recordIdThreadLocal.set(recordId);
-        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
-        addToFinishedCache(context, record, true);
+        String recordId = UUID.randomUUID().toString();
+        try {
+            recordIdThreadLocal.set(recordId);
+            SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+            addToFinishedCache(context, record, true);
+        } finally {
+            recordIdThreadLocal.remove();
+        }
     }
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record, boolean failed) {
-        try {
-            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
-            if (cache == null || record == null) return;
-            cache.capture(record, failed, context.getTask().isCancelled(), context.getTask().getId());
-        } finally {
-            removeRecordId();
-        }
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        if (cache == null || record == null) return;
+        cache.capture(record, failed, context.getTask().isCancelled(), context.getTask().getId());
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {

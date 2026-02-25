@@ -561,6 +561,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         builder.startObject();
         builder.field("timestamp", timestamp);
         builder.field("id", id);
+
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.TOP_N_QUERY) { // Always skip TOP_N_QUERY attribute
                 continue;

@@ -30,6 +30,12 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     private final List<FinishedQueryRecord> finishedQueries;
     private final boolean useFinishedCache;
 
+    /**
+     * Constructor for LiveQueriesResponse.
+     *
+     * @param in A {@link StreamInput} object.
+     * @throws IOException if the stream cannot be deserialized.
+     */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
@@ -42,12 +48,24 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         }
     }
 
+    /**
+     * Constructor for LiveQueriesResponse
+     *
+     * @param liveQueries A flat list containing live queries results from relevant nodes
+     */
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
         this.liveQueries = liveQueries;
         this.finishedQueries = List.of();
         this.useFinishedCache = false;
     }
 
+    /**
+     * Constructor for LiveQueriesResponse
+     *
+     * @param liveQueries A flat list containing live queries results from relevant nodes
+     * @param finishedQueries A flat list containing finished queries results
+     * @param useFinishedCache whether the finished queries cache was used
+     */
     public LiveQueriesResponse(
         final List<LiveQueryRecord> liveQueries,
         final List<FinishedQueryRecord> finishedQueries,
@@ -58,8 +76,20 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         this.useFinishedCache = useFinishedCache;
     }
 
+    /**
+     * Get the live queries list
+     * @return the list of live query records
+     */
     public List<LiveQueryRecord> getLiveQueries() {
         return liveQueries;
+    }
+
+    /**
+     * Get the finished queries list
+     * @return the list of finished query records
+     */
+    public List<FinishedQueryRecord> getFinishedQueries() {
+        return finishedQueries;
     }
 
     @Override
@@ -70,6 +100,10 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
             if (useFinishedCache) {
                 out.writeList(finishedQueries);
             }
+        } else {
+            // Older nodes expect nothing written; response will be empty on their side
+            // (pre-3.6 nodes used SearchQueryRecord list — incompatible type, return empty)
+            out.writeVInt(0);
         }
     }
 

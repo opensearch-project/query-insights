@@ -695,19 +695,23 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @return FinishedQueriesCache
      */
     public FinishedQueriesCache getFinishedQueriesCache() {
-        if (finishedQueriesCache == null) {
-            synchronized (this) {
-                if (finishedQueriesCache == null) {
-                    finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
-                    finishedQueriesCache.setOnExpired(() -> {
-                        synchronized (this) {
+        FinishedQueriesCache cache = finishedQueriesCache;
+        if (cache != null) return cache;
+        synchronized (this) {
+            if (finishedQueriesCache == null) {
+                FinishedQueriesCache newCache = new FinishedQueriesCache(clusterService, threadPool);
+                newCache.setOnExpired(() -> {
+                    synchronized (this) {
+                        // Only null out if it's still the same instance we created
+                        if (finishedQueriesCache == newCache) {
                             finishedQueriesCache = null;
                         }
-                    });
-                }
+                    }
+                });
+                finishedQueriesCache = newCache;
             }
+            return finishedQueriesCache;
         }
-        return finishedQueriesCache;
     }
 
     /**
