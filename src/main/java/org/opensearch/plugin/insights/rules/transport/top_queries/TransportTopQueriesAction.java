@@ -87,12 +87,14 @@ public class TransportTopQueriesAction extends TransportNodesAction<
 
     ActionListener<TopQueriesResponse> createInMemoryDataCollectionListener(
         TopQueriesRequest request,
+        FilterByMode filterByMode,
+        UserPrincipalInfo userInfo,
         ActionListener<TopQueriesResponse> finalListener
     ) {
         return new ActionListener<TopQueriesResponse>() {
             @Override
             public void onResponse(TopQueriesResponse inMemoryQueriesResponse) {
-                handleInMemoryDataResponse(request, inMemoryQueriesResponse, finalListener);
+                handleInMemoryDataResponse(request, filterByMode, userInfo, inMemoryQueriesResponse, finalListener);
             }
 
             @Override
@@ -104,6 +106,8 @@ public class TransportTopQueriesAction extends TransportNodesAction<
 
     void handleInMemoryDataResponse(
         TopQueriesRequest request,
+        FilterByMode filterByMode,
+        UserPrincipalInfo userInfo,
         TopQueriesResponse inMemoryQueriesResponse,
         ActionListener<TopQueriesResponse> finalListener
     ) {
@@ -112,7 +116,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         String from = request.getFrom();
         String to = request.getTo();
         if (from != null && to != null) {
-            fetchHistoricalData(request, inMemoryTopQueries, inMemoryDataFailures, finalListener);
+            fetchHistoricalData(request, filterByMode, userInfo, inMemoryTopQueries, inMemoryDataFailures, finalListener);
         } else {
             finalListener.onResponse(inMemoryQueriesResponse);
         }
@@ -120,6 +124,8 @@ public class TransportTopQueriesAction extends TransportNodesAction<
 
     void fetchHistoricalData(
         TopQueriesRequest request,
+        FilterByMode filterByMode,
+        UserPrincipalInfo userInfo,
         List<TopQueries> inMemoryTopQueries,
         List<FailedNodeException> inMemoryDataFailures,
         ActionListener<TopQueriesResponse> finalListener
@@ -128,19 +134,44 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         String to = request.getTo();
         String id = request.getId();
         Boolean verbose = request.getVerbose();
+
+        // Resolve RBAC filter values for the index query
+        String username = null;
+        List<String> backendRoles = null;
+        if (filterByMode != FilterByMode.NONE && userInfo != null && !TopQueriesRbacFilter.isAdmin(userInfo)) {
+            switch (filterByMode) {
+                case USERNAME:
+                    username = userInfo.getUserName();
+                    break;
+                case BACKEND_ROLES:
+                    backendRoles = userInfo.getBackendRoles();
+                    break;
+                default:
+                    break;
+            }
+        }
+
         try (final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext()) {
             queryInsightsService.getTopQueriesService(request.getMetricType())
-                .getTopQueriesRecordsFromIndex(from, to, id, verbose, new ActionListener<List<SearchQueryRecord>>() {
-                    @Override
-                    public void onResponse(List<SearchQueryRecord> historicalRecords) {
-                        onHistoricalDataResponse(request, inMemoryTopQueries, inMemoryDataFailures, historicalRecords, finalListener);
-                    }
+                .getTopQueriesRecordsFromIndex(
+                    from,
+                    to,
+                    id,
+                    verbose,
+                    username,
+                    backendRoles,
+                    new ActionListener<List<SearchQueryRecord>>() {
+                        @Override
+                        public void onResponse(List<SearchQueryRecord> historicalRecords) {
+                            onHistoricalDataResponse(request, inMemoryTopQueries, inMemoryDataFailures, historicalRecords, finalListener);
+                        }
 
-                    @Override
-                    public void onFailure(Exception e) {
-                        onHistoricalDataFailure(request, inMemoryTopQueries, inMemoryDataFailures, e, finalListener);
+                        @Override
+                        public void onFailure(Exception e) {
+                            onHistoricalDataFailure(request, inMemoryTopQueries, inMemoryDataFailures, e, finalListener);
+                        }
                     }
-                });
+                );
         } catch (Exception e) {
             logger.error("Synchronous failure while initiating historical top queries fetch", e);
             finalListener.onFailure(e);
@@ -237,7 +268,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         }
 
         ActionListener<TopQueriesResponse> rbacListener = wrapWithRbacFilter(finalListener, filterByMode, userInfo);
-        super.doExecute(task, request, createInMemoryDataCollectionListener(request, rbacListener));
+        super.doExecute(task, request, createInMemoryDataCollectionListener(request, filterByMode, userInfo, rbacListener));
     }
 
     /**

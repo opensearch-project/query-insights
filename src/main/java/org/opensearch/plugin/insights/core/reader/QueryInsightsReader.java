@@ -37,5 +37,30 @@ public interface QueryInsightsReader extends Closeable {
         final ActionListener<List<SearchQueryRecord>> listener
     );
 
+    /**
+     * Read a list of SearchQueryRecord with optional RBAC filtering pushed into the search query.
+     *
+     * @param from       start timestamp string
+     * @param to         end timestamp string
+     * @param id         query/group id
+     * @param verbose    whether to return full output
+     * @param metricType metric type to read
+     * @param username   optional username for RBAC filtering
+     * @param backendRoles optional backend roles for RBAC filtering
+     * @param listener   listener to be called when the read operation is complete
+     */
+    default void read(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        final MetricType metricType,
+        final String username,
+        final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
+        read(from, to, id, verbose, metricType, listener);
+    }
+
     String getId();
 }

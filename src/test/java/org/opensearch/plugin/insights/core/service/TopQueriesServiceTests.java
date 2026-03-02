@@ -649,10 +649,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new ArrayList<>(mockRecords));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -695,14 +695,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         }
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             String readerIdFilter = invocation.getArgument(2);
             List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
                 .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
                 .toList();
             listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -733,11 +733,11 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             // Simulate reader returning simplified records if verbose is false
             listener.onResponse(mockRecords.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList()));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -763,10 +763,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.now().toString();
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new java.util.ArrayList<>());
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -787,10 +787,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         Exception testException = new RuntimeException("Reader failed");
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onFailure(testException);
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);

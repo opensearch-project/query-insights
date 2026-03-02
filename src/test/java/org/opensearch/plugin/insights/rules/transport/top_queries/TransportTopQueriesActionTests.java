@@ -172,7 +172,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         );
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
 
-        actionToTest.handleInMemoryDataResponse(request, inMemoryResponse, finalListener);
+        actionToTest.handleInMemoryDataResponse(request, FilterByMode.NONE, null, inMemoryResponse, finalListener);
 
         verify(finalListener).onResponse(inMemoryResponse);
     }
@@ -185,13 +185,24 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
         TransportTopQueriesAction spyAction = spy(actionToTest);
 
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user1", List.of("br1"), List.of("role1"));
+
         spyAction.handleInMemoryDataResponse(
             request,
+            FilterByMode.USERNAME,
+            userInfo,
             new TopQueriesResponse(clusterService.getClusterName(), inMemoryTopQueries, failures, request.getMetricType()),
             finalListener
         );
 
-        verify(spyAction).fetchHistoricalData(eq(request), eq(inMemoryTopQueries), eq(failures), eq(finalListener));
+        verify(spyAction).fetchHistoricalData(
+            eq(request),
+            eq(FilterByMode.USERNAME),
+            eq(userInfo),
+            eq(inMemoryTopQueries),
+            eq(failures),
+            eq(finalListener)
+        );
     }
 
     @SuppressWarnings("unchecked")

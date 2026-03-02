@@ -375,6 +375,30 @@ public class TopQueriesService {
         final Boolean verbose,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
+        getTopQueriesRecordsFromIndex(from, to, id, verbose, null, null, listener);
+    }
+
+    /**
+     * Get all historical top queries records from local index with optional RBAC filtering
+     * pushed into the search query.
+     *
+     * @param from start timestamp
+     * @param to   end timestamp
+     * @param id search query record id
+     * @param verbose whether to return full output
+     * @param username optional username for RBAC filtering
+     * @param backendRoles optional backend roles for RBAC filtering
+     * @param listener listener to be called when records are fetched
+     */
+    public void getTopQueriesRecordsFromIndex(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader == null) {
             listener.onResponse(new ArrayList<>());
@@ -382,7 +406,7 @@ public class TopQueriesService {
         }
 
         try {
-            reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
+            reader.read(from, to, id, verbose, metricType, username, backendRoles, new ActionListener<List<SearchQueryRecord>>() {
                 @Override
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {

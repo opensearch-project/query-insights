@@ -24,6 +24,8 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
  */
 public class TopQueriesRbacFilter {
 
+    // TODO: Currently only checks for the all_access role. Consider checking against specific cluster
+    // permissions to support custom admin roles (e.g., query_insights_admin, cluster_admin).
     private static final String ALL_ACCESS_ROLE = "all_access";
 
     private TopQueriesRbacFilter() {}
