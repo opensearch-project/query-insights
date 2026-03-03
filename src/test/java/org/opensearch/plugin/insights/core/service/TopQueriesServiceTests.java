@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
@@ -27,6 +28,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,19 +42,25 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.utils.ExporterReaderUtils;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
@@ -67,7 +75,7 @@ import org.opensearch.transport.client.IndicesAdminClient;
 public class TopQueriesServiceTests extends OpenSearchTestCase {
     private TopQueriesService topQueriesService;
     private final Client client = mock(Client.class);
-    private final ThreadPool threadPool = mock(ThreadPool.class);
+    private final ThreadPool threadPool = QueryInsightsTestUtils.createMockThreadPool();
     private final QueryInsightsExporterFactory queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
     private final QueryInsightsReaderFactory queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
     private final AdminClient adminClient = mock(AdminClient.class);
@@ -94,6 +102,15 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);
+
+        // Mock threadPool executor for remote export tests
+        java.util.concurrent.ExecutorService mockExecutor = mock(java.util.concurrent.ExecutorService.class);
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(mockExecutor).execute(any(Runnable.class));
+        when(threadPool.executor(anyString())).thenReturn(mockExecutor);
     }
 
     public void testIngestQueryDataWithLargeWindow() {
@@ -141,6 +158,42 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     public void testGetTopQueriesWhenNotEnabled() {
         topQueriesService.setEnabled(false);
         assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+    }
+
+    public void testSetEnabledFalseClearsSnapshots() {
+        // Add records to the service
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        topQueriesService.consumeRecords(records);
+
+        // Verify records are present
+        assertEquals(5, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Disable the service
+        topQueriesService.setEnabled(false);
+
+        // Re-enable to check if snapshots were cleared
+        topQueriesService.setEnabled(true);
+
+        // Snapshots should be empty after disabling
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+    }
+
+    public void testSetEnabledFalseReturnsEmptyResults() {
+        // Add records to the service while enabled
+        final List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        topQueriesService.consumeRecords(records);
+
+        // Verify records are present
+        assertEquals(5, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Disable the service
+        topQueriesService.setEnabled(false);
+
+        // Should return empty results immediately when disabled
+        assertEquals(0, topQueriesService.getTopQueriesRecords(false, null, null, null, null).size());
+
+        // Also test with includeLastWindow = true
+        assertEquals(0, topQueriesService.getTopQueriesRecords(true, null, null, null, null).size());
     }
 
     public void testValidateWindowSize() {
@@ -504,6 +557,9 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         // Set a reasonable window size instead of Long.MAX_VALUE to avoid window calculation issues
         topQueriesService.setWindowSize(TimeValue.timeValueHours(1));
 
+        // Force initialize windowStart
+        topQueriesService.consumeRecords(new ArrayList<>());
+
         // Use current time to ensure records are in the current window
         long currentTime = System.currentTimeMillis();
 
@@ -542,7 +598,9 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.ofInstant(Instant.ofEpochMilli(currentTime + TimeValue.timeValueMinutes(5).getMillis()), ZoneOffset.UTC)
             .toString();
 
-        List<SearchQueryRecord> filteredResults = topQueriesService.getTopQueriesRecords(false, from, to, null, null);
+        // Include both current and history windows since records may end up in either snapshot
+        // depending on timing differences between when currentTime is captured and when consumeRecords() runs
+        List<SearchQueryRecord> filteredResults = topQueriesService.getTopQueriesRecords(true, from, to, null, null);
         assertEquals(5, filteredResults.size());
     }
 
@@ -591,10 +649,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new ArrayList<>(mockRecords));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -637,14 +695,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         }
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             String readerIdFilter = invocation.getArgument(2);
             List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
                 .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
                 .toList();
             listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -675,11 +733,11 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             // Simulate reader returning simplified records if verbose is false
             listener.onResponse(mockRecords.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList()));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -705,10 +763,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.now().toString();
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new java.util.ArrayList<>());
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -729,10 +787,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         Exception testException = new RuntimeException("Reader failed");
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onFailure(testException);
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -758,4 +816,373 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         verify(mockListener).onResponse(listCaptor.capture());
         assertTrue(listCaptor.getValue().isEmpty());
     }
+
+    public void testConsumeRecordsUpdatesSourceAttribute() {
+        // Create a SearchSourceBuilder with some content
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        // Create a record with SearchSourceBuilder but no SOURCE attribute
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(searchSourceBuilder.toString(), ((SourceString) sourceValue).getValue());
+        assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testWindowRotationUpdatesSourceForBothWindows() {
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        long currentTime = System.currentTimeMillis();
+
+        Map<MetricType, Measurement> measurements1 = new HashMap<>();
+        measurements1.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes1 = new HashMap<>();
+        SearchQueryRecord oldRecord1 = new SearchQueryRecord(
+            currentTime - TimeValue.timeValueMinutes(15).getMillis(),
+            measurements1,
+            attributes1,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "old-1"
+        );
+
+        Map<MetricType, Measurement> measurements2 = new HashMap<>();
+        measurements2.put(MetricType.LATENCY, new Measurement(200L));
+        Map<Attribute, Object> attributes2 = new HashMap<>();
+        SearchQueryRecord oldRecord2 = new SearchQueryRecord(
+            currentTime - TimeValue.timeValueMinutes(15).getMillis(),
+            measurements2,
+            attributes2,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "old-2"
+        );
+
+        topQueriesService.consumeRecords(List.of(oldRecord1, oldRecord2));
+
+        Map<MetricType, Measurement> measurements3 = new HashMap<>();
+        measurements3.put(MetricType.LATENCY, new Measurement(150L));
+        Map<Attribute, Object> attributes3 = new HashMap<>();
+        SearchQueryRecord newRecord1 = new SearchQueryRecord(
+            currentTime,
+            measurements3,
+            attributes3,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "new-1"
+        );
+
+        Map<MetricType, Measurement> measurements4 = new HashMap<>();
+        measurements4.put(MetricType.LATENCY, new Measurement(250L));
+        Map<Attribute, Object> attributes4 = new HashMap<>();
+        SearchQueryRecord newRecord2 = new SearchQueryRecord(
+            currentTime,
+            measurements4,
+            attributes4,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "new-2"
+        );
+
+        topQueriesService.consumeRecords(List.of(newRecord1, newRecord2));
+
+        List<SearchQueryRecord> allRecords = topQueriesService.getTopQueriesRecords(true, null, null, null, null);
+        for (SearchQueryRecord record : allRecords) {
+            assertNotNull(record.getAttributes().get(Attribute.SOURCE));
+        }
+    }
+
+    public void testSourceTruncationWithMaxLength() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+
+        String fullSource = searchSourceBuilder.toString();
+        int maxLength = 20;
+        topQueriesService.setMaxSourceLength(maxLength);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(fullSource.substring(0, maxLength), ((SourceString) sourceValue).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSourceTruncationWithZeroLength() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        topQueriesService.setMaxSourceLength(0);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals("", ((SourceString) sourceValue).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSourceNoTruncationWhenBelowLimit() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        String fullSource = searchSourceBuilder.toString();
+        topQueriesService.setMaxSourceLength(fullSource.length() + 100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            new UserPrincipalContext(threadPool),
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertNotNull(sourceValue);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals(fullSource, ((SourceString) sourceValue).getValue());
+        assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSetUserInfoWithUserPrincipalContext() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // threadPool already has user info from createMockThreadPool()
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.USERNAME));
+        assertNull(record.getAttributes().get(Attribute.USER_ROLES));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertEquals("testuser", record.getAttributes().get(Attribute.USERNAME));
+        assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
+    }
+
+    public void testSetUserInfoWithBackendRoles() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // threadPool already has user info from createMockThreadPool()
+        // Format: "testuser|role1,role2|admin,user|tenant1|access1"
+        // backend_roles (index 1) = "role1,role2"
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNotNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+        assertArrayEquals(new String[] { "role1", "role2" }, (String[]) record.getAttributes().get(Attribute.BACKEND_ROLES));
+    }
+
+    public void testSetUserInfoWithNullUserPrincipalContext() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            null,
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNull(record.getAttributes().get(Attribute.USERNAME));
+        assertNull(record.getAttributes().get(Attribute.USER_ROLES));
+    }
+
+    public void testSetUserInfoWithEmptyUserString() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // Create a mock ThreadPool with empty ThreadContext (no user info)
+        ThreadPool emptyThreadPool = mock(ThreadPool.class);
+        when(emptyThreadPool.getThreadContext()).thenReturn(new ThreadContext(Settings.EMPTY));
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(emptyThreadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNull(record.getAttributes().get(Attribute.USERNAME));
+        assertNull(record.getAttributes().get(Attribute.USER_ROLES));
+    }
+
+    public void testRemoteExportWhenExporterExists() {
+        // Test remote export when exporter exists and is enabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(true);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation and export
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify remote exporter was called during window rotation
+        verify(mockRemoteExporter, times(1)).export(any(), any());
+    }
+
+    public void testRemoteExportWhenExporterDoesNotExist() {
+        // Test remote export when no exporter exists
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is null
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
+    public void testRemoteExportWhenExporterDisabled() {
+        // Test remote export when exporter exists but is disabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(false);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is disabled
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
 }

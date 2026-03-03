@@ -10,28 +10,26 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_READER_ID;
-import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MAX_DELETE_AFTER_VALUE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.MIN_DELETE_AFTER_VALUE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_ENABLED;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_PATH;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -40,19 +38,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
-import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.FutureUtils;
-import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
-import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -60,7 +54,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
-import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -140,8 +134,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     private QueryShapeGenerator queryShapeGenerator;
 
-    private final Client client;
+    private LocalIndexLifecycleManager localIndexLifecycleManager;
+
     SinkType sinkType;
+
+    private volatile FilterByMode filterByMode;
 
     /**
      * Constructor of the QueryInsightsService
@@ -169,9 +166,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.queryInsightsExporterFactory = queryInsightsExporterFactory;
         this.queryInsightsReaderFactory = queryInsightsReaderFactory;
         this.namedXContentRegistry = namedXContentRegistry;
-        this.client = client;
         // initialize top n queries services and configurations consumers
-        topQueriesServices = new HashMap<>();
+        this.topQueriesServices = new HashMap<>();
         for (MetricType metricType : MetricType.allMetricTypes()) {
             enableCollect.put(metricType, false);
             topQueriesServices.put(
@@ -185,18 +181,34 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 (v -> setExporterAndReaderType(SinkType.parse(v))),
                 (this::validateExporterType)
             );
+        this.localIndexLifecycleManager = new LocalIndexLifecycleManager(
+            threadPool,
+            client,
+            clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER)
+        );
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(
                 TOP_N_EXPORTER_DELETE_AFTER,
-                (this::setExporterDeleteAfterAndDelete),
-                (this::validateExporterDeleteAfter)
+                (localIndexLifecycleManager::setDeleteAfterAndDelete),
+                (localIndexLifecycleManager::validateDeleteAfter)
             );
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(TOP_N_EXPORTER_TEMPLATE_PRIORITY, this::setTemplatePriority, this::validateTemplatePriority);
+        queryInsightsExporterFactory.createRemoteRepositoryExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID,
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_PATH),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_ENABLED)
+        );
 
-        this.setExporterDeleteAfterAndDelete(clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER));
+        // Listen for remote repository exporter setting changes - update individual settings
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
+
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_FILTER_BY_MODE, this::setFilterByMode, this::validateFilterByMode);
+        this.filterByMode = FilterByMode.fromString(clusterService.getClusterSettings().get(TOP_N_QUERIES_FILTER_BY_MODE));
+
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
-        this.setTemplatePriority(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TEMPLATE_PRIORITY));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
@@ -231,12 +243,24 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Set the maximum source length before truncation
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(int maxSourceLength) {
+        // Update all TopQueriesService instances
+        for (TopQueriesService topQueriesService : topQueriesServices.values()) {
+            topQueriesService.setMaxSourceLength(maxSourceLength);
+        }
+    }
+
+    /**
      * Drain the queryRecordsQueue into internal stores and services
      */
     public void drainRecords() {
         final List<SearchQueryRecord> records = new ArrayList<>();
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
                 // ingest the records into topQueriesService
@@ -272,6 +296,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public void enableCollection(final MetricType metricType, final boolean enable) {
         this.enableCollect.put(metricType, enable);
         this.topQueriesServices.get(metricType).setEnabled(enable);
+
+        // Clear the queue when all features are disabled to prevent stale records from being processed
+        // when features are re-enabled
+        if (!enable && !isAnyFeatureEnabled()) {
+            queryRecordsQueue.clear();
+        }
     }
 
     /**
@@ -450,12 +480,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         // Configure the exporter for TopQueriesService in QueryInsightsService
         final QueryInsightsExporter currentExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
         final QueryInsightsReader currentReader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
-        // Handles the cleanup when sink type is changed from LocalIndexExporter.
-        // Clears all local indices from storage when the exporter configuration
-        // is switched away from LocalIndexExporter type.
-        if (this.sinkType == SinkType.LOCAL_INDEX && currentExporter != null) {
-            deleteAllTopNIndices(client, (LocalIndexExporter) currentExporter);
-        }
 
         // Close the current exporter and reader
         if (currentExporter != null) {
@@ -497,39 +521,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Set the exporter delete after, then delete expired Top N indices
-     *
-     * @param deleteAfter the number of days after which Top N local indices should be deleted
-     */
-    public void setExporterDeleteAfterAndDelete(final int deleteAfter) {
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
-        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            ((LocalIndexExporter) topQueriesExporter).setDeleteAfter(deleteAfter);
-            deleteExpiredTopNIndices();
-        }
-    }
-
-    /**
-     * Validate the exporter delete after value
-     *
-     * @param deleteAfter exporter and reader settings
-     */
-    void validateExporterDeleteAfter(final int deleteAfter) {
-        if (deleteAfter < MIN_DELETE_AFTER_VALUE || deleteAfter > MAX_DELETE_AFTER_VALUE) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
-            throw new IllegalArgumentException(
-                String.format(
-                    Locale.ROOT,
-                    "Invalid exporter delete_after_days setting [%d], value should be an integer between %d and %d.",
-                    deleteAfter,
-                    MIN_DELETE_AFTER_VALUE,
-                    MAX_DELETE_AFTER_VALUE
-                )
-            );
-        }
-    }
-
-    /**
      * Get search query categorizer object
      * @return SearchQueryCategorizer object
      */
@@ -547,35 +538,30 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Set the template priority for all top queries exporters
+     * Get the current RBAC filter mode for top queries
      *
-     * @param templatePriority the priority value to use for templates
+     * @return the current {@link FilterByMode}
      */
-    public void setTemplatePriority(final long templatePriority) {
-        logger.info("Setting query insights index template priority to [{}]", templatePriority);
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
-        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            logger.debug("Updating query insights index template priority for top queries exporter to [{}]", templatePriority);
-            queryInsightsExporterFactory.updateExporter(
-                topQueriesExporter,
-                QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
-                templatePriority
-            );
-        }
+    public FilterByMode getFilterByMode() {
+        return filterByMode;
     }
 
     /**
-     * Validate the template priority
+     * Set the RBAC filter mode for top queries
      *
-     * @param templatePriority the priority value to validate
+     * @param filterByModeSetting the filter mode string value
      */
-    public void validateTemplatePriority(final long templatePriority) {
-        if (templatePriority < 0) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Invalid template priority setting [%d], value should be a non-negative long.", templatePriority)
-            );
-        }
+    public void setFilterByMode(final String filterByModeSetting) {
+        this.filterByMode = FilterByMode.fromString(filterByModeSetting);
+    }
+
+    /**
+     * Validate the filter by mode setting
+     *
+     * @param filterByModeSetting the filter mode string value to validate
+     */
+    public void validateFilterByMode(final String filterByModeSetting) {
+        FilterByMode.fromString(filterByModeSetting);
     }
 
     /**
@@ -604,21 +590,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                     QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR
                 )
             );
-            if (threadPool.scheduler() != null) {
-                deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
-                    try {
-                        if (clusterService.isStateInitialised()
-                            && clusterService.state().getNodes() != null
-                            && clusterService.state().getNodes().isLocalNodeElectedClusterManager()) {
-                            deleteExpiredTopNIndices();
-                        }
-                    } catch (Exception e) {
-                        logger.error("Error occurred while deleting expired indices:", e);
+        }
+        if (threadPool.scheduler() != null) {
+            deleteIndicesScheduledFuture = threadPool.scheduler().scheduleWithFixedDelay(() -> {
+                try {
+                    if (clusterService.isStateInitialised()
+                        && clusterService.state().getNodes() != null
+                        && clusterService.state().getNodes().isLocalNodeElectedClusterManager()) {
+                        localIndexLifecycleManager.deleteExpiredTopNIndices();
                     }
-                }, getInitialDelay(Instant.now()) + Duration.ofMinutes(5).toMillis(), Duration.ofDays(1).toMillis(), TimeUnit.MILLISECONDS);
-            } else {
-                logger.error("Unable to schedule Query Insights delete job. threadPool.scheduler() is null");
-            }
+                } catch (Exception e) {
+                    logger.error("Error occurred while deleting expired indices:", e);
+                }
+            }, getInitialDelay(Instant.now()) + Duration.ofMinutes(5).toMillis(), Duration.ofDays(1).toMillis(), TimeUnit.MILLISECONDS);
+        } else {
+            logger.error("Unable to schedule Query Insights delete job. threadPool.scheduler() is null");
         }
     }
 
@@ -666,62 +652,59 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Delete Top N local indices older than the configured data retention period
-     */
-    void deleteExpiredTopNIndices() {
-        final QueryInsightsExporter topQueriesExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
-        if (topQueriesExporter != null && topQueriesExporter.getClass() == LocalIndexExporter.class) {
-            final LocalIndexExporter localIndexExporter = (LocalIndexExporter) topQueriesExporter;
-            threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> {
-                final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(
-                    IndicesOptions.strictExpand()
-                );
-
-                client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
-                    final Map<String, IndexMetadata> indexMetadataMap = clusterStateResponse.getState().metadata().indices();
-                    final long startOfTodayUtcMillis = LocalDateTime.now(ZoneOffset.UTC)    // Today at 00:00 UTC
-                        .truncatedTo(ChronoUnit.DAYS)
-                        .toInstant(ZoneOffset.UTC)
-                        .toEpochMilli();
-                    final long expirationMillisLong = startOfTodayUtcMillis - TimeUnit.DAYS.toMillis(
-                        ((LocalIndexExporter) topQueriesExporter).getDeleteAfter()
-                    );
-                    for (Map.Entry<String, IndexMetadata> entry : indexMetadataMap.entrySet()) {
-                        String indexName = entry.getKey();
-                        if (isTopQueriesIndex(indexName, entry.getValue()) && entry.getValue().getCreationDate() < expirationMillisLong) {
-                            // delete this index
-                            localIndexExporter.deleteSingleIndex(indexName, client);
-                        }
-                    }
-                }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
-            });
-        }
-    }
-
-    /**
-     * Deletes all Top N local indices
-     *
-     * @param client OpenSearch Client
-     * @param localIndexExporter the exporter to handle the local index operations
-     */
-    void deleteAllTopNIndices(final Client client, final LocalIndexExporter localIndexExporter) {
-        final ClusterStateRequest clusterStateRequest = IndexDiscoveryHelper.createClusterStateRequest(IndicesOptions.strictExpand());
-
-        client.admin().cluster().state(clusterStateRequest, ActionListener.wrap(clusterStateResponse -> {
-            clusterStateResponse.getState()
-                .metadata()
-                .indices()
-                .entrySet()
-                .stream()
-                .filter(entry -> isTopQueriesIndex(entry.getKey(), entry.getValue()))
-                .forEach(entry -> localIndexExporter.deleteSingleIndex(entry.getKey(), client));
-        }, exception -> { logger.error("Error while deleting expired top_queries-* indices: ", exception); }));
-    }
-
-    /**
      * Set query shape generator
      */
     public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
         this.queryShapeGenerator = queryShapeGenerator;
+    }
+
+    /**
+     * Sets the {@link LocalIndexLifecycleManager} instance.
+     * <p>
+     * <strong>Note:</strong> This method is intended for testing purposes only.
+     * Production code should rely on the instance created and managed internally
+     * by the constructor.
+     *
+     * @param localIndexLifecycleManager the mock or test instance to use
+     */
+    void setLocalIndexLifecycleManager(final LocalIndexLifecycleManager localIndexLifecycleManager) {
+        this.localIndexLifecycleManager = localIndexLifecycleManager;
+    }
+
+    /**
+     * Update remote repository exporter with the given settings
+     */
+    private void updateRemoteExporterEnabled(Boolean enabled) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setEnabled(enabled != null ? enabled : false);
+        }
+    }
+
+    private void updateRemoteExporterRepository(String repository) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setRepositoryName(repository);
+        }
+    }
+
+    private void updateRemoteExporterPath(String path) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setBasePath(path);
+        }
+    }
+
+    /**
+     * Gets the {@link LocalIndexLifecycleManager} instance.
+     */
+    LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
+        return localIndexLifecycleManager;
     }
 }

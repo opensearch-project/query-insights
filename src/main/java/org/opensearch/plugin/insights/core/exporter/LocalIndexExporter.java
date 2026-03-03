@@ -8,42 +8,31 @@
 
 package org.opensearch.plugin.insights.core.exporter;
 
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_QUERIES_INDEX_PATTERN_GLOB;
-
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.ExceptionsHelper;
 import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
-import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
-import org.opensearch.action.admin.indices.template.get.GetComposableIndexTemplateAction;
-import org.opensearch.action.admin.indices.template.put.PutComposableIndexTemplateAction;
+import org.opensearch.action.bulk.BulkItemResponse;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
-import org.opensearch.action.support.clustermanager.AcknowledgedResponse;
 import org.opensearch.cluster.ClusterState;
-import org.opensearch.cluster.metadata.ComposableIndexTemplate;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.common.compress.CompressedXContent;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.index.IndexNotFoundException;
+import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -62,12 +51,9 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     private final ClusterService clusterService;
     private final String indexMapping;
     private DateTimeFormatter indexPattern;
-    private int deleteAfter;
     private final String id;
     private static final int DEFAULT_NUMBER_OF_SHARDS = 1;
     private static final String DEFAULT_AUTO_EXPAND_REPLICAS = "0-2";
-    private static final String TEMPLATE_NAME = "query_insights_top_queries_template";
-    private long templatePriority;
 
     /**
      * Constructor
@@ -90,8 +76,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         this.indexPattern = indexPattern;
         this.indexMapping = indexMapping;
         this.id = id;
-        this.deleteAfter = DEFAULT_DELETE_AFTER_VALUE;
-        this.templatePriority = DEFAULT_TEMPLATE_PRIORITY;
     }
 
     /**
@@ -140,24 +124,8 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         try {
             final String indexName = buildLocalIndexName();
             if (!checkIndexExists(indexName)) {
-                // First ensure the template exists, then create the index
-                ensureTemplateExists().whenComplete((templateCreated, templateException) -> {
-                    if (templateException != null) {
-                        logger.error("Error ensuring template exists:", templateException);
-                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
-                    }
-
-                    // Proceed with index creation even if there was a template error
-                    // The template might already exist or might be created by another node
-                    try {
-                        createIndexAndBulk(indexName, records);
-                    } catch (IOException ioe) {
-                        logger.error("Error creating index:", ioe);
-                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
-                    }
-                });
+                createIndexAndBulk(indexName, records);
             } else {
-                // Index already exists, proceed with bulk export
                 bulk(indexName, records);
             }
         } catch (IOException e) {
@@ -214,24 +182,70 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         });
     }
 
+    /**
+     * Bulk index records to the specified index with default string source serialization.
+     * This method defaults useObjectSource to false.
+     *
+     * @param indexName Name of the index to bulk records to
+     * @param records List of {@link SearchQueryRecord} to index
+     * @throws IOException If there's an error during bulk indexing
+     */
     void bulk(final String indexName, final List<SearchQueryRecord> records) throws IOException {
+        bulk(indexName, records, false);
+    }
+
+    /**
+     * Bulk index records to the specified index
+     *
+     * @param indexName Name of the index to bulk records to
+     * @param records List of {@link SearchQueryRecord} to index
+     * @param useObjectSource If true, serializes the SOURCE attribute as a {@link org.opensearch.search.builder.SearchSourceBuilder} object;
+     *                       if false, serializes it as a string representation {@link org.opensearch.plugin.insights.rules.model.SourceString}. Used for handling mapping conflicts.
+     * @throws IOException If there's an error during bulk indexing
+     */
+    void bulk(final String indexName, final List<SearchQueryRecord> records, boolean useObjectSource) throws IOException {
         final BulkRequestBuilder bulkRequestBuilder = client.prepareBulk().setTimeout(TimeValue.timeValueMinutes(1));
         for (SearchQueryRecord record : records) {
             bulkRequestBuilder.add(
                 new IndexRequest(indexName).id(record.getId())
-                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .source(record.toXContentForExport(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS, useObjectSource))
             );
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
             @Override
-            public void onResponse(BulkResponse bulkItemResponses) {}
+            public void onResponse(BulkResponse bulkResponse) {
+                if (!bulkResponse.hasFailures()) {
+                    return;
+                }
+                if (!useObjectSource && hasMapperParsingException(bulkResponse)) {
+                    logger.debug("Bulk failed with mapper parsing exception, retrying with object source");
+                    try {
+                        bulk(indexName, records, true);
+                    } catch (IOException ioe) {
+                        OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                        logger.error("Failed to retry bulk operation: ", ioe);
+                    }
+                } else {
+                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                    logger.error("Failed to execute bulk operation: {}", bulkResponse.buildFailureMessage());
+                }
+            }
 
             @Override
             public void onFailure(Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
-                logger.error("Failed to execute bulk operation for query insights data: ", e);
+                logger.error("Failed to execute bulk operation: ", e);
             }
         });
+    }
+
+    private boolean hasMapperParsingException(BulkResponse bulkResponse) {
+        for (BulkItemResponse item : bulkResponse) {
+            if (item.isFailed() && item.getFailure().getCause() instanceof MapperParsingException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -250,48 +264,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
     String buildLocalIndexName() {
         ZonedDateTime currentTime = ZonedDateTime.now(ZoneOffset.UTC);
         return IndexDiscoveryHelper.buildLocalIndexName(indexPattern, currentTime);
-    }
-
-    /**
-     * Set local index exporter data retention period
-     *
-     * @param deleteAfter the number of days after which Top N local indices should be deleted
-     */
-    public void setDeleteAfter(final int deleteAfter) {
-        this.deleteAfter = deleteAfter;
-    }
-
-    /**
-     * Get local index exporter data retention period
-     *
-     * @return the number of days after which Top N local indices should be deleted
-     */
-    public int getDeleteAfter() {
-        return deleteAfter;
-    }
-
-    /**
-     * Deletes the specified index and logs any failure that occurs during the operation.
-     *
-     * @param indexName The name of the index to delete.
-     * @param client    The OpenSearch client used to perform the deletion.
-     */
-    public void deleteSingleIndex(String indexName, Client client) {
-        Logger logger = LogManager.getLogger();
-        client.admin().indices().delete(new DeleteIndexRequest(indexName), new ActionListener<>() {
-            @Override
-            public void onResponse(AcknowledgedResponse acknowledgedResponse) {}
-
-            @Override
-            public void onFailure(Exception e) {
-                Throwable cause = ExceptionsHelper.unwrapCause(e);
-                if (cause instanceof IndexNotFoundException) {
-                    return;
-                }
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_DELETE_FAILURES);
-                logger.error("Failed to delete index '{}': ", indexName, e);
-            }
-        });
     }
 
     /**
@@ -325,122 +297,6 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         }
 
         return indexMapping;
-    }
-
-    /**
-     * Ensures that the template exists. This method first checks if the template exists and
-     * only creates it if it doesn't.
-     *
-     * @return CompletableFuture that completes when the template check/creation is done
-     */
-    CompletableFuture<Boolean> ensureTemplateExists() {
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
-        // First check if the template already exists
-        GetComposableIndexTemplateAction.Request getRequest = new GetComposableIndexTemplateAction.Request();
-
-        client.execute(GetComposableIndexTemplateAction.INSTANCE, getRequest, new ActionListener<>() {
-            @Override
-            public void onResponse(GetComposableIndexTemplateAction.Response response) {
-                // If the template exists and priority has not been changed, we don't need to create/update it
-                if (response.indexTemplates().containsKey(TEMPLATE_NAME)
-                    && response.indexTemplates().get(TEMPLATE_NAME).priority() == templatePriority) {
-                    logger.debug("Template [{}] already exists, skipping creation", TEMPLATE_NAME);
-                    future.complete(true);
-                    return;
-                }
-
-                // Template doesn't exist, create it
-                createTemplate(future);
-            }
-
-            @Override
-            public void onFailure(Exception e) {
-                // If we can't retrieve the template info, try creating it anyway
-                logger.warn("Failed to check if template [{}] exists: {}", TEMPLATE_NAME, e.getMessage());
-                createTemplate(future);
-            }
-        });
-
-        return future;
-    }
-
-    /**
-     * Helper method to create the template
-     *
-     * @param future The CompletableFuture to complete when done
-     */
-    void createTemplate(CompletableFuture<Boolean> future) {
-        try {
-            // Create a V2 template (ComposableIndexTemplate)
-            CompressedXContent compressedMapping = new CompressedXContent(readIndexMappings());
-
-            // Create template component
-            org.opensearch.cluster.metadata.Template template = new org.opensearch.cluster.metadata.Template(
-                Settings.builder()
-                    .put("index.number_of_shards", DEFAULT_NUMBER_OF_SHARDS)
-                    .put("index.auto_expand_replicas", DEFAULT_AUTO_EXPAND_REPLICAS)
-                    .build(),
-                compressedMapping,
-                null
-            );
-
-            // Create the composable template
-            ComposableIndexTemplate composableTemplate = new ComposableIndexTemplate(
-                Collections.singletonList(TOP_QUERIES_INDEX_PATTERN_GLOB),
-                template,
-                null,
-                templatePriority, // Priority using configured value
-                null,
-                null
-            );
-
-            // Use the V2 API to put the template
-            PutComposableIndexTemplateAction.Request request = new PutComposableIndexTemplateAction.Request(TEMPLATE_NAME).indexTemplate(
-                composableTemplate
-            );
-
-            client.execute(PutComposableIndexTemplateAction.INSTANCE, request, new ActionListener<>() {
-                @Override
-                public void onResponse(AcknowledgedResponse response) {
-                    if (response.isAcknowledged()) {
-                        logger.info("Successfully created or updated template [{}] with priority {}", TEMPLATE_NAME, templatePriority);
-                        future.complete(true);
-                    } else {
-                        logger.warn("Failed to create or update template [{}]", TEMPLATE_NAME);
-                        future.complete(false);
-                    }
-                }
-
-                @Override
-                public void onFailure(Exception e) {
-                    logger.error("Error creating or updating template [{}]", TEMPLATE_NAME, e);
-                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
-                    future.completeExceptionally(e);
-                }
-            });
-        } catch (Exception e) {
-            logger.error("Failed to manage template", e);
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_EXCEPTIONS);
-            future.completeExceptionally(e);
-        }
-    }
-
-    /**
-     * Set the template priority for the exporter
-     *
-     * @param templatePriority New template priority value
-     */
-    public void setTemplatePriority(final long templatePriority) {
-        this.templatePriority = templatePriority;
-    }
-
-    /**
-     * Get the current template priority
-     *
-     * @return Current template priority value
-     */
-    public long getTemplatePriority() {
-        return templatePriority;
     }
 
 }

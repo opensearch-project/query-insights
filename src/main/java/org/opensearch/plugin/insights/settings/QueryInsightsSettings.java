@@ -260,17 +260,13 @@ public class QueryInsightsSettings {
      */
     public static final String DEFAULT_TOP_QUERIES_EXPORTER_TYPE = SinkType.LOCAL_INDEX.toString();
     /**
-     * Default template priority for top queries indices
-     */
-    public static final long DEFAULT_TEMPLATE_PRIORITY = 1847L;
-    /**
      * Default Top N local indices retention period in days
      */
     public static final int DEFAULT_DELETE_AFTER_VALUE = 7;
     /**
      * Minimum Top N local indices retention period in days
      */
-    public static final int MIN_DELETE_AFTER_VALUE = 1;
+    public static final int MIN_DELETE_AFTER_VALUE = 0;
     /**
      * Maximum Top N local indices retention period in days
      */
@@ -300,6 +296,29 @@ public class QueryInsightsSettings {
     );
 
     /**
+     * Remote repository exporter settings
+     */
+    public static final Setting<String> REMOTE_EXPORTER_REPOSITORY = Setting.simpleString(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.repository",
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    public static final Setting<String> REMOTE_EXPORTER_PATH = Setting.simpleString(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.path",
+        "query-insights",
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    public static final Setting<Boolean> REMOTE_EXPORTER_ENABLED = Setting.boolSetting(
+        TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.enabled",
+        false,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Settings for the list of indices that excluded from top queries.
      */
     public static final Setting<List<String>> TOP_N_QUERIES_EXCLUDED_INDICES = Setting.listSetting(
@@ -316,14 +335,41 @@ public class QueryInsightsSettings {
     public static final String TOP_QUERIES_INDEX_PATTERN_GLOB = TOP_QUERIES_INDEX_PREFIX + "-*";
 
     /**
-     * Setting for Top N local indices template priority
+     * Default maximum source length before truncation (in characters)
      */
-    public static final Setting<Long> TOP_N_EXPORTER_TEMPLATE_PRIORITY = Setting.longSetting(
-        TOP_N_QUERIES_EXPORTER_PREFIX + ".template_priority",
-        DEFAULT_TEMPLATE_PRIORITY,
-        0L, // min value is 0
+    public static final int DEFAULT_MAX_SOURCE_LENGTH = 524288; // 1MB
+    /**
+     * Maximum allowed source length (in characters)
+     */
+    public static final int MAX_SOURCE_LENGTH = Integer.MAX_VALUE;
+
+    /**
+     * Setting for maximum source length before truncation.
+     * The value is measured in characters.
+     */
+    public static final Setting<Integer> TOP_N_QUERIES_MAX_SOURCE_LENGTH = Setting.intSetting(
+        TOP_N_QUERIES_SETTING_PREFIX + ".max_source_length",
+        DEFAULT_MAX_SOURCE_LENGTH,
+        0, // Empty source
+        MAX_SOURCE_LENGTH,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
+    );
+
+    /**
+     * Default filter by mode for top queries RBAC filtering
+     */
+    public static final String DEFAULT_FILTER_BY_MODE = "none";
+
+    /**
+     * Setting for RBAC filter mode on top queries API.
+     * Valid values: none, username, backend_roles
+     */
+    public static final Setting<String> TOP_N_QUERIES_FILTER_BY_MODE = Setting.simpleString(
+        TOP_N_QUERIES_SETTING_PREFIX + ".filter_by_mode",
+        DEFAULT_FILTER_BY_MODE,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
     );
 
     /**

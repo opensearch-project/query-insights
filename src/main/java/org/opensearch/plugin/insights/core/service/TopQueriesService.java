@@ -24,7 +24,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -41,8 +40,11 @@ import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -55,6 +57,7 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.telemetry.metrics.tags.Tags;
@@ -72,6 +75,7 @@ public class TopQueriesService {
      * These shared components are uniquely identified by TOP_QUERIES_EXPORTER_ID and TOP_QUERIES_READER_ID
      */
     public static final String TOP_QUERIES_EXPORTER_ID = "top_queries_exporter";
+    public static final String TOP_QUERIES_REMOTE_EXPORTER_ID = "top_queries_remote_exporter";
     public static final String TOP_QUERIES_READER_ID = "top_queries_reader";
     /**
      * Tag value used to identify local index mappings that are specifically created
@@ -133,6 +137,8 @@ public class TopQueriesService {
 
     private final QueryGrouper queryGrouper;
 
+    private int maxSourceLength;
+
     TopQueriesService(
         final Client client,
         final MetricType metricType,
@@ -159,6 +165,7 @@ public class TopQueriesService {
             topQueriesStore,
             topNSize
         );
+        this.maxSourceLength = QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
     }
 
     /**
@@ -169,6 +176,16 @@ public class TopQueriesService {
     public void setTopNSize(final int topNSize) {
         this.topNSize = topNSize;
         this.queryGrouper.updateTopNSize(topNSize);
+    }
+
+    /**
+     * Set the maximum source length before truncation
+     *
+     * @param maxSourceLength maximum length for source strings
+     */
+    public void setMaxSourceLength(final int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
+        this.queryGrouper.setMaxSourceLength(maxSourceLength);
     }
 
     /**
@@ -207,6 +224,10 @@ public class TopQueriesService {
      */
     public void setEnabled(final boolean enabled) {
         this.enabled = enabled;
+        // Clear all snapshots when disabling to prevent stale queries from appearing when re-enabled
+        if (!enabled) {
+            drain();
+        }
     }
 
     /**
@@ -271,25 +292,6 @@ public class TopQueriesService {
     }
 
     /**
-     * Lambda function to mark if a record is internal
-     */
-    private final Predicate<SearchQueryRecord> checkIfInternal = (record) -> {
-        Map<Attribute, Object> attributes = record.getAttributes();
-        Object indicesObject = attributes.get(Attribute.INDICES);
-        if (indicesObject instanceof Object[]) {
-            Object[] indices = (Object[]) indicesObject;
-            return Arrays.stream(indices).noneMatch(index -> {
-                if (index instanceof String) {
-                    String indexString = (String) index;
-                    return indexString.contains(TOP_QUERIES_INDEX_PREFIX);
-                }
-                return false;
-            });
-        }
-        return true;
-    };
-
-    /**
      * Get all top queries records that are in the current top n queries store
      * Optionally include top N records from the last window.
      * <p>
@@ -317,6 +319,12 @@ public class TopQueriesService {
                     .addTag(METRIC_TYPE_TAG, this.metricType.name())
                     .addTag(GROUPBY_TAG, this.queryGrouper.getGroupingType().name())
             );
+
+        // Return empty results when service is disabled
+        if (!enabled) {
+            return new ArrayList<>();
+        }
+
         // read from window snapshots
         final List<SearchQueryRecord> queries = new ArrayList<>(topQueriesCurrentSnapshot.get());
         if (includeLastWindow) {
@@ -330,7 +338,7 @@ public class TopQueriesService {
             final ZonedDateTime end = ZonedDateTime.parse(to);
             Predicate<SearchQueryRecord> timeFilter = element -> start.toInstant().toEpochMilli() <= element.getTimestamp()
                 && element.getTimestamp() <= end.toInstant().toEpochMilli();
-            filterQueries = queries.stream().filter(checkIfInternal.and(timeFilter)).collect(Collectors.toList());
+            filterQueries = queries.stream().filter(timeFilter).collect(Collectors.toList());
         }
 
         // Filter based on the id, if provided
@@ -367,6 +375,30 @@ public class TopQueriesService {
         final Boolean verbose,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
+        getTopQueriesRecordsFromIndex(from, to, id, verbose, null, null, listener);
+    }
+
+    /**
+     * Get all historical top queries records from local index with optional RBAC filtering
+     * pushed into the search query.
+     *
+     * @param from start timestamp
+     * @param to   end timestamp
+     * @param id search query record id
+     * @param verbose whether to return full output
+     * @param username optional username for RBAC filtering
+     * @param backendRoles optional backend roles for RBAC filtering
+     * @param listener listener to be called when records are fetched
+     */
+    public void getTopQueriesRecordsFromIndex(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader == null) {
             listener.onResponse(new ArrayList<>());
@@ -374,12 +406,11 @@ public class TopQueriesService {
         }
 
         try {
-            reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
+            reader.read(from, to, id, verbose, metricType, username, backendRoles, new ActionListener<List<SearchQueryRecord>>() {
                 @Override
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {
                         List<SearchQueryRecord> filteredRecords = records.stream()
-                            .filter(checkIfInternal)
                             .sorted((a, b) -> SearchQueryRecord.compare(a, b, metricType) * -1)
                             .collect(Collectors.toList());
                         listener.onResponse(filteredRecords);
@@ -444,6 +475,51 @@ public class TopQueriesService {
             while (topQueriesStore.size() > topNSize) {
                 topQueriesStore.poll();
             }
+            // Add Source Attribute and extract user info for all top queries with truncation
+            for (SearchQueryRecord record : topQueriesStore) {
+                if (record.getAttributes().get(Attribute.SOURCE) == null) {
+                    setSourceAndTruncation(record, maxSourceLength);
+                }
+                if (record.getAttributes().get(Attribute.USERNAME) == null) {
+                    setUserInfo(record);
+                }
+            }
+        }
+    }
+
+    // Add Source and Source Truncated attributes to record
+    public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
+        String sourceString = record.getSearchSourceBuilder().toString();
+        if (maxSourceLength == 0) {
+            record.addAttribute(Attribute.SOURCE, new SourceString(""));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+        } else if (sourceString.length() > maxSourceLength) {
+            record.addAttribute(Attribute.SOURCE, new SourceString(sourceString.substring(0, maxSourceLength)));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+        } else {
+            record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+        }
+    }
+
+    // Add Username, User Roles, and Backend Roles attributes to record
+    public static void setUserInfo(final SearchQueryRecord record) {
+        UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
+        if (userPrincipalContext != null) {
+            UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+            if (userInfo != null) {
+                if (userInfo.getUserName() != null) {
+                    record.addAttribute(Attribute.USERNAME, userInfo.getUserName());
+                }
+                if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
+                    record.addAttribute(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                }
+                if (userInfo.getBackendRoles() != null && !userInfo.getBackendRoles().isEmpty()) {
+                    record.addAttribute(Attribute.BACKEND_ROLES, userInfo.getBackendRoles().toArray(new String[0]));
+                }
+            }
         }
     }
 
@@ -478,6 +554,13 @@ public class TopQueriesService {
             QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
             if (exporter != null) {
                 threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> exporter.export(history));
+            }
+
+            // export to remote repository independently if enabled
+            QueryInsightsExporter remoteRepositoryExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID);
+            if (remoteRepositoryExporter != null && ((RemoteRepositoryExporter) remoteRepositoryExporter).isEnabled()) {
+                threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
+                    .execute(() -> ((RemoteRepositoryExporter) remoteRepositoryExporter).export(history, metricType));
             }
         }
     }

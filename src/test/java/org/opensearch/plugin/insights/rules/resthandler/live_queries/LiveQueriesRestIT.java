@@ -24,6 +24,7 @@ import org.apache.logging.log4j.Logger;
 import org.junit.Assert;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
+import org.opensearch.client.ResponseException;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -121,7 +122,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
         String nodeId = nodes.keySet().iterator().next();
 
-        String[] params = new String[] { "?size=1", "", "?size=0", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
+        String[] params = new String[] { "?size=1", "", "?sort=cpu", "?verbose=false", "?nodeId=" + nodeId };
         Map<String, Boolean> foundParams = new java.util.HashMap<>();
         for (String param : params) {
             foundParams.put(param, false);
@@ -165,10 +166,16 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
                         if ("?size=0".equals(param)) {
                             ok = pList.isEmpty();
                         } else if ("?verbose=false".equals(param)) {
-                            ok = pList.stream().allMatch(q -> !((Map<String, Object>) q).containsKey("description"));
+                            ok = pList.stream().allMatch(q -> {
+                                Map<String, Object> coordinator = (Map<String, Object>) ((Map<String, Object>) q).get("coordinator_task");
+                                return coordinator == null || !coordinator.containsKey("description");
+                            });
                         } else if (param.startsWith("?nodeId=")) {
                             String filterNode = param.substring("?nodeId=".length());
-                            ok = pList.stream().allMatch(q -> filterNode.equals(((Map<String, Object>) q).get("node_id")));
+                            ok = pList.stream().allMatch(q -> {
+                                Map<String, Object> coordinator = (Map<String, Object>) ((Map<String, Object>) q).get("coordinator_task");
+                                return coordinator != null && filterNode.equals(coordinator.get("node_id"));
+                            });
                         } else {
                             ok = !pList.isEmpty();
                         }
@@ -202,47 +209,40 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             logger.info("Test detected live queries, total: {}", liveQueries.size());
             assertTrue("Should have found at least one live query", !liveQueries.isEmpty());
 
-            // Validate the format of live queries based on LiveQueries.java and LiveQueriesResponse.java
+            // Validate the format of live queries based on LiveQueryRecord
             for (Map<String, Object> query : liveQueries) {
                 // Verify required fields are present
-                assertTrue("Query should have timestamp", query.containsKey("timestamp"));
                 assertTrue("Query should have id", query.containsKey("id"));
-                assertTrue("Query should have node_id", query.containsKey("node_id"));
-                assertTrue("Query should have measurements", query.containsKey("measurements"));
-                assertTrue("Query should have description", query.containsKey("description"));
-
-                // Validate timestamp is a number
-                assertTrue("Timestamp should be a number", query.get("timestamp") instanceof Number);
+                assertTrue("Query should have status", query.containsKey("status"));
+                assertTrue("Query should have start_time", query.containsKey("start_time"));
+                assertTrue("Query should have total_latency_millis", query.containsKey("total_latency_millis"));
+                assertTrue("Query should have total_cpu_nanos", query.containsKey("total_cpu_nanos"));
+                assertTrue("Query should have total_memory_bytes", query.containsKey("total_memory_bytes"));
+                assertTrue("Query should have coordinator_task", query.containsKey("coordinator_task"));
+                assertTrue("Query should have shard_tasks", query.containsKey("shard_tasks"));
 
                 // Validate id is a string
                 assertTrue("ID should be a string", query.get("id") instanceof String);
 
-                // Validate node_id is a string
-                assertTrue("Node ID should be a string", query.get("node_id") instanceof String);
+                // Validate status is a string
+                assertTrue("Status should be a string", query.get("status") instanceof String);
 
-                // Validate measurements structure
-                Map<String, Object> measurements = (Map<String, Object>) query.get("measurements");
-                assertTrue("Measurements should include latency", measurements.containsKey("latency"));
-                assertTrue("Measurements should include cpu", measurements.containsKey("cpu"));
-                assertTrue("Measurements should include memory", measurements.containsKey("memory"));
+                // Validate start_time is a number
+                assertTrue("Start time should be a number", query.get("start_time") instanceof Number);
 
-                // Validate each measurement's structure
-                for (String metricType : new String[] { "latency", "cpu", "memory" }) {
-                    Map<String, Object> metric = (Map<String, Object>) measurements.get(metricType);
-                    assertTrue("Metric should have number", metric.containsKey("number"));
-                    assertTrue("Metric should have count", metric.containsKey("count"));
-                    assertTrue("Metric should have aggregationType", metric.containsKey("aggregationType"));
+                // Validate metrics are numbers
+                assertTrue("Total latency should be a number", query.get("total_latency_millis") instanceof Number);
+                assertTrue("Total CPU should be a number", query.get("total_cpu_nanos") instanceof Number);
+                assertTrue("Total memory should be a number", query.get("total_memory_bytes") instanceof Number);
 
-                    // Validate number is a number
-                    assertTrue("Number should be a number", metric.get("number") instanceof Number);
+                // Validate coordinator_task structure
+                Map<String, Object> coordinator = (Map<String, Object>) query.get("coordinator_task");
+                assertTrue("Coordinator should have task_id", coordinator.containsKey("task_id"));
+                assertTrue("Coordinator should have node_id", coordinator.containsKey("node_id"));
+                assertTrue("Coordinator should have action", coordinator.containsKey("action"));
 
-                    // Validate count is a number
-                    assertTrue("Count should be a number", metric.get("count") instanceof Number);
-
-                    // Validate aggregationType is a string
-                    assertTrue("AggregationType should be a string", metric.get("aggregationType") instanceof String);
-                }
-                assertTrue("Description should be a string", query.get("description") instanceof String);
+                // Validate shard_tasks is a list
+                assertTrue("Shard tasks should be a list", query.get("shard_tasks") instanceof List);
             }
         } else {
             fail("No live queries found.");
@@ -267,7 +267,7 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
         String nodeId = nodes.keySet().iterator().next();
 
         // Define parameter combinations to test
-        String[] params = new String[] { "", "?verbose=false", "?sort=cpu", "?size=1", "?size=0", "?nodeId=" + nodeId };
+        String[] params = new String[] { "", "?verbose=false", "?sort=cpu", "?size=1", "?nodeId=" + nodeId };
         for (String param : params) {
             String uri = QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param;
             Request req = new Request("GET", uri);
@@ -275,6 +275,117 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             assertEquals("Status for param '" + param + "'", 200, res.getStatusLine().getStatusCode());
             Map<String, Object> map = entityAsMap(res);
             assertTrue("Response should contain live_queries for param '" + param + "'", map.containsKey("live_queries"));
+        }
+    }
+
+    /**
+     * Test invalid sort parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testInvalidSortParameter() throws IOException {
+        String[] invalidSortValues = {
+            "invalid",
+            "{\"script\":\"doc['field'].value\"}",
+            "<script>alert('xss')</script>",
+            "../../../etc/passwd" };
+
+        for (String sortValue : invalidSortValues) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI);
+            request.addParameter("sort", sortValue);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with invalid sort parameter: " + sortValue);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                assertTrue(
+                    "Error message should contain sort validation error for: " + sortValue,
+                    e.getMessage().contains("invalid sort metric type")
+                );
+            }
+        }
+    }
+
+    /**
+     * Test invalid size parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testInvalidSizeParameter() throws IOException {
+        String[] invalidSizeParams = { "?size=-1", "?size=invalid" };
+
+        for (String param : invalidSizeParams) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with invalid size parameter: " + param);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                if (param.contains("size=-1")) {
+                    assertTrue(
+                        "Error message should contain 'invalid size parameter [-1]' for: " + param,
+                        e.getMessage().contains("invalid size parameter [-1]")
+                    );
+                } else if (param.contains("size=invalid")) {
+                    assertTrue(
+                        "Error message should contain parameter parsing error for: " + param,
+                        e.getMessage().contains("Failed to parse int parameter [size] with value [invalid]")
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Test multiple invalid parameters
+     *
+     * @throws IOException IOException
+     */
+    public void testMultipleInvalidParameters() throws IOException {
+        String[] multipleInvalidParams = { "?verbose=invalid&size=-1", "?sort=invalid&size=-1" };
+
+        for (String param : multipleInvalidParams) {
+            Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + param);
+            try {
+                client().performRequest(request);
+                fail("Should not succeed with multiple invalid parameters: " + multipleInvalidParams);
+            } catch (ResponseException e) {
+                assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
+                if (param.contains("verbose=invalid")) {
+                    assertTrue(
+                        "Error message should contain verbose parameter error",
+                        e.getMessage().contains("Failed to parse value [invalid] as only [true] or [false] are allowed")
+                    );
+                } else if (param.contains("sort=invalid")) {
+                    assertTrue(
+                        "Error message should contain sort parameter error",
+                        e.getMessage().contains("invalid sort metric type [invalid]")
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Test valid parameters with unexpected extra parameter
+     *
+     * @throws IOException IOException
+     */
+    public void testValidParametersWithExtraParams() throws IOException {
+        Request nodesRequest = new Request("GET", "/_nodes");
+        Response nodesResponse = client().performRequest(nodesRequest);
+        Map<String, Object> nodesMap = entityAsMap(nodesResponse);
+        Map<String, Object> nodes = (Map<String, Object>) nodesMap.get("nodes");
+        String nodeId = nodes.keySet().iterator().next();
+
+        // Test all expected parameters plus an unexpected one
+        String paramsWithExtra = "?sort=latency&verbose=true&size=5&nodeId=" + nodeId + "&unknownParam=value";
+        Request request = new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + paramsWithExtra);
+        try {
+            client().performRequest(request);
+            fail("Should not succeed with an unexpected extra parameter");
+        } catch (ResponseException e) {
+            assertEquals(400, e.getResponse().getStatusLine().getStatusCode());
         }
     }
 
@@ -352,10 +463,27 @@ public class LiveQueriesRestIT extends QueryInsightsRestTestCase {
             + "  }\n"
             + "}";
 
+        try {
+            // Try to delete the index first if it exists
+            Request deleteRequest = new Request("DELETE", "/" + TEST_INDEX);
+            client().performRequest(deleteRequest);
+        } catch (ResponseException e) {
+            // Index doesn't exist, which is fine
+        }
+
         Request createIndexRequest = new Request("PUT", "/" + TEST_INDEX);
         createIndexRequest.setJsonEntity(mappingJson);
-        Response response = client().performRequest(createIndexRequest);
-        assertEquals(200, response.getStatusLine().getStatusCode());
+        try {
+            Response response = client().performRequest(createIndexRequest);
+            assertEquals(200, response.getStatusLine().getStatusCode());
+        } catch (ResponseException e) {
+            if (e.getResponse().getStatusLine().getStatusCode() == 400 && e.getMessage().contains("resource_already_exists_exception")) {
+                // Index already exists, continue with existing index
+                logger.info("Index {} already exists, using existing index", TEST_INDEX);
+            } else {
+                throw e;
+            }
+        }
         logger.info("Created test index with proper mapping");
     }
 

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -171,31 +172,35 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     @SuppressWarnings("unchecked")
     @After
-    public void wipeAllQueryInsightsIndices() throws Exception {
-        Response response = adminClient().performRequest(new Request("GET", "/_cat/indices?format=json&expand_wildcards=all"));
-        MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
-        try (
-            XContentParser parser = mediaType.xContent()
-                .createParser(
-                    NamedXContentRegistry.EMPTY,
-                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                    response.getEntity().getContent()
-                )
-        ) {
-            XContentParser.Token token = parser.nextToken();
-            List<Map<String, Object>> parserList = null;
-            if (token == XContentParser.Token.START_ARRAY) {
-                parserList = parser.listOrderedMap().stream().map(obj -> (Map<String, Object>) obj).collect(Collectors.toList());
-            } else {
-                parserList = Collections.singletonList(parser.mapOrdered());
-            }
+    protected void wipeAllQueryInsightsIndices() throws Exception {
+        try {
+            Response response = adminClient().performRequest(new Request("GET", "/_cat/indices?format=json&expand_wildcards=all"));
+            MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
+            try (
+                XContentParser parser = mediaType.xContent()
+                    .createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        response.getEntity().getContent()
+                    )
+            ) {
+                XContentParser.Token token = parser.nextToken();
+                List<Map<String, Object>> parserList = null;
+                if (token == XContentParser.Token.START_ARRAY) {
+                    parserList = parser.listOrderedMap().stream().map(obj -> (Map<String, Object>) obj).collect(Collectors.toList());
+                } else {
+                    parserList = Collections.singletonList(parser.mapOrdered());
+                }
 
-            for (Map<String, Object> index : parserList) {
-                final String indexName = (String) index.get("index");
-                if (indexName.startsWith(QUERY_INSIGHTS_INDICES_PREFIX)) {
-                    adminClient().performRequest(new Request("DELETE", "/" + indexName));
+                for (Map<String, Object> index : parserList) {
+                    final String indexName = (String) index.get("index");
+                    if (indexName.startsWith(QUERY_INSIGHTS_INDICES_PREFIX)) {
+                        adminClient().performRequest(new Request("DELETE", "/" + indexName));
+                    }
                 }
             }
+        } catch (java.net.ConnectException e) {
+            // Cluster unavailable during cleanup, ignore
         }
     }
 
@@ -213,8 +218,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
-            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 10,\n"
             + "        \"search.insights.top_queries.memory.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.cpu.enabled\" : \"false\",\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"none\"\n"
@@ -226,10 +231,28 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         return "{\n"
             + "    \"persistent\" : {\n"
             + "        \"search.insights.top_queries.latency.enabled\" : \"true\",\n"
-            + "        \"search.insights.top_queries.latency.window_size\" : \"1m\",\n"
-            + "        \"search.insights.top_queries.latency.top_n_size\" : 5,\n"
+            + "        \"search.insights.top_queries.latency.window_size\" : \"5m\",\n"
+            + "        \"search.insights.top_queries.latency.top_n_size\" : 10,\n"
             + "        \"search.insights.top_queries.grouping.group_by\" : \"similarity\",\n"
-            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5\n"
+            + "        \"search.insights.top_queries.grouping.max_groups_excluding_topn\" : 5,\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_name\" : true,\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_type\" : true\n"
+            + "    }\n"
+            + "}";
+    }
+
+    protected String disableFieldNameSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_name\" : false\n"
+            + "    }\n"
+            + "}";
+    }
+
+    protected String disableFieldTypeSettings() {
+        return "{\n"
+            + "    \"persistent\" : {\n"
+            + "        \"search.insights.top_queries.grouping.attributes.field_type\" : false\n"
             + "    }\n"
             + "}";
     }
@@ -297,15 +320,27 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
      * Get a client that targets only the first node to avoid query insights being captured on multiple nodes
      */
     protected RestClient getFirstNodeClient() throws IOException {
-        // Get the first host from the cluster hosts
+        return getNodeClient(0);
+    }
+
+    /**
+     * Get a client that targets a specific node by index
+     * @param nodeIndex the index of the node to target (0-based)
+     * @return RestClient targeting the specified node
+     * @throws IOException if client creation fails
+     */
+    protected RestClient getNodeClient(int nodeIndex) throws IOException {
         List<HttpHost> hosts = getClusterHosts();
         if (hosts.isEmpty()) {
             throw new IllegalStateException("No cluster hosts available");
         }
-        HttpHost firstHost = hosts.get(0);
+        if (nodeIndex < 0 || nodeIndex >= hosts.size()) {
+            throw new IllegalArgumentException("Node index " + nodeIndex + " out of bounds. Available nodes: " + hosts.size());
+        }
+        HttpHost targetHost = hosts.get(nodeIndex);
 
-        // Create a client that only targets the first node
-        RestClientBuilder builder = RestClient.builder(firstHost);
+        // Create a client that only targets the specified node
+        RestClientBuilder builder = RestClient.builder(targetHost);
         if (isHttps()) {
             configureHttpsClient(builder, Settings.EMPTY);
         } else {
@@ -313,6 +348,15 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
         builder.setStrictDeprecationMode(false);
         return builder.build();
+    }
+
+    /**
+     * Get the number of nodes in the cluster
+     * @return number of nodes
+     * @throws IOException if request fails
+     */
+    protected int getClusterNodeCount() throws IOException {
+        return getClusterHosts().size();
     }
 
     protected void doSearch(int times) throws IOException {
@@ -385,9 +429,31 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                     + "  }\n"
                     + "}";
 
+            case "match_text_field":
+                // Match query on a text field
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"message\": \"document\"\n" + "    }\n" + "  }\n" + "}";
+
+            case "match_keyword_field":
+                // Match query on a keyword field
+                return "{\n" + "  \"query\": {\n" + "    \"match\": {\n" + "      \"user.id\": \"abcdef\"\n" + "    }\n" + "  }\n" + "}";
+
             default:
                 throw new IllegalArgumentException("Unknown query type: " + queryType);
         }
+    }
+
+    protected int countOccurrences(String fullString, String subString) {
+        if (subString == null || subString.isEmpty()) return 0;
+
+        int count = 0;
+        int index = 0;
+
+        while ((index = fullString.indexOf(subString, index)) != -1) {
+            count++;
+            index += subString.length(); // move past the match
+        }
+
+        return count;
     }
 
     protected int countTopQueries(String json, String keyword) {
@@ -409,20 +475,25 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         long startTime = System.currentTimeMillis();
 
         while (!isEmpty && (System.currentTimeMillis() - startTime) < timeoutMillis) {
-            Request request = new Request("GET", "/_insights/top_queries?pretty");
-            Response response = client().performRequest(request);
+            try {
+                Request request = new Request("GET", "/_insights/top_queries?pretty");
+                Response response = client().performRequest(request);
 
-            if (response.getStatusLine().getStatusCode() != 200) {
-                Thread.sleep(1000); // Sleep before retrying
-                continue;
-            }
+                if (response.getStatusLine().getStatusCode() != 200) {
+                    Thread.sleep(2000); // Sleep before retrying
+                    continue;
+                }
 
-            String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
 
-            if (countTopQueries(responseBody, DEFAULT_KEYWORD) == 0) {
-                isEmpty = true;
-            } else {
-                Thread.sleep(1000); // Sleep before retrying
+                if (countTopQueries(responseBody, DEFAULT_KEYWORD) == 0) {
+                    isEmpty = true;
+                } else {
+                    Thread.sleep(2000); // Sleep before retrying
+                }
+            } catch (Exception e) {
+                // Ignore exceptions during cleanup and retry
+                Thread.sleep(2000);
             }
         }
 
@@ -431,19 +502,131 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
-    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
-        assertTopQueriesCount(expectedTopQueriesCount, type, DEFAULT_KEYWORD);
+    /**
+     * Navigate through nested maps using a path of keys.
+     *
+     * @param map the starting map
+     * @param keys the path of keys to navigate (e.g., "persistent", "search", "insights")
+     * @return the value at the end of the path, or null if any key in the path is not found
+     */
+    @SuppressWarnings("unchecked")
+    private Object navigateMap(Map<String, Object> map, String... keys) {
+        Map<String, Object> current = map;
+        for (int i = 0; i < keys.length - 1; i++) {
+            Object value = current.get(keys[i]);
+            if (!(value instanceof Map)) {
+                return null;
+            }
+            current = (Map<String, Object>) value;
+        }
+        return current.get(keys[keys.length - 1]);
     }
 
-    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type, String index) throws IOException, InterruptedException {
+    /**
+     * Get the enabled setting value for a specific metric type from cluster settings.
+     *
+     * @param type the metric type (e.g., "latency", "cpu", "memory")
+     * @return Boolean.TRUE if enabled, Boolean.FALSE if explicitly disabled, null if setting not found
+     * @throws IOException if request fails
+     */
+    private Boolean getMetricEnabledValue(String type) throws IOException {
+        String filterPath = "persistent.search.insights.top_queries." + type + ".enabled";
+        Request request = new Request("GET", "/_cluster/settings?include_defaults=false&filter_path=" + filterPath);
+        Response response = client().performRequest(request);
+
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                response.getEntity().getContent()
+            )
+        ) {
+            Map<String, Object> settingsMap = parser.map();
+
+            // Navigate: persistent -> search -> insights -> top_queries -> {type} -> enabled
+            Object enabledValue = navigateMap(settingsMap, "persistent", "search", "insights", "top_queries", type, "enabled");
+            if (enabledValue == null) {
+                return null;
+            }
+
+            return "true".equals(String.valueOf(enabledValue)) || Boolean.TRUE.equals(enabledValue);
+        }
+    }
+
+    /**
+     * Wait for settings to be disabled by verifying the cluster settings API.
+     * This ensures that the enableCollect flag has been set to false before proceeding.
+     * Uses assertBusy with 15-second timeout (10s for cluster state propagation + 5s drain interval).
+     *
+     * @param type the metric type to verify is disabled (e.g., "latency", "cpu", "memory")
+     * @throws Exception if request fails or timeout
+     */
+    protected void waitForSettingsDisabled(String type) throws Exception {
+        assertBusy(() -> {
+            Boolean isEnabled = getMetricEnabledValue(type);
+            if (Boolean.TRUE.equals(isEnabled)) {
+                throw new AssertionError("Expected metric type [" + type + "] to be disabled, but it's still enabled");
+            }
+        }, 15, TimeUnit.SECONDS);
+
+        // Wait one drain interval to ensure at least one drain cycle runs with the new flag
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        logger.info("Settings verified disabled for type [" + type + "]");
+    }
+
+    /**
+     * Wait for non-collection settings (like excluded indices) to propagate.
+     * These settings are applied synchronously at request time but may have a small
+     * propagation delay from cluster settings to the listener.
+     *
+     * @throws InterruptedException if interrupted during wait
+     */
+    protected void waitForNonCollectionSettingsPropagation() throws InterruptedException {
+        // Small wait to allow cluster settings to propagate to listeners
+        // These settings don't require drain interval since they're checked synchronously
+        Thread.sleep(1000);
+    }
+
+    /**
+     * Wait for settings to propagate by verifying the cluster settings API
+     * and waiting one drain interval for internal propagation to the TopQueriesService.
+     * This ensures that the enableCollect flag has been set before executing test searches.
+     * Uses assertBusy with 15-second timeout (10s for cluster state propagation + 5s drain interval).
+     *
+     * @param type the metric type to verify (e.g., "latency", "cpu", "memory")
+     * @throws Exception if request fails or timeout
+     */
+    protected void waitForSettingsPropagation(String type) throws Exception {
+        assertBusy(() -> {
+            Boolean isEnabled = getMetricEnabledValue(type);
+            if (!Boolean.TRUE.equals(isEnabled)) {
+                throw new AssertionError("Expected metric type [" + type + "] to be enabled, but current value is: " + isEnabled);
+            }
+        }, 15, TimeUnit.SECONDS);
+
+        // Wait one drain interval to ensure at least one drain cycle runs with the new enableCollect flag
+        Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        logger.info("Settings verified for type [" + type + "], enabled=true");
+    }
+
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type) throws IOException, InterruptedException {
+        assertTopQueriesCount(expectedTopQueriesCount, type, null);
+    }
+
+    protected void assertTopQueriesCount(int expectedTopQueriesCount, String type, String subString) throws IOException,
+        InterruptedException {
         // Ensure records are drained to the top queries service
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
+        int topNArraySize = 0;
 
         // run five times to make sure the records are drained to the top queries services
         for (int i = 0; i < 5; i++) {
             String responseBody = getTopQueries(type);
-
-            int topNArraySize = countTopQueries(responseBody, index);
+            if (subString != null) {
+                topNArraySize = countOccurrences(responseBody, subString);
+            } else {
+                topNArraySize = countTopQueries(responseBody, DEFAULT_KEYWORD);
+            }
 
             if (topNArraySize < expectedTopQueriesCount) {
                 // Ensure records are drained to the top queries service
@@ -453,7 +636,10 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
             // Validate that all queries are listed separately (no grouping)
             Assert.assertEquals(expectedTopQueriesCount, topNArraySize);
+            return;
         }
+
+        fail(String.format(Locale.ROOT, "Top N queries count [%s] is not equal to expected [%s]", topNArraySize, expectedTopQueriesCount));
     }
 
     protected String getTopQueries(String type) throws IOException {
@@ -563,16 +749,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         client().performRequest(resetReq);
     }
 
-    protected void cleanupIndextemplate() throws IOException, InterruptedException {
-        Thread.sleep(3000);
-
-        try {
-            client().performRequest(new Request("DELETE", "/_index_template"));
-        } catch (ResponseException e) {
-            logger.warning("Failed to delete /_index_template: " + e.getMessage());
-        }
-    }
-
     protected void checkLocalIndices() throws IOException {
         // Retry logic to handle timing issues
         String fullIndexName = null;
@@ -660,51 +836,6 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         }
     }
 
-    protected void checkQueryInsightsIndexTemplate() throws IOException {
-        Request request = new Request("GET", "/_index_template?pretty");
-        Response response = client().performRequest(request);
-        byte[] bytes = response.getEntity().getContent().readAllBytes();
-
-        try (
-            XContentParser parser = JsonXContent.jsonXContent.createParser(
-                NamedXContentRegistry.EMPTY,
-                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                bytes
-            )
-        ) {
-            Map<String, Object> parsed = parser.map();
-
-            List<Map<String, Object>> templates = (List<Map<String, Object>>) parsed.get("index_templates");
-            Assert.assertNotNull("Expected index_templates to exist", templates);
-            Assert.assertFalse("Expected at least one index_template", templates.isEmpty());
-
-            Map<String, Object> firstTemplate = templates.get(0);
-            Assert.assertEquals("query_insights_top_queries_template", firstTemplate.get("name"));
-
-            Map<String, Object> indexTemplate = (Map<String, Object>) firstTemplate.get("index_template");
-
-            List<String> indexPatterns = (List<String>) indexTemplate.get("index_patterns");
-            Assert.assertTrue("Expected index_patterns to include top_queries-*", indexPatterns.contains("top_queries-*"));
-
-            Map<String, Object> template = (Map<String, Object>) indexTemplate.get("template");
-            Map<String, Object> settings = (Map<String, Object>) template.get("settings");
-            Map<String, Object> indexSettings = (Map<String, Object>) settings.get("index");
-            Assert.assertEquals("1", indexSettings.get("number_of_shards"));
-            Assert.assertEquals("0-2", indexSettings.get("auto_expand_replicas"));
-
-            Map<String, Object> mappings = (Map<String, Object>) template.get("mappings");
-            Map<String, Object> meta = (Map<String, Object>) mappings.get("_meta");
-            Assert.assertEquals(1, ((Number) meta.get("schema_version")).intValue());
-            Assert.assertEquals("top_n_queries", meta.get("query_insights_feature_space"));
-
-            Map<String, Object> properties = (Map<String, Object>) mappings.get("properties");
-            Assert.assertTrue("Expected 'total_shards' in mappings", properties.containsKey("total_shards"));
-            Assert.assertTrue("Expected 'search_type' in mappings", properties.containsKey("search_type"));
-            Assert.assertTrue("Expected 'task_resource_usages' in mappings", properties.containsKey("task_resource_usages"));
-            Assert.assertTrue("Expected 'measurements' in mappings", properties.containsKey("measurements"));
-        }
-    }
-
     protected void setLocalIndexToDebug() throws IOException {
         String debugExporterJson = "{ \"persistent\": { \"search.insights.top_queries.exporter.type\": \"debug\" } }";
         Request debugExporterRequest = new Request("PUT", "/_cluster/settings");
@@ -727,7 +858,9 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     protected List<Map<String, Object>> fetchHistoricalTopQueries(String filterId, String filterNodeID, String type) throws IOException {
 
-        String to = formatter.format(Instant.now());
+        // Add 10 second buffer to 'to' time to account for processing delays, clock skew, and drain timing
+        // This ensures recently executed queries aren't excluded due to timestamp precision issues
+        String to = formatter.format(Instant.now().plusSeconds(10));
         String from = formatter.format(Instant.now().minusSeconds(9600)); // Default 160 minutes
 
         String endpoint = "/_insights/top_queries?from=" + from + "&to=" + to;
@@ -789,10 +922,32 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             }
             idNodePairs.add(new String[] { id, nodeId });
 
-            Map<String, Object> source = (Map<String, Object>) query.get("source");
-            Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
-            Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
-            Map<String, Object> title = (Map<String, Object>) match.get("title");
+            Object sourceObj = query.get("source");
+            Map<String, Object> source;
+            if (sourceObj instanceof String) {
+                try (
+                    XContentParser sourceParser = JsonXContent.jsonXContent.createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        (String) sourceObj
+                    )
+                ) {
+                    source = sourceParser.map();
+                } catch (Exception e) {
+                    continue;
+                }
+            } else {
+                source = (Map<String, Object>) sourceObj;
+            }
+            if (source != null) {
+                Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
+                if (queryBlock != null) {
+                    Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
+                    if (match != null) {
+                        Map<String, Object> title = (Map<String, Object>) match.get("title");
+                    }
+                }
+            }
             List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
             Assert.assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
             for (Map<String, Object> task : taskUsages) {

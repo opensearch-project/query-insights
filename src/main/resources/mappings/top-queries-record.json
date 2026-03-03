@@ -5,14 +5,8 @@
     "query_insights_feature_space": "top_n_queries"
   },
   "properties": {
-    "id" : {
-      "type" : "text",
-      "fields" : {
-        "keyword" : {
-          "type" : "keyword",
-          "ignore_above" : 256
-        }
-      }
+    "id": {
+      "type": "keyword"
     },
     "node_id" : {
       "type" : "text",
@@ -23,8 +17,18 @@
         }
       }
     },
+    "username" : {
+      "type" : "keyword"
+    },
+    "user_roles" : {
+      "type" : "keyword"
+    },
+    "backend_roles" : {
+      "type" : "keyword"
+    },
     "timestamp" : {
-      "type" : "long"
+      "type" : "date",
+      "format": "epoch_millis"
     },
     "total_shards" : {
       "type" : "long"
@@ -38,8 +42,24 @@
         }
       }
     },
+    "indices" : {
+      "type" : "keyword"
+    },
+    "labels" : {
+      "type" : "object",
+      "enabled" : true
+    },
     "phase_latency_map" : {
       "properties" : {
+        "can_match" : {
+          "type" : "long"
+        },
+        "dfs_pre_query" : {
+          "type" : "long"
+        },
+        "dfs_query" : {
+          "type" : "long"
+        },
         "expand" : {
           "type" : "long"
         },
@@ -51,6 +71,15 @@
         }
       }
     },
+    "query_group_hashcode" : {
+      "type" : "keyword"
+    },
+    "wlm_group_id" : {
+      "type" : "keyword"
+    },
+    "is_cancelled" : {
+      "type" : "boolean"
+    },
     "search_type" : {
       "type" : "text",
       "fields" : {
@@ -59,6 +88,16 @@
           "ignore_above" : 256
         }
       }
+    },
+    "source" : {
+      "type" : "match_only_text",
+      "index" : false
+    },
+    "source_truncated" : {
+      "type" : "boolean"
+    },
+    "failed" : {
+      "type" : "boolean"
     },
     "task_resource_usages" : {
       "properties" : {
@@ -104,6 +143,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         },
@@ -111,6 +156,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         },
@@ -118,6 +169,12 @@
           "properties": {
             "number": {
               "type": "double"
+            },
+            "count": {
+              "type": "integer"
+            },
+            "aggregationType": {
+              "type": "keyword"
             }
           }
         }

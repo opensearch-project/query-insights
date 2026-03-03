@@ -64,6 +64,8 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         final String[] nodesIds = Strings.splitStringByCommaToArray(request.param("nodeId"));
         final boolean verbose = request.paramAsBoolean("verbose", true);
         final String sortParam = request.param("sort", MetricType.LATENCY.toString());
+        final String wlmGroupId = request.param("wlmGroupId", null);
+
         if (!ALLOWED_METRICS.contains(sortParam)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid sort metric type [%s]", request.path(), sortParam)
@@ -71,7 +73,12 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         }
         final MetricType sortBy = MetricType.fromString(sortParam);
         final int size = request.paramAsInt("size", QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE);
-        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds);
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
+            );
+        }
+        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId);
     }
 
     @Override

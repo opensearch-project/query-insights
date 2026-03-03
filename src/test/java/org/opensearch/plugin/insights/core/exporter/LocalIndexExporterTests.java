@@ -18,9 +18,9 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TEMPLATE_PRIORITY;
 
 import java.io.IOException;
 import java.time.ZoneOffset;
@@ -29,29 +29,26 @@ import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.exists.indices.IndicesExistsRequest;
-import org.opensearch.action.admin.indices.template.get.GetComposableIndexTemplateAction;
-import org.opensearch.action.admin.indices.template.put.PutComposableIndexTemplateAction;
 import org.opensearch.action.bulk.BulkAction;
+import org.opensearch.action.bulk.BulkItemResponse;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.action.support.replication.ClusterStateCreationUtils;
 import org.opensearch.cluster.ClusterState;
-import org.opensearch.cluster.metadata.ComposableIndexTemplate;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -94,7 +91,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // Setup exists response
         doAnswer(invocation -> {
-            org.opensearch.core.action.ActionListener<Boolean> listener = invocation.getArgument(1);
+            ActionListener<Boolean> listener = invocation.getArgument(1);
             listener.onResponse(true);
             return null;
         }).when(indicesAdminClient).exists(any(IndicesExistsRequest.class), any());
@@ -106,6 +103,7 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary(indexName, true, 1, 0);
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
 
         // Create local index exporter
         localIndexExporter = new LocalIndexExporter(client, clusterService, format, "", "id");
@@ -142,11 +140,8 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         exporterSpy.export(records);
 
-        // bulk was called (to add records to existing index)
+        // bulk was called directly (to add records to existing index)
         verify(exporterSpy).bulk(anyString(), eq(records));
-
-        // ensureTemplateExists was NOT called
-        verify(exporterSpy, never()).ensureTemplateExists();
 
         // createIndexAndBulk was NOT called
         verify(exporterSpy, never()).createIndexAndBulk(anyString(), any());
@@ -161,66 +156,15 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // to simulate index doesn't exist
         doReturn(false).when(exporterSpy).checkIndexExists(anyString());
-        CompletableFuture<Boolean> completedFuture = CompletableFuture.completedFuture(true);
-        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists();
         doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any());
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(3);
 
         exporterSpy.export(records);
 
-        // ensureTemplateExists was called (since index doesn't exist)
-        verify(exporterSpy).ensureTemplateExists();
         // createIndexAndBulk was called
         verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
-        // bulk was NOT called directly (it's called inside createIndexAndBulk)
+        // bulk was NOT called directly (it's called directly when index exists)
         verify(exporterSpy, never()).bulk(anyString(), any());
-    }
-
-    public void testExportWaitsForTemplateCreation() throws Exception {
-        Client mockClient = mock(Client.class);
-        ClusterService mockClusterService = mock(ClusterService.class);
-        DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
-        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
-        LocalIndexExporter exporterSpy = spy(exporter);
-
-        // simulate index doesn't exist
-        doReturn(false).when(exporterSpy).checkIndexExists(anyString());
-        CompletableFuture<Boolean> templateFuture = new CompletableFuture<>();
-        doReturn(templateFuture).when(exporterSpy).ensureTemplateExists();
-
-        // Use a CountDownLatch to track if createIndexAndBulk is called
-        CountDownLatch createIndexCalled = new CountDownLatch(1);
-        doAnswer(invocation -> {
-            createIndexCalled.countDown();
-            return null;
-        }).when(exporterSpy).createIndexAndBulk(anyString(), any());
-
-        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(3);
-
-        // call export in a separate thread so it doesn't block our test..
-        Thread exportThread = new Thread(() -> {
-            try {
-                exporterSpy.export(records);
-            } catch (Exception e) {
-                fail("Export should not throw an exception: " + e.getMessage());
-            }
-        });
-        exportThread.start();
-        Thread.sleep(100);
-        // createIndexAndBulk has NOT been called yet - it should be waiting for template..
-        assertEquals("createIndexAndBulk should not be called until template is created", 1, createIndexCalled.getCount());
-
-        // Complete the template future
-        templateFuture.complete(true);
-
-        // Wait for createIndexAndBulk to be called
-        boolean createIndexWasCalled = createIndexCalled.await(1, TimeUnit.SECONDS);
-
-        // Verify createIndexAndBulk was eventually called after template was created
-        assertTrue("createIndexAndBulk should be called after template is created", createIndexWasCalled);
-
-        // Clean up the thread
-        exportThread.join(1000);
     }
 
     @SuppressWarnings("unchecked")
@@ -251,87 +195,6 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         final DateTimeFormatter newFormatter = DateTimeFormatter.ofPattern("YYYY-MM-dd", Locale.ROOT);
         localIndexExporter.setIndexPattern(newFormatter);
         assert (localIndexExporter.getIndexPattern() == newFormatter);
-    }
-
-    public void testGetAndSetTemplatePriority() {
-        final long newTemplatePriority = 2000L;
-        localIndexExporter.setTemplatePriority(newTemplatePriority);
-        assertEquals(newTemplatePriority, localIndexExporter.getTemplatePriority());
-    }
-
-    /**
-     * Test that ensureTemplateExists creates a V2 template correctly when it doesn't exist
-     */
-    public void testEnsureTemplateExistsCreatesV2Template() throws Exception {
-        Client mockClient = mock(Client.class);
-        ClusterService mockClusterService = mock(ClusterService.class);
-
-        DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
-        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
-        LocalIndexExporter exporterSpy = spy(exporter);
-
-        // Set a custom priority to verify it's used in the template
-        exporterSpy.setTemplatePriority(5000L);
-
-        // make ensureTemplateExists to complete successfully
-        CompletableFuture<Boolean> completedFuture = CompletableFuture.completedFuture(true);
-        doReturn(completedFuture).when(exporterSpy).ensureTemplateExists();
-
-        CompletableFuture<Boolean> future = exporterSpy.ensureTemplateExists();
-        assertTrue(future.get(5, TimeUnit.SECONDS));
-
-        assertEquals("Template priority should be set correctly", 5000L, exporterSpy.getTemplatePriority());
-    }
-
-    /**
-     * Test that ensureTemplateExists skips creating a template when it already exists
-     */
-    public void testEnsureTemplateExistsSkipsWhenTemplateExists() throws Exception {
-        Client mockClient = mock(Client.class);
-
-        ClusterService mockClusterService = mock(ClusterService.class);
-        ClusterState mockState = mock(ClusterState.class);
-        org.opensearch.cluster.metadata.Metadata metadata = mock(org.opensearch.cluster.metadata.Metadata.class);
-        when(metadata.templates()).thenReturn(Map.of());
-        when(metadata.templatesV2()).thenReturn(Map.of());
-        when(mockState.getMetadata()).thenReturn(metadata);
-        when(mockClusterService.state()).thenReturn(mockState);
-
-        // Mock the GetComposableIndexTemplateAction call to return that the template exists
-        doAnswer(invocation -> {
-            GetComposableIndexTemplateAction.Response mockResponse = mock(GetComposableIndexTemplateAction.Response.class);
-            ComposableIndexTemplate mockTemplate = mock(ComposableIndexTemplate.class);
-            when(mockTemplate.priority()).thenReturn(DEFAULT_TEMPLATE_PRIORITY);
-            when(mockResponse.indexTemplates()).thenReturn(Map.of("query_insights_top_queries_template", mockTemplate));
-
-            ActionListener listener = invocation.getArgument(2);
-            listener.onResponse(mockResponse);
-
-            return null;
-        }).when(mockClient)
-            .execute(
-                eq(GetComposableIndexTemplateAction.INSTANCE),
-                any(GetComposableIndexTemplateAction.Request.class),
-                any(ActionListener.class)
-            );
-
-        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "{}", "id");
-
-        CompletableFuture<Boolean> future = exporter.ensureTemplateExists();
-        Boolean result = future.get(5, TimeUnit.SECONDS);
-
-        assertTrue("Template check should be successful", result);
-
-        verify(mockClient).execute(
-            eq(GetComposableIndexTemplateAction.INSTANCE),
-            any(GetComposableIndexTemplateAction.Request.class),
-            any(org.opensearch.core.action.ActionListener.class)
-        );
-        verify(mockClient, never()).execute(
-            eq(PutComposableIndexTemplateAction.INSTANCE),
-            any(PutComposableIndexTemplateAction.Request.class),
-            any(org.opensearch.core.action.ActionListener.class)
-        );
     }
 
     /**
@@ -402,5 +265,159 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
 
         // Verify there is no number_of_replicas setting.
         assertNull(settings.get("index.number_of_replicas"));
+    }
+
+    /**
+     * Test that export flow directly creates index with mapping when index doesn't exist
+     */
+    public void testExportDirectlyCreatesIndexWithMapping() throws IOException {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
+        String customMapping = "{\"properties\":{\"test_field\":{\"type\":\"keyword\"}}}";
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, customMapping, "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        // Mock index doesn't exist
+        doReturn(false).when(exporterSpy).checkIndexExists(anyString());
+        doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any());
+
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2);
+        exporterSpy.export(records);
+
+        // Verify createIndexAndBulk was called with the custom mapping
+        verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
+    }
+
+    /**
+     * Test that createIndexAndBulk sets the correct mapping in CreateIndexRequest
+     */
+    public void testCreateIndexAndBulkSetsMapping() throws IOException {
+        String customMapping = "{\"properties\":{\"custom_field\":{\"type\":\"text\"}}}";
+        LocalIndexExporter exporterSpy = spy(new LocalIndexExporter(client, clusterService, format, customMapping, "id"));
+
+        ArgumentCaptor<CreateIndexRequest> requestCaptor = ArgumentCaptor.forClass(CreateIndexRequest.class);
+
+        // Mock the client.admin().indices().create() call
+        AdminClient adminClient = mock(AdminClient.class);
+        IndicesAdminClient indicesClient = mock(IndicesAdminClient.class);
+        when(client.admin()).thenReturn(adminClient);
+        when(adminClient.indices()).thenReturn(indicesClient);
+
+        doNothing().when(indicesClient).create(requestCaptor.capture(), any(ActionListener.class));
+        exporterSpy.createIndexAndBulk("test-index", Collections.emptyList());
+
+        // Verify the captured request has the correct mapping
+        CreateIndexRequest capturedRequest = requestCaptor.getValue();
+        assertEquals("test-index", capturedRequest.index());
+        assertEquals(customMapping, capturedRequest.mappings());
+    }
+
+    /**
+     * Test that export works correctly when mapping is empty
+     */
+    public void testExportWithEmptyMapping() throws IOException {
+        Client mockClient = mock(Client.class);
+        ClusterService mockClusterService = mock(ClusterService.class);
+        DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
+        LocalIndexExporter exporter = new LocalIndexExporter(mockClient, mockClusterService, format, "", "id");
+        LocalIndexExporter exporterSpy = spy(exporter);
+
+        doReturn(false).when(exporterSpy).checkIndexExists(anyString());
+        doAnswer(invocation -> null).when(exporterSpy).createIndexAndBulk(anyString(), any());
+
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+        exporterSpy.export(records);
+
+        // Verify createIndexAndBulk was called with empty mapping converted to {}
+        verify(exporterSpy).createIndexAndBulk(anyString(), eq(records));
+    }
+
+    public void testBulkStartsWithTextFormat() throws IOException {
+        LocalIndexExporter exporterSpy = spy(new LocalIndexExporter(client, clusterService, format, "{}", "id"));
+        doNothing().when(exporterSpy).bulk(anyString(), any());
+
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        // Simulate the export flow for existing index
+        doReturn(true).when(exporterSpy).checkIndexExists(anyString());
+        exporterSpy.export(records);
+
+        // Verify it starts with useObjectSource = false (text format)
+        verify(exporterSpy).bulk(anyString(), eq(records));
+    }
+
+    public void testBulkRetryOnMapperParsingException() throws IOException {
+        BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
+        when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
+
+        AtomicInteger executeCallCount = new AtomicInteger(0);
+
+        // Mock BulkItemResponse with MapperParsingException failure
+        BulkItemResponse failedItem = mock(BulkItemResponse.class);
+        when(failedItem.isFailed()).thenReturn(true);
+        BulkItemResponse.Failure failure = mock(BulkItemResponse.Failure.class);
+        when(failure.getCause()).thenReturn(new MapperParsingException("test mapper parsing exception"));
+        when(failedItem.getFailure()).thenReturn(failure);
+
+        BulkResponse failedResponse = mock(BulkResponse.class);
+        when(failedResponse.hasFailures()).thenReturn(true);
+        when(failedResponse.iterator()).thenReturn(List.of(failedItem).iterator());
+
+        BulkResponse successResponse = mock(BulkResponse.class);
+        when(successResponse.hasFailures()).thenReturn(false);
+
+        doAnswer(invocation -> {
+            ActionListener<BulkResponse> listener = invocation.getArgument(0);
+            int callNumber = executeCallCount.incrementAndGet();
+            if (callNumber == 1) {
+                listener.onResponse(failedResponse);
+            } else {
+                listener.onResponse(successResponse);
+            }
+            return null;
+        }).when(bulkRequestBuilder).execute(any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        exporter.bulk("test-index", records, false);
+
+        assertEquals(2, executeCallCount.get());
+        verify(bulkRequestBuilder, times(2)).execute(any());
+    }
+
+    public void testBulkNoRetryWhenAlreadyUsingObjectSource() throws IOException {
+        BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
+        when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
+
+        AtomicInteger executeCallCount = new AtomicInteger(0);
+
+        BulkItemResponse failedItem = mock(BulkItemResponse.class);
+        when(failedItem.isFailed()).thenReturn(true);
+        BulkItemResponse.Failure failure = mock(BulkItemResponse.Failure.class);
+        when(failure.getCause()).thenReturn(new MapperParsingException("test mapper parsing exception"));
+        when(failedItem.getFailure()).thenReturn(failure);
+
+        BulkResponse failedResponse = mock(BulkResponse.class);
+        when(failedResponse.hasFailures()).thenReturn(true);
+        when(failedResponse.iterator()).thenReturn(List.of(failedItem).iterator());
+        when(failedResponse.buildFailureMessage()).thenReturn("test failure");
+
+        doAnswer(invocation -> {
+            ActionListener<BulkResponse> listener = invocation.getArgument(0);
+            executeCallCount.incrementAndGet();
+            listener.onResponse(failedResponse);
+            return null;
+        }).when(bulkRequestBuilder).execute(any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        // Call with useObjectSource=true, should NOT retry
+        exporter.bulk("test-index", records, true);
+
+        assertEquals(1, executeCallCount.get());
+        verify(bulkRequestBuilder, times(1)).execute(any());
     }
 }

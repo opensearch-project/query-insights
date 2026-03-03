@@ -8,18 +8,31 @@
 
 package org.opensearch.plugin.insights.core.service.grouper;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 import org.junit.Before;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryGrouperHealthStats;
+import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 
 /**
@@ -34,6 +47,12 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
 
     @Before
     public void setup() {
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(any(String.class), any(String.class), any(String.class))).thenAnswer(
+            invocation -> mock(Counter.class)
+        );
+        OperationalMetricsCounter.initialize("cluster", metricsRegistry);
+
         minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.DEFAULT_AGGREGATION_TYPE, 10);
     }
 
@@ -714,4 +733,118 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
             assertEquals(GroupingType.SIMILARITY, groupedRecord.getAttributes().get(Attribute.GROUP_BY));
         }
     }
+
+    public void testSourceAndUserInfoSetForNewGroup() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-123");
+
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(QueryInsightsTestUtils.createMockThreadPool());
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        SearchQueryRecord groupedRecord = minMaxHeapQueryGrouper.add(record);
+
+        // Verify source is set
+        assertNotNull(groupedRecord.getAttributes().get(Attribute.SOURCE));
+        assertTrue(groupedRecord.getAttributes().get(Attribute.SOURCE) instanceof SourceString);
+        assertEquals(searchSourceBuilder.toString(), ((SourceString) groupedRecord.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(false, groupedRecord.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+
+        // Verify user info is set
+        assertEquals("testuser", groupedRecord.getAttributes().get(Attribute.USERNAME));
+        assertArrayEquals(new String[] { "admin", "user" }, (String[]) groupedRecord.getAttributes().get(Attribute.USER_ROLES));
+    }
+
+    public void testSourceTruncationForNewGroup() {
+        minMaxHeapQueryGrouper.setMaxSourceLength(20);
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+        searchSourceBuilder.from(10);
+        searchSourceBuilder.query(new org.opensearch.index.query.MatchAllQueryBuilder());
+        String fullSource = searchSourceBuilder.toString();
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-456");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            null,
+            "test-id"
+        );
+
+        SearchQueryRecord groupedRecord = minMaxHeapQueryGrouper.add(record);
+        assertNotNull(groupedRecord.getAttributes().get(Attribute.SOURCE));
+        assertTrue(groupedRecord.getAttributes().get(Attribute.SOURCE) instanceof SourceString);
+        assertEquals(fullSource.substring(0, 20), ((SourceString) groupedRecord.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, groupedRecord.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSourceTruncationWithZeroLength() {
+        minMaxHeapQueryGrouper.setMaxSourceLength(0);
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-789");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            null,
+            "test-id"
+        );
+
+        SearchQueryRecord groupedRecord = minMaxHeapQueryGrouper.add(record);
+        assertNotNull(groupedRecord.getAttributes().get(Attribute.SOURCE));
+        assertTrue(groupedRecord.getAttributes().get(Attribute.SOURCE) instanceof SourceString);
+        assertEquals("", ((SourceString) groupedRecord.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, groupedRecord.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testUserInfoNotSetWhenUserPrincipalContextIsNull() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_GROUP_HASHCODE, "hash-user-456");
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            null,
+            "test-id"
+        );
+
+        SearchQueryRecord groupedRecord = minMaxHeapQueryGrouper.add(record);
+        assertNull(groupedRecord.getAttributes().get(Attribute.USERNAME));
+        assertNull(groupedRecord.getAttributes().get(Attribute.USER_ROLES));
+    }
+
 }

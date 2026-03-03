@@ -14,7 +14,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
-import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -81,11 +80,11 @@ public final class SearchQueryCategorizer {
      * @param record search query record
      */
     public void categorize(SearchQueryRecord record) {
-        SearchSourceBuilder source = (SearchSourceBuilder) record.getAttributes().get(Attribute.SOURCE);
+        SearchSourceBuilder source = record.getSearchSourceBuilder();
         Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);
-        incrementQueryAggregationCounters(source.aggregations(), measurements);
+        incrementQueryAggregationCounters(source.aggregations(), measurements, record.isStreaming());
         incrementQuerySortCounters(source.sorts(), measurements);
     }
 
@@ -98,12 +97,20 @@ public final class SearchQueryCategorizer {
         }
     }
 
-    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations, Map<MetricType, Measurement> measurements) {
+    private void incrementQueryAggregationCounters(
+        AggregatorFactories.Builder aggregations,
+        Map<MetricType, Measurement> measurements,
+        boolean isStreaming
+    ) {
         if (aggregations == null) {
             return;
         }
 
-        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(aggregations.getAggregatorFactories(), measurements);
+        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(
+            aggregations.getAggregatorFactories(),
+            measurements,
+            isStreaming
+        );
     }
 
     private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Measurement> measurements) {

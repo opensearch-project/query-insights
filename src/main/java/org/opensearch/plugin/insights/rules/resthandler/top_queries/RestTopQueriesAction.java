@@ -120,6 +120,17 @@ public class RestTopQueriesAction extends BaseRestHandler {
                 )
             );
         }
+        if (ZonedDateTime.parse(from).isAfter(ZonedDateTime.parse(to))) {
+            throw new IllegalArgumentException(
+                String.format(
+                    Locale.ROOT,
+                    "request [%s] contains invalid time range. 'from' date [%s] must be before 'to' date [%s]",
+                    request.path(),
+                    from,
+                    to
+                )
+            );
+        }
     }
 
     @Override

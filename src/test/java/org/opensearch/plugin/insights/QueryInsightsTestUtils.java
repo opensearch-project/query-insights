@@ -12,6 +12,8 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP;
 import static org.opensearch.test.OpenSearchTestCase.buildNewFakeTransportAddress;
@@ -19,13 +21,14 @@ import static org.opensearch.test.OpenSearchTestCase.random;
 import static org.opensearch.test.OpenSearchTestCase.randomAlphaOfLengthBetween;
 import static org.opensearch.test.OpenSearchTestCase.randomArray;
 import static org.opensearch.test.OpenSearchTestCase.randomIntBetween;
-import static org.opensearch.test.OpenSearchTestCase.randomLong;
 import static org.opensearch.test.OpenSearchTestCase.randomLongBetween;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -37,11 +40,15 @@ import java.util.UUID;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.settings.ClusterSettings;
-import org.opensearch.common.util.Maps;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.concurrent.ThreadContext;
+import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -49,14 +56,32 @@ import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.tasks.Task;
 import org.opensearch.test.VersionUtils;
+import org.opensearch.threadpool.ThreadPool;
 
 final public class QueryInsightsTestUtils {
 
     static String randomId = UUID.randomUUID().toString();
+    // Use a mock ThreadPool that only provides ThreadContext - no background threads, no cleanup needed
+    static ThreadPool testThreadPool = createMockThreadPool();
+
+    /**
+     * Creates a mock ThreadPool with pre-configured ThreadContext for testing.
+     * No background threads are created, so no cleanup is needed.
+     * @return Mock ThreadPool with test user info in ThreadContext
+     */
+    public static ThreadPool createMockThreadPool() {
+        ThreadPool mockThreadPool = mock(ThreadPool.class);
+        ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
+        threadContext.putTransient("_opendistro_security_user_info", "testuser|role1,role2|admin,user|tenant1|access1");
+        when(mockThreadPool.getThreadContext()).thenReturn(threadContext);
+        return mockThreadPool;
+    }
 
     public QueryInsightsTestUtils() {}
 
@@ -85,16 +110,25 @@ final public class QueryInsightsTestUtils {
      * @return List of records
      */
     public static List<SearchQueryRecord> generateQueryInsightRecords(int count, SearchSourceBuilder searchSourceBuilder) {
-        List<SearchQueryRecord> records = generateQueryInsightRecords(
-            count,
-            count,
-            System.currentTimeMillis(),
-            0,
-            AggregationType.DEFAULT_AGGREGATION_TYPE,
-            randomId
-        );
-        for (SearchQueryRecord record : records) {
-            record.getAttributes().put(Attribute.SOURCE, searchSourceBuilder);
+        List<SearchQueryRecord> records = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            // Generate base record data
+            List<SearchQueryRecord> baseRecords = generateQueryInsightRecords(1);
+            SearchQueryRecord baseRecord = baseRecords.get(0);
+
+            // Create new record with SearchSourceBuilder for categorization
+            SearchQueryRecord recordWithSource = new SearchQueryRecord(
+                baseRecord.getTimestamp(),
+                baseRecord.getMeasurements(),
+                baseRecord.getAttributes(),
+                searchSourceBuilder,
+                new UserPrincipalContext(testThreadPool),
+                baseRecord.getId()
+            );
+
+            // Update SOURCE attribute to SourceString
+            recordWithSource.getAttributes().put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
+            records.add(recordWithSource);
         }
         return records;
     }
@@ -130,6 +164,8 @@ final public class QueryInsightsTestUtils {
         List<SearchQueryRecord> records = new ArrayList<>();
         int countOfRecords = randomIntBetween(lower, upper);
         long timestamp = startTimeStamp;
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(20);
         for (int i = 0; i < countOfRecords; ++i) {
             long latencyValue = randomLongBetween(1000, 10000); // Replace with actual method to generate a random long
             long cpuValue = randomLongBetween(1000, 10000);
@@ -140,17 +176,18 @@ final public class QueryInsightsTestUtils {
             measurements.put(MetricType.MEMORY, new Measurement(memoryValue, aggregationType));
 
             Map<String, Long> phaseLatencyMap = new LinkedHashMap<>();
-            int countOfPhases = randomIntBetween(2, 5);
-            for (int j = 0; j < countOfPhases; ++j) {
-                phaseLatencyMap.put(randomAlphaOfLengthBetween(5, 10), randomLong());
-            }
-
-            SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-            searchSourceBuilder.size(20); // Set the size parameter as needed
+            // Use actual SearchPhaseName values to ensure mapping coverage
+            phaseLatencyMap.put("can_match", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("dfs_pre_query", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("dfs_query", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("expand", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("fetch", randomLongBetween(0, 1000));
+            phaseLatencyMap.put("query", randomLongBetween(0, 1000));
 
             Map<Attribute, Object> attributes = new HashMap<>();
             attributes.put(Attribute.SEARCH_TYPE, SearchType.QUERY_THEN_FETCH.toString().toLowerCase(Locale.ROOT));
-            attributes.put(Attribute.SOURCE, searchSourceBuilder);
+            attributes.put(Attribute.SOURCE, new SourceString(searchSourceBuilder.toString()));
+            attributes.put(Attribute.SOURCE_TRUNCATED, false);
             attributes.put(Attribute.TOTAL_SHARDS, randomIntBetween(1, 100));
             attributes.put(Attribute.INDICES, randomArray(1, 3, Object[]::new, () -> randomAlphaOfLengthBetween(5, 10)));
             attributes.put(Attribute.PHASE_LATENCY_MAP, phaseLatencyMap);
@@ -158,6 +195,9 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
             attributes.put(Attribute.NODE_ID, "node_for_top_queries_test");
             attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
+            attributes.put(Attribute.USERNAME, randomAlphaOfLengthBetween(5, 10));
+            attributes.put(Attribute.USER_ROLES, new String[] { randomAlphaOfLengthBetween(4, 8), randomAlphaOfLengthBetween(4, 8) });
+            attributes.put(Attribute.BACKEND_ROLES, new String[] { randomAlphaOfLengthBetween(4, 8), randomAlphaOfLengthBetween(4, 8) });
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -177,8 +217,28 @@ final public class QueryInsightsTestUtils {
                     )
                 )
             );
+            // Add labels attribute
+            Map<String, Object> labels = new HashMap<>();
+            labels.put(Task.X_OPAQUE_ID, randomAlphaOfLengthBetween(5, 10));
+            attributes.put(Attribute.LABELS, labels);
+            // Add WLM group ID attribute
+            attributes.put(Attribute.WLM_GROUP_ID, randomAlphaOfLengthBetween(5, 10));
+            // Add is_cancelled attribute
+            attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
+            // Add failed attribute
+            attributes.put(Attribute.FAILED, random().nextBoolean());
 
-            records.add(new SearchQueryRecord(timestamp, measurements, attributes, id));
+            SearchQueryRecord record = new SearchQueryRecord(
+                timestamp,
+                measurements,
+                attributes,
+                searchSourceBuilder,
+                new UserPrincipalContext(testThreadPool),
+                id
+            );
+            // Validate that the generated record includes all fields from the mapping
+            validateRecordCompleteness(record);
+            records.add(record);
             timestamp += interval;
         }
         return records;
@@ -274,8 +334,19 @@ final public class QueryInsightsTestUtils {
             )
         );
         attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
+        attributes.put(Attribute.USERNAME, "testuser");
+        attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
+        attributes.put(Attribute.FAILED, false);
+        attributes.put(Attribute.BACKEND_ROLES, new String[] { "role1", "role2" });
 
-        return new SearchQueryRecord(timestamp, measurements, attributes, id);
+        return new SearchQueryRecord(
+            timestamp,
+            measurements,
+            attributes,
+            new SearchSourceBuilder(),
+            new UserPrincipalContext(testThreadPool),
+            id
+        );
     }
 
     public static void compareJson(ToXContent param1, ToXContent param2) throws IOException {
@@ -295,29 +366,49 @@ final public class QueryInsightsTestUtils {
         assertEquals(param1Builder.toString(), param2Builder.toString());
     }
 
-    @SuppressWarnings("unchecked")
     public static boolean checkRecordsEquals(List<SearchQueryRecord> records1, List<SearchQueryRecord> records2) {
         if (records1.size() != records2.size()) {
             return false;
         }
         for (int i = 0; i < records1.size(); i++) {
-            if (!records1.get(i).equals(records2.get(i))) {
+            SearchQueryRecord record1 = records1.get(i);
+            SearchQueryRecord record2 = records2.get(i);
+            if (record1.getTimestamp() != record2.getTimestamp()) {
                 return false;
             }
-            Map<Attribute, Object> attributes1 = records1.get(i).getAttributes();
-            Map<Attribute, Object> attributes2 = records2.get(i).getAttributes();
-            for (Map.Entry<Attribute, Object> entry : attributes1.entrySet()) {
-                Attribute attribute = entry.getKey();
-                Object value = entry.getValue();
-                if (!attributes2.containsKey(attribute)) {
+            if (!record1.getMeasurements().equals(record2.getMeasurements())) {
+                return false;
+            }
+            if (!compareAttributes(record1.getAttributes(), record2.getAttributes())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean compareAttributes(Map<Attribute, Object> attributes1, Map<Attribute, Object> attributes2) {
+        if (attributes1.size() != attributes2.size()) {
+            return false;
+        }
+        for (Map.Entry<Attribute, Object> entry : attributes1.entrySet()) {
+            Attribute key = entry.getKey();
+            Object value1 = entry.getValue();
+            Object value2 = attributes2.get(key);
+            if (key == Attribute.SOURCE) {
+                // Both values should be SourceString
+                String source1 = value1 instanceof SourceString ? ((SourceString) value1).getValue() : null;
+                String source2 = value2 instanceof SourceString ? ((SourceString) value2).getValue() : null;
+                if (!Objects.equals(source1, source2)) {
                     return false;
                 }
-                if (value instanceof Object[] && !Arrays.deepEquals((Object[]) value, (Object[]) attributes2.get(attribute))) {
+            } else if (value1 instanceof Object[] && value2 instanceof Object[]) {
+                if (!Arrays.deepEquals((Object[]) value1, (Object[]) value2)) {
                     return false;
-                } else if (value instanceof Map
-                    && !Maps.deepEquals((Map<Object, Object>) value, (Map<Object, Object>) attributes2.get(attribute))) {
-                        return false;
-                    }
+                }
+            } else {
+                if (!Objects.equals(value1, value2)) {
+                    return false;
+                }
             }
         }
         return true;
@@ -357,8 +448,73 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_TYPE);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER);
-        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_TEMPLATE_PRIORITY);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_PATH);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
+    }
+
+    /**
+     * Load the set of all required attribute field names from the mapping file.
+     * This is used to validate that generated test records include all fields defined in the mapping.
+     *
+     * @return Set of field names that should be present in generated records
+     */
+    @SuppressWarnings("unchecked")
+    private static Set<String> getRequiredFieldsFromMapping() {
+        try (InputStream is = QueryInsightsTestUtils.class.getClassLoader().getResourceAsStream("mappings/top-queries-record.json")) {
+            if (is == null) {
+                throw new RuntimeException("Mapping file mappings/top-queries-record.json not found");
+            }
+            XContentParser parser = JsonXContent.jsonXContent.createParser(null, null, is);
+            Map<String, Object> mapping = parser.map();
+            Map<String, Object> properties = (Map<String, Object>) mapping.get("properties");
+
+            Set<String> requiredFields = new HashSet<>();
+            // Fields that are not Attributes or are explicitly excluded from serialization
+            Set<String> excludedFields = new HashSet<>(Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description"));
+
+            for (String fieldName : properties.keySet()) {
+                if (!excludedFields.contains(fieldName)) {
+                    requiredFields.add(fieldName);
+                }
+            }
+            return requiredFields;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load mapping file", e);
+        }
+    }
+
+    /**
+     * Validate that a generated SearchQueryRecord contains all fields defined in the mapping file.
+     * This ensures that when developers add new fields to the mapping, they also update the test
+     * data generation logic.
+     *
+     * @param record The SearchQueryRecord to validate
+     * @throws RuntimeException if the record is missing any required fields from the mapping
+     */
+    private static void validateRecordCompleteness(SearchQueryRecord record) {
+        Set<String> requiredFields = getRequiredFieldsFromMapping();
+        Set<String> presentFields = new HashSet<>();
+
+        // Get fields from attributes
+        for (Attribute attr : record.getAttributes().keySet()) {
+            presentFields.add(attr.toString());
+        }
+
+        // Find missing fields
+        Set<String> missingFields = new HashSet<>(requiredFields);
+        missingFields.removeAll(presentFields);
+
+        if (!missingFields.isEmpty()) {
+            throw new RuntimeException(
+                "Generated SearchQueryRecord is missing fields that are defined in the mapping: "
+                    + missingFields
+                    + ". Please update QueryInsightsTestUtils.generateQueryInsightRecords() to include these fields."
+            );
+        }
     }
 }

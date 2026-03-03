@@ -91,9 +91,9 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
     @Override
     public void tearDown() throws Exception {
-        super.tearDown();
         IOUtils.close(clusterService);
         ThreadPool.terminate(threadPool, 10, TimeUnit.SECONDS);
+        super.tearDown();
     }
 
     @SuppressWarnings("unchecked")
@@ -122,13 +122,14 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         int numberOfShards = 10;
 
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
 
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
         when(searchRequest.searchType()).thenReturn(searchType);
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
         when(searchRequest.indices()).thenReturn(indices);
         when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchRequestContext.isStreamingRequest()).thenReturn(true);
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(numberOfShards);
         when(searchPhaseContext.getTask()).thenReturn(task);
@@ -141,9 +142,54 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
-        assertEquals(searchSourceBuilder, generatedRecord.getAttributes().get(Attribute.SOURCE));
+        assertTrue(generatedRecord.isStreaming());
+        // SOURCE attribute should be null initially (set asynchronously in drainRecords)
+        assertNull(generatedRecord.getAttributes().get(Attribute.SOURCE));
+        // But SearchSourceBuilder should be available for async processing
+        assertEquals(searchSourceBuilder.toString(), generatedRecord.getSearchSourceBuilder().toString());
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
+        assertEquals(false, generatedRecord.getAttributes().get(Attribute.FAILED));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnRequestFailure() {
+        Long timestamp = System.currentTimeMillis() - 100L;
+        SearchType searchType = SearchType.QUERY_THEN_FETCH;
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(0);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        String[] indices = new String[] { "index-1", "index-2" };
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("query", 20L);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(searchType);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchRequest.indices()).thenReturn(indices);
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(10);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+
+        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord generatedRecord = captor.getValue();
+        assertEquals(true, generatedRecord.getAttributes().get(Attribute.FAILED));
     }
 
     public void testConcurrentOnRequestEnd() throws InterruptedException {
@@ -188,7 +234,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         CountDownLatch countDownLatch = new CountDownLatch(numRequests);
 
         for (int i = 0; i < numRequests; i++) {
-            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService));
+            searchListenersList.add(new QueryInsightsListener(clusterService, queryInsightsService, threadPool));
         }
 
         for (int i = 0; i < numRequests; i++) {
@@ -315,7 +361,12 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         boolean shouldEnable = latencyValues.get(0) || cpuValues.get(0) || memoryValues.get(0) || metricsEnabledValues.get(0);
 
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, shouldEnable);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(
+            clusterService,
+            queryInsightsService,
+            threadPool,
+            shouldEnable
+        );
 
         // Configure the mock to return multiple values in sequence for the various metrics
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(
@@ -354,12 +405,13 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     public void testSkipProfileQuery() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().profile(true);
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
     }
 
     public void testSkipQueryFromExcludedIndices() {
+        when(searchRequest.indices()).thenReturn(new String[] { "index-1" });
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         // Search request having one excluded index
         when(searchRequestContext.getSuccessfulSearchShardIndices())
@@ -367,7 +419,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
                 new Index(EXCLUDED_INDICES.get(0), "uuid-1"),
                 new Index("index-2", "uuid-2")
             )));
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
 
@@ -377,7 +429,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
                 new Index(EXCLUDED_INDICES.get(0), "uuid-1"),
                 new Index(EXCLUDED_INDICES.get(1), "uuid-2")
             )));
-        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
 
@@ -387,7 +439,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
                 new Index(WILDCARD_EXCLUDED_PREFIX + "first-index", "uuid-1"),
                 new Index("non-excluded-index", "uuid-2")
             )));
-        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(0)).addRecord(any());
 
@@ -412,13 +464,69 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
                 new Index("first", "uuid-1"),
                 new Index("second-non-excluded-index", "uuid-2")
             )));
-        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testExcludeInternalIndex() {
+        QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
+        // Search request having internal index
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("top_queries-2025.11.18-85608", "uuid-1")))
+        );
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(0)).addRecord(any());
+
+        // test search top_queries* index along with other indices
+        queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(2);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("top_queries-2025.11.18-85608", "uuid-2")))
+        );
+
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+
+        // test when request indices is null
+        queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.indices()).thenReturn(null);
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+
+        // test search with empty indices array should not skip
+        queryInsightsService = mock(QueryInsightsService.class);
+        when(searchRequest.indices()).thenReturn(new String[0]);
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("index-2", "uuid-2")))
+        );
+        queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
         verify(queryInsightsService, times(1)).addRecord(any());
     }
 
     public void testExcludedIndicesValidation() {
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         List<String> containNullList = new ArrayList<>();
         containNullList.add("index1");
         containNullList.add(null);
@@ -463,4 +571,58 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             fail("Expect no exception when valid excluded indices is set.");
         }
     }
+
+    public void testExtractPrincipalAttributesWithThreadContext() {
+        // Set up thread context with security user info
+        ThreadContext threadContext = threadPool.getThreadContext();
+        threadContext.putTransient("_opendistro_security_user_info", "testuser|role1,role2|admin,user|tenant1|access1");
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+        // UserPrincipalContext should be set and contain user string
+        assertNotNull(record.getUserPrincipalContext());
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", record.getUserPrincipalContext().getUserString());
+    }
+
+    public void testExtractPrincipalAttributesNoThreadContext() {
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord record = captor.getValue();
+        // UserPrincipalContext should be set but user string should be null
+        assertNotNull(record.getUserPrincipalContext());
+        assertNull(record.getUserPrincipalContext().getUserString());
+    }
+
+    private void setupValidSearchRequest() {
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(new HashSet<>());
+        when(searchRequestContext.phaseTookMap()).thenReturn(new HashMap<>());
+    }
+
 }

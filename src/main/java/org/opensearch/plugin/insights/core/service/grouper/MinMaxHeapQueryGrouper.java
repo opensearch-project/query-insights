@@ -15,6 +15,7 @@ import java.util.concurrent.PriorityBlockingQueue;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -80,6 +81,8 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
      */
     private int maxGroups;
 
+    private int maxSourceLength;
+
     public MinMaxHeapQueryGrouper(
         final MetricType metricType,
         final GroupingType groupingType,
@@ -95,6 +98,12 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         this.topNSize = topNSize;
         this.maxGroups = QueryInsightsSettings.DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT;
         this.maxHeapQueryStore = new PriorityBlockingQueue<>(maxGroups, (a, b) -> SearchQueryRecord.compare(b, a, metricType));
+        this.maxSourceLength = QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
+    }
+
+    @Override
+    public void setMaxSourceLength(final int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
     }
 
     /**
@@ -132,6 +141,9 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             aggregateSearchQueryRecord.setGroupingId(groupId);
             aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
             aggregateSearchQueryRecord.addAttribute(Attribute.GROUP_BY, groupingType);
+            TopQueriesService.setSourceAndTruncation(aggregateSearchQueryRecord, maxSourceLength);
+            TopQueriesService.setUserInfo(aggregateSearchQueryRecord);
+
             addToMinPQ(aggregateSearchQueryRecord, groupId);
         } else {
             aggregateSearchQueryRecord = groupIdToAggSearchQueryRecord.get(groupId).v1();

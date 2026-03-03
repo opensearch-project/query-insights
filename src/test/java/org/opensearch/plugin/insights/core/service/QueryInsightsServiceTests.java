@@ -9,11 +9,10 @@
 package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -25,6 +24,7 @@ import static org.opensearch.plugin.insights.core.service.QueryInsightsService.Q
 import static org.opensearch.plugin.insights.core.service.QueryInsightsService.getInitialDelay;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.ENTRY_COUNT;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.EVICTIONS;
 import static org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator.HIT_COUNT;
@@ -68,17 +68,20 @@ import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.exporter.DebugExporter;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
@@ -99,6 +102,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy.MM.dd", Locale.ROOT);
     private ThreadPool threadPool;
     private final Client client = mock(Client.class);
+    private final RepositoriesService repositoriesService = mock(RepositoriesService.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsService queryInsightsService;
     private QueryInsightsService queryInsightsServiceSpy;
@@ -107,27 +111,51 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     private final ClusterAdminClient clusterAdminClient = mock(ClusterAdminClient.class);
     private ClusterService clusterService;
     private LocalIndexExporter mockLocalIndexExporter;
+    private LocalIndexLifecycleManager mockLocalIndexLifecycleManagerSpy;
     private DebugExporter mockDebugExporter;
+    private RemoteRepositoryExporter mockRemoteRepositoryExporter;
     private QueryInsightsReader mockReader;
     private QueryInsightsExporterFactory queryInsightsExporterFactory;
     private QueryInsightsReaderFactory queryInsightsReaderFactory;
 
     @Before
     public void setup() {
-        queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
-        queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
-        mockLocalIndexExporter = mock(LocalIndexExporter.class);
-        mockDebugExporter = mock(DebugExporter.class);
-        mockReader = mock(QueryInsightsReader.class);
         Settings.Builder settingsBuilder = Settings.builder();
         Settings settings = settingsBuilder.build();
         ClusterSettings clusterSettings = new ClusterSettings(settings, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
         this.threadPool = new TestThreadPool(
-            "QueryInsightsHealthStatsTests",
+            "QueryInsightsServiceTests",
             new ScalingExecutorBuilder(QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR, 1, 5, TimeValue.timeValueMinutes(5))
         );
-        clusterService = new ClusterService(settings, clusterSettings, threadPool);
+        when(client.admin()).thenReturn(adminClient);
+        when(adminClient.indices()).thenReturn(indicesAdminClient);
+        when(adminClient.cluster()).thenReturn(clusterAdminClient);
+        mockLocalIndexLifecycleManagerSpy = spy(
+            new LocalIndexLifecycleManager(threadPool, client, QueryInsightsSettings.DEFAULT_DELETE_AFTER_VALUE)
+        );
+        clusterService = ClusterServiceUtils.createClusterService(settings, clusterSettings, threadPool);
+
+        queryInsightsExporterFactory = mock(QueryInsightsExporterFactory.class);
+        queryInsightsReaderFactory = mock(QueryInsightsReaderFactory.class);
+        mockLocalIndexExporter = mock(LocalIndexExporter.class);
+        mockDebugExporter = mock(DebugExporter.class);
+        mockRemoteRepositoryExporter = mock(RemoteRepositoryExporter.class);
+        mockReader = mock(QueryInsightsReader.class);
+
+        // Mock the remote exporter creation that happens in constructor
+        when(
+            queryInsightsExporterFactory.createRemoteRepositoryExporter(
+                eq(TOP_QUERIES_REMOTE_EXPORTER_ID),
+                anyString(),
+                anyString(),
+                anyBoolean()
+            )
+        ).thenReturn(mockRemoteRepositoryExporter);
+        when(mockRemoteRepositoryExporter.getBasePath()).thenReturn("query-insights");
+        when(mockRemoteRepositoryExporter.isEnabled()).thenReturn(false);
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteRepositoryExporter);
+
         queryInsightsService = new QueryInsightsService(
             clusterService,
             threadPool,
@@ -141,6 +169,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         queryInsightsService.enableCollection(MetricType.CPU, true);
         queryInsightsService.enableCollection(MetricType.MEMORY, true);
         queryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(clusterService));
+        queryInsightsService.setLocalIndexLifecycleManager(mockLocalIndexLifecycleManagerSpy);
         queryInsightsServiceSpy = spy(queryInsightsService);
 
         MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
@@ -148,10 +177,6 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             invocation -> mock(Counter.class)
         );
         OperationalMetricsCounter.initialize("cluster", metricsRegistry);
-
-        when(client.admin()).thenReturn(adminClient);
-        when(adminClient.indices()).thenReturn(indicesAdminClient);
-        when(adminClient.cluster()).thenReturn(clusterAdminClient);
     }
 
     @Override
@@ -324,7 +349,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertTrue(fieldTypeCacheStats.containsKey(MISS_COUNT));
     }
 
-    public void testDeleteAllTopNIndices() throws IOException {
+    public void testDeleteAllTopNIndices() throws IOException, InterruptedException {
         // Create 9 top_queries-* indices
         Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
         for (int i = 1; i < 10; i++) {
@@ -371,15 +396,27 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.get(0);
         ClusterService updatedClusterService = (ClusterService) updatedService.get(1);
 
-        updatedQueryInsightsService.deleteAllTopNIndices(client, mockLocalIndexExporter);
-        // All 10 top_queries-* indices should be deleted, while none of the users indices should be deleted
-        verify(mockLocalIndexExporter, times(9)).deleteSingleIndex(argThat(str -> str.matches("top_queries-.*")), any());
+        CountDownLatch latch = new CountDownLatch(9);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(mockLocalIndexLifecycleManagerSpy).deleteSingleIndex(any(), any());
 
+        // Call the method under test
+        updatedQueryInsightsService.getLocalIndexLifecycleManager().deleteAllTopNIndices();
+
+        latch.await(5, TimeUnit.SECONDS);
+
+        // Clean up resources
         IOUtils.close(updatedClusterService);
         updatedQueryInsightsService.doClose();
+
+        // All 10 top_queries-* indices should be deleted, while none of the users indices should be deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(9)).deleteSingleIndex(any(), any());
     }
 
     public void testDeleteExpiredTopNIndices() throws InterruptedException, IOException {
+        logger.info("starting testDeleteExpiredTopNIndices");
         // Test with a new cluster state with expired index mappings
         // Create 9 top_queries-* indices with creation dates older than the retention period
         Map<String, IndexMetadata> indexMetadataMap = new HashMap<>();
@@ -418,53 +455,59 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         List<AbstractLifecycleComponent> updatedService = createQueryInsightsServiceWithIndexState(indexMetadataMap);
         QueryInsightsService updatedQueryInsightsService = (QueryInsightsService) updatedService.get(0);
         ClusterService updatedClusterService = (ClusterService) updatedService.get(1);
+
         final int expectedIndicesDeleted = 2;
         CountDownLatch latch = new CountDownLatch(expectedIndicesDeleted);
         doAnswer(invocation -> {
             latch.countDown();
             return null;
-        }).when(indicesAdminClient).delete(any(), any());
+        }).when(mockLocalIndexLifecycleManagerSpy).deleteSingleIndex(any(), any());
+
         // Call the method under test
-        updatedQueryInsightsService.deleteExpiredTopNIndices();
+        updatedQueryInsightsService.getLocalIndexLifecycleManager().deleteExpiredTopNIndices();
+        latch.await(5, TimeUnit.SECONDS);
 
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        // Verify that the correct number of indices are deleted
-        // Default retention is 7 days, so oldest 2 indices should be deleted
-        verify(client, times(expectedIndicesDeleted + 1)).admin(); // one extra to get list of local indices
-        verify(adminClient, times(expectedIndicesDeleted)).indices();
-        verify(indicesAdminClient, times(expectedIndicesDeleted)).delete(any(), any());
-
+        // Clean up resources
         IOUtils.close(updatedClusterService);
         updatedQueryInsightsService.doClose();
+
+        verify(mockLocalIndexLifecycleManagerSpy, times(expectedIndicesDeleted)).deleteSingleIndex(any(), any());
     }
 
-    public void testValidateExporterDeleteAfter() {
-        this.queryInsightsService.validateExporterDeleteAfter(7);
-        this.queryInsightsService.validateExporterDeleteAfter(180);
-        this.queryInsightsService.validateExporterDeleteAfter(1);
-        assertThrows(IllegalArgumentException.class, () -> { this.queryInsightsService.validateExporterDeleteAfter(-1); });
-        assertThrows(IllegalArgumentException.class, () -> { this.queryInsightsService.validateExporterDeleteAfter(0); });
+    public void testvalidateDeleteAfter() {
+        LocalIndexLifecycleManager localIndexLifecycleManager = queryInsightsService.getLocalIndexLifecycleManager();
+        localIndexLifecycleManager.validateDeleteAfter(7);
+        localIndexLifecycleManager.validateDeleteAfter(180);
+        localIndexLifecycleManager.validateDeleteAfter(0);
+        assertThrows(IllegalArgumentException.class, () -> { localIndexLifecycleManager.validateDeleteAfter(-1); });
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            this.queryInsightsService.validateExporterDeleteAfter(181);
+            localIndexLifecycleManager.validateDeleteAfter(181);
         });
-        assertEquals(
-            "Invalid exporter delete_after_days setting [181], value should be an integer between 1 and 180.",
-            exception.getMessage()
-        );
+        assertEquals("Invalid delete_after_days setting [181], value should be an integer between 0 and 180.", exception.getMessage());
+    }
+
+    public void testSetDeleteAfterToNotZero() {
+        queryInsightsServiceSpy.getLocalIndexLifecycleManager().setDeleteAfterAndDelete(100);
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteAllTopNIndices();
+    }
+
+    public void testSetDeleteAfterToZero() {
+        queryInsightsServiceSpy.getLocalIndexLifecycleManager().setDeleteAfterAndDelete(0);
+        verify(mockLocalIndexLifecycleManagerSpy, times(1)).deleteAllTopNIndices();
     }
 
     public void testSetExporterAndReaderType_SwitchFromLocalIndexToNone() throws IOException {
         // Mock current exporter and reader
         queryInsightsServiceSpy.sinkType = SinkType.LOCAL_INDEX;
-        doNothing().when(queryInsightsServiceSpy).deleteAllTopNIndices(any(), any());
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
 
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.NONE);
-        // Verify cleanup of local indices
-        verify(queryInsightsServiceSpy, times(1)).deleteAllTopNIndices(client, mockLocalIndexExporter);
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(1)).closeExporter(mockLocalIndexExporter);
         verify(queryInsightsReaderFactory, times(1)).closeReader(mockReader);
         // Verify exporter is set to NONE
@@ -474,15 +517,15 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     public void testSetExporterAndReaderType_SwitchFromLocalIndexToDebug() throws IOException {
         // Mock current exporter and reader
         queryInsightsServiceSpy.sinkType = SinkType.LOCAL_INDEX;
-        doNothing().when(queryInsightsServiceSpy).deleteAllTopNIndices(any(), any());
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
 
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.DEBUG);
-        // Verify cleanup of local indices
-        verify(queryInsightsServiceSpy, times(1)).deleteAllTopNIndices(client, mockLocalIndexExporter);
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(1)).closeExporter(mockLocalIndexExporter);
         verify(queryInsightsReaderFactory, times(1)).closeReader(mockReader);
         // Verify exporter is set to NONE
@@ -508,9 +551,11 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             anyString(),
             eq(namedXContentRegistry)
         );
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(0)).closeExporter(any());
         verify(queryInsightsReaderFactory, times(0)).closeReader(any());
-        verify(queryInsightsServiceSpy, times(0)).deleteAllTopNIndices(any(), any());
         assertEquals(SinkType.LOCAL_INDEX, queryInsightsServiceSpy.sinkType);
     }
 
@@ -519,11 +564,14 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(null);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(null);
+
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.DEBUG);
         // Verify new local index exporter setup
         verify(queryInsightsExporterFactory, times(1)).createDebugExporter(eq(TopQueriesService.TOP_QUERIES_EXPORTER_ID));
-        verify(queryInsightsServiceSpy, times(0)).deleteAllTopNIndices(any(), any());
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(0)).closeExporter(any());
         verify(queryInsightsReaderFactory, times(0)).closeReader(any());
         assertEquals(SinkType.DEBUG, queryInsightsServiceSpy.sinkType);
@@ -534,6 +582,7 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockDebugExporter);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.LOCAL_INDEX);
         // Verify new local index exporter setup
@@ -548,9 +597,11 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             anyString(),
             eq(namedXContentRegistry)
         );
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(1)).closeExporter(mockDebugExporter);
         verify(queryInsightsReaderFactory, times(1)).closeReader(mockReader);
-        verify(queryInsightsServiceSpy, times(0)).deleteAllTopNIndices(any(), any());
         assertEquals(SinkType.LOCAL_INDEX, queryInsightsServiceSpy.sinkType);
     }
 
@@ -561,9 +612,10 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.NONE);
-        // Verify new local index exporter setup
-        // 2 times, one for initialization, one for the above method call
-        verify(queryInsightsServiceSpy, times(0)).deleteAllTopNIndices(client, mockLocalIndexExporter);
+
+        // Verify local indices are not deleted
+        verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
+        // Verify exporter and reader are closed
         verify(queryInsightsExporterFactory, times(1)).closeExporter(mockDebugExporter);
         verify(queryInsightsReaderFactory, times(1)).closeReader(mockReader);
         assertEquals(SinkType.NONE, queryInsightsServiceSpy.sinkType);
@@ -571,7 +623,6 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
     public void testSetExporterAndReaderType_CloseWithException() throws IOException {
         queryInsightsServiceSpy.sinkType = SinkType.LOCAL_INDEX;
-        doNothing().when(queryInsightsServiceSpy).deleteAllTopNIndices(any(), any());
         // Mock current exporter that throws an exception when closing
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
@@ -598,6 +649,83 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         Instant startOfNextDayEdge = instantEdge.plus(1, ChronoUnit.DAYS);
         final long expectedDelayEdge = Duration.between(instantEdge, startOfNextDayEdge).toMillis();
         assertEquals(expectedDelayEdge, getInitialDelay(instantEdge));
+    }
+
+    public void testEnableCollectionClearsQueueWhenAllFeaturesDisabled() {
+        // Add some records to the queue
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        for (SearchQueryRecord record : records) {
+            queryInsightsService.addRecord(record);
+        }
+
+        // Verify queue has records
+        QueryInsightsHealthStats healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable all features one by one
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+
+        // Queue should not be cleared yet as MEMORY is still enabled
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable the last feature
+        queryInsightsService.enableCollection(MetricType.MEMORY, false);
+
+        // Now the queue should be cleared
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(0, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testEnableCollectionDoesNotClearQueueWhenOtherFeaturesEnabled() {
+        // Add some records to the queue
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
+        for (SearchQueryRecord record : records) {
+            queryInsightsService.addRecord(record);
+        }
+
+        // Verify queue has records
+        QueryInsightsHealthStats healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable only LATENCY, but keep CPU and MEMORY enabled
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+
+        // Queue should NOT be cleared as other features are still enabled
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+
+        // Disable CPU as well, but keep MEMORY enabled
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+
+        // Queue should still NOT be cleared
+        healthStats = queryInsightsService.getHealthStats();
+        assertEquals(5, healthStats.getQueryRecordsQueueSize());
+    }
+
+    public void testGetFilterByMode_defaultIsNone() {
+        assertEquals(FilterByMode.NONE, queryInsightsService.getFilterByMode());
+    }
+
+    public void testSetFilterByMode_username() {
+        queryInsightsService.setFilterByMode("username");
+        assertEquals(FilterByMode.USERNAME, queryInsightsService.getFilterByMode());
+    }
+
+    public void testSetFilterByMode_backendRoles() {
+        queryInsightsService.setFilterByMode("backend_roles");
+        assertEquals(FilterByMode.BACKEND_ROLES, queryInsightsService.getFilterByMode());
+    }
+
+    public void testValidateFilterByMode_validValues() {
+        queryInsightsService.validateFilterByMode("none");
+        queryInsightsService.validateFilterByMode("username");
+        queryInsightsService.validateFilterByMode("backend_roles");
+    }
+
+    public void testValidateFilterByMode_invalidValue() {
+        assertThrows(IllegalArgumentException.class, () -> queryInsightsService.validateFilterByMode("invalid"));
     }
 
     // Util functions
@@ -639,15 +767,64 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             client,
             NoopMetricsRegistry.INSTANCE,
             namedXContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService),
+            new QueryInsightsExporterFactory(client, clusterService, threadPool, () -> repositoriesService),
             new QueryInsightsReaderFactory(client)
         );
         updatedQueryInsightsService.enableCollection(MetricType.LATENCY, true);
         updatedQueryInsightsService.enableCollection(MetricType.CPU, true);
         updatedQueryInsightsService.enableCollection(MetricType.MEMORY, true);
         updatedQueryInsightsService.setQueryShapeGenerator(new QueryShapeGenerator(updatedClusterService));
+        updatedQueryInsightsService.setLocalIndexLifecycleManager(mockLocalIndexLifecycleManagerSpy);
         // Create a local index exporter with a retention period of 7 days
         updatedQueryInsightsService.queryInsightsExporterFactory.createLocalIndexExporter(TOP_QUERIES_EXPORTER_ID, "YYYY.MM.dd", "");
         return List.of(updatedQueryInsightsService, updatedClusterService);
+    }
+
+    public void testRemoteExporterInitializationWithDefaults() {
+        // Verify remote exporter is initialized with default values from settings
+        RemoteRepositoryExporter remoteExporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        assertNotNull(remoteExporter);
+        // Default path should be "query-insights"
+        assertEquals("query-insights", remoteExporter.getBasePath());
+        // Default enabled should be false
+        assertFalse(remoteExporter.isEnabled());
+    }
+
+    public void testUpdateRemoteExporterEnabledWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.enabled", true).build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
+    }
+
+    public void testUpdateRemoteExporterRepositoryWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.repository", "new-repo").build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
+    }
+
+    public void testUpdateRemoteExporterPathWithNullExporter() {
+        // Mock getExporter to return null (simulating shutdown scenario)
+        when(queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        // This should not throw NPE
+        try {
+            clusterService.getClusterSettings().applySettings(Settings.builder().put("search.insights.top_queries.exporter.remote.path", "new-path").build());
+        } catch (NullPointerException e) {
+            fail("Should not throw NPE when exporter is null");
+        }
     }
 }

@@ -15,12 +15,14 @@ import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.index.query.TermQueryBuilder;
+import org.opensearch.index.query.TermsQueryBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -426,5 +428,188 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         assertTrue("Should allow no indices", searchRequest.indicesOptions().allowNoIndices());
         assertTrue("Should expand to open indices", searchRequest.indicesOptions().expandWildcardsOpen());
         assertFalse("Should not expand to closed indices", searchRequest.indicesOptions().expandWildcardsClosed());
+    }
+
+    public void testIdQueryMatch() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        Boolean verbose = true;
+        MetricType metricType = MetricType.LATENCY;
+
+        String[] testIds = {
+            "a7f3b2c8-5291-7634-9c4e-def123cd4589",
+            "b8e4c3d9-5291-8745-1a2b-abc456ef7890",
+            "c9f5d4ea-7634-5291-3c4d-fed789ab1234" };
+
+        for (String id : testIds) {
+            SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+
+            SearchSourceBuilder sourceBuilder = searchRequest.source();
+            BoolQueryBuilder boolQuery = (BoolQueryBuilder) sourceBuilder.query();
+            List<QueryBuilder> mustClauses = boolQuery.must();
+
+            boolean foundExactIdMatch = false;
+            for (QueryBuilder mustClause : mustClauses) {
+                if (mustClause instanceof TermQueryBuilder) {
+                    TermQueryBuilder termQuery = (TermQueryBuilder) mustClause;
+                    if ("id".equals(termQuery.fieldName()) && id.equals(termQuery.value())) {
+                        foundExactIdMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            assertTrue("Query should match the exact ID without tokenization: " + id, foundExactIdMatch);
+        }
+    }
+
+    public void testBuildTopNSearchRequestWithUsernameFilter() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            null,
+            true,
+            metricType,
+            "test_user",
+            null
+        );
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // Verify filter clause for username
+        List<QueryBuilder> filterClauses = boolQuery.filter();
+        assertEquals(1, filterClauses.size());
+        assertTrue(filterClauses.get(0) instanceof TermQueryBuilder);
+        TermQueryBuilder usernameFilter = (TermQueryBuilder) filterClauses.get(0);
+        assertEquals("username", usernameFilter.fieldName());
+        assertEquals("test_user", usernameFilter.value());
+    }
+
+    public void testBuildTopNSearchRequestWithBackendRolesFilter() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        List<String> backendRoles = Arrays.asList("role_a", "role_b");
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            null,
+            true,
+            metricType,
+            null,
+            backendRoles
+        );
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // Verify filter clause for backend_roles
+        List<QueryBuilder> filterClauses = boolQuery.filter();
+        assertEquals(1, filterClauses.size());
+        assertTrue(filterClauses.get(0) instanceof TermsQueryBuilder);
+        TermsQueryBuilder rolesFilter = (TermsQueryBuilder) filterClauses.get(0);
+        assertEquals("backend_roles", rolesFilter.fieldName());
+    }
+
+    public void testBuildTopNSearchRequestWithBothRbacFilters() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            null,
+            true,
+            metricType,
+            "test_user",
+            Arrays.asList("role_a")
+        );
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // Both filters should be present
+        List<QueryBuilder> filterClauses = boolQuery.filter();
+        assertEquals(2, filterClauses.size());
+    }
+
+    public void testBuildTopNSearchRequestWithNoRbacFilters() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            null,
+            true,
+            metricType,
+            null,
+            null
+        );
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // No filter clauses when both are null
+        List<QueryBuilder> filterClauses = boolQuery.filter();
+        assertTrue(filterClauses.isEmpty());
+    }
+
+    public void testBuildTopNSearchRequestWithEmptyBackendRoles() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            null,
+            true,
+            metricType,
+            null,
+            Collections.emptyList()
+        );
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // Empty backend roles should not add a filter
+        List<QueryBuilder> filterClauses = boolQuery.filter();
+        assertTrue(filterClauses.isEmpty());
+    }
+
+    public void testOriginalOverloadHasNoRbacFilters() {
+        List<String> indexNames = Arrays.asList("test-index");
+        ZonedDateTime start = ZonedDateTime.now(ZoneOffset.UTC).minusHours(1);
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+        MetricType metricType = MetricType.LATENCY;
+
+        // Use the original 6-arg overload
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, null, true, metricType);
+
+        assertNotNull(searchRequest);
+        BoolQueryBuilder boolQuery = (BoolQueryBuilder) searchRequest.source().query();
+
+        // Original overload should have no filter clauses
+        assertTrue(boolQuery.filter().isEmpty());
     }
 }
