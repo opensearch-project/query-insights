@@ -173,7 +173,6 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.REMOTE_EXPORTER_PATH,
             QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
             QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE,
-            QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
             QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
             QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
             QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,

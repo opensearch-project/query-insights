@@ -12,13 +12,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.cache.Cache;
+import org.opensearch.common.cache.CacheBuilder;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.rules.RecommendationRule;
@@ -45,10 +46,10 @@ public class RecommendationService extends AbstractLifecycleComponent {
 
     private final ClusterService clusterService;
     private final NamedXContentRegistry xContentRegistry;
-    private final List<RecommendationRule> rules;
+    private final CopyOnWriteArrayList<RecommendationRule> rules;
 
-    // Simple bounded cache keyed by record ID
-    private final Map<String, List<Recommendation>> cache;
+    // LRU cache keyed by record ID
+    private final Cache<String, List<Recommendation>> cache;
 
     private volatile boolean enabled;
     private volatile double minConfidence;
@@ -64,8 +65,8 @@ public class RecommendationService extends AbstractLifecycleComponent {
     public RecommendationService(ClusterService clusterService, NamedXContentRegistry xContentRegistry) {
         this.clusterService = clusterService;
         this.xContentRegistry = xContentRegistry;
-        this.rules = new ArrayList<>();
-        this.cache = new ConcurrentHashMap<>();
+        this.rules = new CopyOnWriteArrayList<>();
+        this.cache = CacheBuilder.<String, List<Recommendation>>builder().setMaximumWeight(MAX_CACHE_SIZE).weigher((k, v) -> 1).build();
 
         // Initialize settings from cluster
         this.enabled = clusterService.getClusterSettings().get(QueryInsightsSettings.RECOMMENDATIONS_ENABLED);
@@ -125,11 +126,7 @@ public class RecommendationService extends AbstractLifecycleComponent {
             // Evaluate all rules
             List<Recommendation> recommendations = evaluateRules(analyzableRecord);
 
-            // Cache result (evict oldest entries if needed)
-            if (cache.size() >= MAX_CACHE_SIZE) {
-                String firstKey = cache.keySet().iterator().next();
-                cache.remove(firstKey);
-            }
+            // Cache result (LRU eviction handled automatically by Cache)
             cache.put(record.getId(), recommendations);
 
             return recommendations;
@@ -154,7 +151,7 @@ public class RecommendationService extends AbstractLifecycleComponent {
                 if (!isRuleEnabled(rule)) {
                     continue;
                 }
-                if (rule.isEnabled() && rule.matches(context)) {
+                if (rule.matches(context)) {
                     Recommendation recommendation = rule.generate(context);
                     if (recommendation != null) {
                         recommendations.add(recommendation);
@@ -216,7 +213,7 @@ public class RecommendationService extends AbstractLifecycleComponent {
      * Clear the recommendation cache
      */
     public void clearCache() {
-        cache.clear();
+        cache.invalidateAll();
     }
 
     /**
@@ -307,8 +304,8 @@ public class RecommendationService extends AbstractLifecycleComponent {
      * Get the size of the cache
      * @return the number of cached entries
      */
-    public int getCacheSize() {
-        return cache.size();
+    public long getCacheSize() {
+        return cache.count();
     }
 
     @Override

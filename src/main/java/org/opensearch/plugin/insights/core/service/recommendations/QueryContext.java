@@ -32,8 +32,6 @@ import org.opensearch.search.builder.SearchSourceBuilder;
  */
 public class QueryContext {
     private static final Logger log = LogManager.getLogger(QueryContext.class);
-    public static final String KEYWORD_FIELD_TYPE = "keyword";
-    public static final String KEYWORD_SUBFIELD_SUFFIX = "." + KEYWORD_FIELD_TYPE;
 
     private final SearchQueryRecord record;
     private final ClusterService clusterService;
@@ -79,17 +77,20 @@ public class QueryContext {
      * Get the indices being queried
      * @return the list of indices, or empty list if not available
      */
-    @SuppressWarnings("unchecked")
     public List<String> getIndices() {
         Object indicesObj = record.getAttributes().get(Attribute.INDICES);
 
-        // Handle List type - deserialized records
-        if (indicesObj instanceof List) {
-            return (List<String>) indicesObj;
-        }
-        // In-memory records
+        // In-memory records from QueryInsightsListener: String[]
         if (indicesObj instanceof String[]) {
-            List<String> indices = Arrays.asList((String[]) indicesObj);
+            return Arrays.asList((String[]) indicesObj);
+        }
+        // Deserialized records from fromXContent: Object[] (via List.toArray())
+        if (indicesObj instanceof Object[]) {
+            Object[] arr = (Object[]) indicesObj;
+            List<String> indices = new ArrayList<>(arr.length);
+            for (Object obj : arr) {
+                indices.add(obj.toString());
+            }
             return indices;
         }
         return new ArrayList<>();

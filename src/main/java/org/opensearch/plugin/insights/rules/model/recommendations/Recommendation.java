@@ -275,6 +275,9 @@ public class Recommendation implements ToXContentObject, Writeable {
          * @return this builder
          */
         public Builder confidence(double confidence) {
+            if (confidence < 0.0 || confidence > 1.0) {
+                throw new IllegalArgumentException("confidence must be between 0.0 and 1.0");
+            }
             this.confidence = confidence;
             return this;
         }
