@@ -41,6 +41,7 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
@@ -374,6 +375,30 @@ public class TopQueriesService {
         final Boolean verbose,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
+        getTopQueriesRecordsFromIndex(from, to, id, verbose, null, null, listener);
+    }
+
+    /**
+     * Get all historical top queries records from local index with optional RBAC filtering
+     * pushed into the search query.
+     *
+     * @param from start timestamp
+     * @param to   end timestamp
+     * @param id search query record id
+     * @param verbose whether to return full output
+     * @param username optional username for RBAC filtering
+     * @param backendRoles optional backend roles for RBAC filtering
+     * @param listener listener to be called when records are fetched
+     */
+    public void getTopQueriesRecordsFromIndex(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader == null) {
             listener.onResponse(new ArrayList<>());
@@ -381,7 +406,7 @@ public class TopQueriesService {
         }
 
         try {
-            reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
+            reader.read(from, to, id, verbose, metricType, username, backendRoles, new ActionListener<List<SearchQueryRecord>>() {
                 @Override
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {
@@ -479,17 +504,20 @@ public class TopQueriesService {
         }
     }
 
-    // Add Username and User Roles attributes to record
+    // Add Username, User Roles, and Backend Roles attributes to record
     public static void setUserInfo(final SearchQueryRecord record) {
         UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
         if (userPrincipalContext != null) {
-            UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+            UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
             if (userInfo != null) {
                 if (userInfo.getUserName() != null) {
                     record.addAttribute(Attribute.USERNAME, userInfo.getUserName());
                 }
                 if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
                     record.addAttribute(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                }
+                if (userInfo.getBackendRoles() != null && !userInfo.getBackendRoles().isEmpty()) {
+                    record.addAttribute(Attribute.BACKEND_ROLES, userInfo.getBackendRoles().toArray(new String[0]));
                 }
             }
         }

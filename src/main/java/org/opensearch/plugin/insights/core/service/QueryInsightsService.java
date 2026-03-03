@@ -19,6 +19,7 @@ import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMO
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -53,6 +54,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -136,6 +138,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     SinkType sinkType;
 
+    private volatile FilterByMode filterByMode;
+
     /**
      * Constructor of the QueryInsightsService
      *
@@ -199,6 +203,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
+
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_FILTER_BY_MODE, this::setFilterByMode, this::validateFilterByMode);
+        this.filterByMode = FilterByMode.fromString(clusterService.getClusterSettings().get(TOP_N_QUERIES_FILTER_BY_MODE));
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
@@ -527,6 +535,33 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void validateExporterType(final String exporterType) {
         queryInsightsExporterFactory.validateExporterType(exporterType);
+    }
+
+    /**
+     * Get the current RBAC filter mode for top queries
+     *
+     * @return the current {@link FilterByMode}
+     */
+    public FilterByMode getFilterByMode() {
+        return filterByMode;
+    }
+
+    /**
+     * Set the RBAC filter mode for top queries
+     *
+     * @param filterByModeSetting the filter mode string value
+     */
+    public void setFilterByMode(final String filterByModeSetting) {
+        this.filterByMode = FilterByMode.fromString(filterByModeSetting);
+    }
+
+    /**
+     * Validate the filter by mode setting
+     *
+     * @param filterByModeSetting the filter mode string value to validate
+     */
+    public void validateFilterByMode(final String filterByModeSetting) {
+        FilterByMode.fromString(filterByModeSetting);
     }
 
     /**

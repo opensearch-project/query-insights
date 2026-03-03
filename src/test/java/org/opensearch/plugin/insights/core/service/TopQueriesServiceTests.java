@@ -649,10 +649,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new ArrayList<>(mockRecords));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -695,14 +695,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         }
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             String readerIdFilter = invocation.getArgument(2);
             List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
                 .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
                 .toList();
             listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -733,11 +733,11 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             // Simulate reader returning simplified records if verbose is false
             listener.onResponse(mockRecords.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList()));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -763,10 +763,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.now().toString();
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new java.util.ArrayList<>());
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -787,10 +787,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         Exception testException = new RuntimeException("Reader failed");
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onFailure(testException);
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -1028,6 +1028,36 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         assertEquals("testuser", record.getAttributes().get(Attribute.USERNAME));
         assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
+    }
+
+    public void testSetUserInfoWithBackendRoles() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // threadPool already has user info from createMockThreadPool()
+        // Format: "testuser|role1,role2|admin,user|tenant1|access1"
+        // backend_roles (index 1) = "role1,role2"
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNotNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+        assertArrayEquals(new String[] { "role1", "role2" }, (String[]) record.getAttributes().get(Attribute.BACKEND_ROLES));
     }
 
     public void testSetUserInfoWithNullUserPrincipalContext() {
