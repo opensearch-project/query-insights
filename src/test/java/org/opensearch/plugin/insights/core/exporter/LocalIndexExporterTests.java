@@ -36,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.opensearch.action.bulk.BulkAction;
+import org.opensearch.action.bulk.BulkItemResponse;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.support.PlainActionFuture;
@@ -47,7 +48,7 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
-import org.opensearch.index.mapper.MapperException;
+import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -346,25 +347,33 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         verify(exporterSpy).bulk(anyString(), eq(records));
     }
 
-    public void testBulkRetryOnMapperException() throws IOException {
-        // Create a real BulkRequestBuilder with the client and action
+    public void testBulkRetryOnMapperParsingException() throws IOException {
         BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
         when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
 
-        // Track the number of execute calls to verify retry
         AtomicInteger executeCallCount = new AtomicInteger(0);
 
-        // Mock execute to fail first time with MapperException, succeed second time
+        // Mock BulkItemResponse with MapperParsingException failure
+        BulkItemResponse failedItem = mock(BulkItemResponse.class);
+        when(failedItem.isFailed()).thenReturn(true);
+        BulkItemResponse.Failure failure = mock(BulkItemResponse.Failure.class);
+        when(failure.getCause()).thenReturn(new MapperParsingException("test mapper parsing exception"));
+        when(failedItem.getFailure()).thenReturn(failure);
+
+        BulkResponse failedResponse = mock(BulkResponse.class);
+        when(failedResponse.hasFailures()).thenReturn(true);
+        when(failedResponse.iterator()).thenReturn(List.of(failedItem).iterator());
+
+        BulkResponse successResponse = mock(BulkResponse.class);
+        when(successResponse.hasFailures()).thenReturn(false);
+
         doAnswer(invocation -> {
             ActionListener<BulkResponse> listener = invocation.getArgument(0);
             int callNumber = executeCallCount.incrementAndGet();
-
             if (callNumber == 1) {
-                // First call fails with MapperException
-                listener.onFailure(new MapperException("test mapper exception"));
+                listener.onResponse(failedResponse);
             } else {
-                // Second call succeeds
-                listener.onResponse(mock(BulkResponse.class));
+                listener.onResponse(successResponse);
             }
             return null;
         }).when(bulkRequestBuilder).execute(any());
@@ -372,11 +381,43 @@ public class LocalIndexExporterTests extends OpenSearchTestCase {
         LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
 
-        // Call bulk with useObjectSource=false, should retry with useObjectSource=true
         exporter.bulk("test-index", records, false);
 
-        // Verify execute was called twice (original + retry)
         assertEquals(2, executeCallCount.get());
         verify(bulkRequestBuilder, times(2)).execute(any());
+    }
+
+    public void testBulkNoRetryWhenAlreadyUsingObjectSource() throws IOException {
+        BulkRequestBuilder bulkRequestBuilder = spy(new BulkRequestBuilder(client, BulkAction.INSTANCE));
+        when(client.prepareBulk()).thenReturn(bulkRequestBuilder);
+
+        AtomicInteger executeCallCount = new AtomicInteger(0);
+
+        BulkItemResponse failedItem = mock(BulkItemResponse.class);
+        when(failedItem.isFailed()).thenReturn(true);
+        BulkItemResponse.Failure failure = mock(BulkItemResponse.Failure.class);
+        when(failure.getCause()).thenReturn(new MapperParsingException("test mapper parsing exception"));
+        when(failedItem.getFailure()).thenReturn(failure);
+
+        BulkResponse failedResponse = mock(BulkResponse.class);
+        when(failedResponse.hasFailures()).thenReturn(true);
+        when(failedResponse.iterator()).thenReturn(List.of(failedItem).iterator());
+        when(failedResponse.buildFailureMessage()).thenReturn("test failure");
+
+        doAnswer(invocation -> {
+            ActionListener<BulkResponse> listener = invocation.getArgument(0);
+            executeCallCount.incrementAndGet();
+            listener.onResponse(failedResponse);
+            return null;
+        }).when(bulkRequestBuilder).execute(any());
+
+        LocalIndexExporter exporter = new LocalIndexExporter(client, clusterService, format, "{}", "id");
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(1);
+
+        // Call with useObjectSource=true, should NOT retry
+        exporter.bulk("test-index", records, true);
+
+        assertEquals(1, executeCallCount.get());
+        verify(bulkRequestBuilder, times(1)).execute(any());
     }
 }
