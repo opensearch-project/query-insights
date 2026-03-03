@@ -25,6 +25,7 @@ import org.opensearch.telemetry.metrics.tags.Tags;
 public final class SearchQueryCounters {
     private static final String LEVEL_TAG = "level";
     private static final String QUERY_TYPE_TAG = "type";
+    static final String IS_STREAMING_TAG = "is_streaming";
     private static final String UNIT = "1";
     private static final String UNIT_MILLIS = "ms";
     private static final String UNIT_CPU_CYCLES = "ns";
@@ -122,8 +123,10 @@ public final class SearchQueryCounters {
      * @param value value to increment
      * @param tags tags
      * @param measurements metrics measurements
+     * @param isStreaming whether the query is a streaming request
      */
-    public void incrementAggCounter(double value, Tags tags, Map<MetricType, Measurement> measurements) {
+    public void incrementAggCounter(double value, Tags tags, Map<MetricType, Measurement> measurements, boolean isStreaming) {
+        tags.addTag(IS_STREAMING_TAG, String.valueOf(isStreaming));
         aggCounter.add(value, tags);
         incrementAllHistograms(tags, measurements);
     }
