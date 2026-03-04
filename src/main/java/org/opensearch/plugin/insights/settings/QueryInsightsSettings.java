@@ -12,12 +12,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 
@@ -125,6 +127,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_LATENCY_QUERIES_SIZE = Setting.intSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        1,
+        MAX_N_SIZE,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -132,9 +136,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by latency.
      */
-    public static final Setting<TimeValue> TOP_N_LATENCY_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_LATENCY_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_LATENCY_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -145,6 +151,7 @@ public class QueryInsightsSettings {
     public static final Setting<String> TOP_N_QUERIES_GROUP_BY = Setting.simpleString(
         TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".group_by",
         DEFAULT_GROUPING_TYPE.getValue(),
+        new GroupByValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -155,6 +162,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N = Setting.intSetting(
         TOP_N_QUERIES_GROUPING_SETTING_PREFIX + ".max_groups_excluding_topn",
         DEFAULT_GROUPS_EXCLUDING_TOPN_LIMIT,
+        0,
+        MAX_GROUPS_EXCLUDING_TOPN_LIMIT,
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -189,6 +198,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_CPU_QUERIES_SIZE = Setting.intSetting(
         TOP_N_CPU_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        1,
+        MAX_N_SIZE,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -196,9 +207,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by cpu.
      */
-    public static final Setting<TimeValue> TOP_N_CPU_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_CPU_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_CPU_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -219,6 +232,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_MEMORY_QUERIES_SIZE = Setting.intSetting(
         TOP_N_MEMORY_QUERIES_PREFIX + ".top_n_size",
         DEFAULT_TOP_N_SIZE,
+        1,
+        MAX_N_SIZE,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -226,9 +241,11 @@ public class QueryInsightsSettings {
     /**
      * Time setting to define the window size in seconds for top queries by memory.
      */
-    public static final Setting<TimeValue> TOP_N_MEMORY_QUERIES_WINDOW_SIZE = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> TOP_N_MEMORY_QUERIES_WINDOW_SIZE = Setting.timeSetting(
         TOP_N_MEMORY_QUERIES_PREFIX + ".window_size",
         DEFAULT_WINDOW_SIZE,
+        MIN_WINDOW_SIZE,
+        new WindowSizeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -281,6 +298,8 @@ public class QueryInsightsSettings {
     public static final Setting<Integer> TOP_N_EXPORTER_DELETE_AFTER = Setting.intSetting(
         TOP_N_QUERIES_EXPORTER_PREFIX + ".delete_after_days",
         DEFAULT_DELETE_AFTER_VALUE,
+        MIN_DELETE_AFTER_VALUE,
+        MAX_DELETE_AFTER_VALUE,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
@@ -291,6 +310,7 @@ public class QueryInsightsSettings {
     public static final Setting<String> TOP_N_EXPORTER_TYPE = Setting.simpleString(
         TOP_N_QUERIES_EXPORTER_PREFIX + ".type",
         DEFAULT_TOP_QUERIES_EXPORTER_TYPE,
+        new ExporterTypeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -325,6 +345,7 @@ public class QueryInsightsSettings {
         TOP_N_QUERIES_SETTING_PREFIX + ".excluded_indices",
         Collections.emptyList(),
         Function.identity(),
+        new ExcludedIndicesValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -368,6 +389,7 @@ public class QueryInsightsSettings {
     public static final Setting<String> TOP_N_QUERIES_FILTER_BY_MODE = Setting.simpleString(
         TOP_N_QUERIES_SETTING_PREFIX + ".filter_by_mode",
         DEFAULT_FILTER_BY_MODE,
+        new FilterByModeValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -424,4 +446,94 @@ public class QueryInsightsSettings {
      * Default constructor
      */
     public QueryInsightsSettings() {}
+
+    /**
+     * Validates the Query Insights window_size value.
+     * Ensures the value is a valid window size (a recognized minute value or a multiple of 1 hour).
+     */
+    static final class WindowSizeValidator implements Setting.Validator<TimeValue> {
+        @Override
+        public void validate(TimeValue windowSize) {
+            if (windowSize.compareTo(MAX_WINDOW_SIZE) > 0) {
+                throw new IllegalArgumentException(
+                    String.format(
+                        Locale.ROOT,
+                        "Window size setting should be between [%s, %s], was (%s)",
+                        MIN_WINDOW_SIZE,
+                        MAX_WINDOW_SIZE,
+                        windowSize
+                    )
+                );
+            }
+            if (!(VALID_WINDOW_SIZES_IN_MINUTES.contains(windowSize) || windowSize.getMinutes() % 60 == 0)) {
+                throw new IllegalArgumentException(
+                    String.format(
+                        Locale.ROOT,
+                        "Window size should be a multiple of 1 hour, or one of %s, was (%s)",
+                        VALID_WINDOW_SIZES_IN_MINUTES,
+                        windowSize
+                    )
+                );
+            }
+        }
+    }
+
+    /**
+     * Validates the Query Insights group_by value.
+     */
+    static final class GroupByValidator implements Setting.Validator<String> {
+        @Override
+        public void validate(String value) {
+            GroupingType.getGroupingTypeFromSettingAndValidate(value);
+        }
+    }
+
+    /**
+     * Validates the Query Insights excluded_indices values.
+     */
+    public static final class ExcludedIndicesValidator implements Setting.Validator<List<String>> {
+        @Override
+        public void validate(List<String> excludedIndices) {
+            for (String index : excludedIndices) {
+                if (index == null) {
+                    throw new IllegalArgumentException("Excluded index name cannot be null.");
+                }
+                if (index.isBlank()) {
+                    throw new IllegalArgumentException("Excluded index name cannot be blank.");
+                }
+                if (index.chars().anyMatch(Character::isUpperCase)) {
+                    throw new IllegalArgumentException("Index name must be lowercase.");
+                }
+            }
+        }
+    }
+
+    /**
+     * Validates the Query Insights exporter type value.
+     */
+    static final class ExporterTypeValidator implements Setting.Validator<String> {
+        @Override
+        public void validate(String value) {
+            if (value == null || value.isEmpty()) {
+                return;
+            }
+            try {
+                SinkType.parse(value);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                    String.format(Locale.ROOT, "Invalid exporter type [%s], type should be one of %s", value, SinkType.allSinkTypes())
+                );
+            }
+        }
+    }
+
+    /**
+     * Validates the Query Insights filter_by_mode value.
+     */
+    static final class FilterByModeValidator implements Setting.Validator<String> {
+        @Override
+        public void validate(String value) {
+            FilterByMode.fromString(value);
+        }
+    }
 }

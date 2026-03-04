@@ -474,18 +474,6 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         verify(mockLocalIndexLifecycleManagerSpy, times(expectedIndicesDeleted)).deleteSingleIndex(any(), any());
     }
 
-    public void testvalidateDeleteAfter() {
-        LocalIndexLifecycleManager localIndexLifecycleManager = queryInsightsService.getLocalIndexLifecycleManager();
-        localIndexLifecycleManager.validateDeleteAfter(7);
-        localIndexLifecycleManager.validateDeleteAfter(180);
-        localIndexLifecycleManager.validateDeleteAfter(0);
-        assertThrows(IllegalArgumentException.class, () -> { localIndexLifecycleManager.validateDeleteAfter(-1); });
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            localIndexLifecycleManager.validateDeleteAfter(181);
-        });
-        assertEquals("Invalid delete_after_days setting [181], value should be an integer between 0 and 180.", exception.getMessage());
-    }
-
     public void testSetDeleteAfterToNotZero() {
         queryInsightsServiceSpy.getLocalIndexLifecycleManager().setDeleteAfterAndDelete(100);
         verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteAllTopNIndices();
@@ -719,13 +707,14 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateFilterByMode_validValues() {
-        queryInsightsService.validateFilterByMode("none");
-        queryInsightsService.validateFilterByMode("username");
-        queryInsightsService.validateFilterByMode("backend_roles");
+        // Validation is now enforced at the Setting level via FilterByModeValidator
+        FilterByMode.fromString("none");
+        FilterByMode.fromString("username");
+        FilterByMode.fromString("backend_roles");
     }
 
     public void testValidateFilterByMode_invalidValue() {
-        assertThrows(IllegalArgumentException.class, () -> queryInsightsService.validateFilterByMode("invalid"));
+        assertThrows(IllegalArgumentException.class, () -> FilterByMode.fromString("invalid"));
     }
 
     // Util functions

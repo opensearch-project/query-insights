@@ -176,22 +176,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
         }
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_EXPORTER_TYPE,
-                (v -> setExporterAndReaderType(SinkType.parse(v))),
-                (this::validateExporterType)
-            );
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_TYPE, (v -> setExporterAndReaderType(SinkType.parse(v))));
         this.localIndexLifecycleManager = new LocalIndexLifecycleManager(
             threadPool,
             client,
             clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER)
         );
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_EXPORTER_DELETE_AFTER,
-                (localIndexLifecycleManager::setDeleteAfterAndDelete),
-                (localIndexLifecycleManager::validateDeleteAfter)
-            );
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_DELETE_AFTER, (localIndexLifecycleManager::setDeleteAfterAndDelete));
         queryInsightsExporterFactory.createRemoteRepositoryExporter(
             TOP_QUERIES_REMOTE_EXPORTER_ID,
             clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
@@ -204,8 +196,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
 
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(TOP_N_QUERIES_FILTER_BY_MODE, this::setFilterByMode, this::validateFilterByMode);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(TOP_N_QUERIES_FILTER_BY_MODE, this::setFilterByMode);
         this.filterByMode = FilterByMode.fromString(clusterService.getClusterSettings().get(TOP_N_QUERIES_FILTER_BY_MODE));
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
@@ -305,14 +296,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate grouping given grouping type setting
-     * @param groupingTypeSetting grouping setting
-     */
-    public void validateGrouping(final String groupingTypeSetting) {
-        GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
-    }
-
-    /**
      * Set grouping
      * @param groupingTypeSetting grouping
      */
@@ -336,23 +319,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public void setMaximumGroups(final int maxGroups) {
         for (MetricType metricType : MetricType.allMetricTypes()) {
             this.topQueriesServices.get(metricType).setMaxGroups(maxGroups);
-        }
-    }
-
-    /**
-     * Validate max number of groups. Should be between 1 and MAX_GROUPS_LIMIT
-     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
-     */
-    public void validateMaximumGroups(final int maxGroups) {
-        if (maxGroups < 0 || maxGroups > QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT) {
-            throw new IllegalArgumentException(
-                "Max groups setting"
-                    + " should be between 0 and "
-                    + QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT
-                    + ", was ("
-                    + maxGroups
-                    + ")"
-            );
         }
     }
 
@@ -424,18 +390,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the window size config for a metricType
-     *
-     * @param type {@link MetricType}
-     * @param windowSize {@link TimeValue}
-     */
-    public void validateWindowSize(final MetricType type, final TimeValue windowSize) {
-        if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).validateWindowSize(windowSize);
-        }
-    }
-
-    /**
      * Set window size for a metricType
      *
      * @param type {@link MetricType}
@@ -444,18 +398,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public void setWindowSize(final MetricType type, final TimeValue windowSize) {
         if (topQueriesServices.containsKey(type)) {
             topQueriesServices.get(type).setWindowSize(windowSize);
-        }
-    }
-
-    /**
-     * Validate the top n size config for a metricType
-     *
-     * @param type {@link MetricType}
-     * @param topNSize top n size
-     */
-    public void validateTopNSize(final MetricType type, final int topNSize) {
-        if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).validateTopNSize(topNSize);
         }
     }
 
@@ -529,15 +471,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the exporter type config
-     *
-     * @param exporterType exporter type
-     */
-    public void validateExporterType(final String exporterType) {
-        queryInsightsExporterFactory.validateExporterType(exporterType);
-    }
-
-    /**
      * Get the current RBAC filter mode for top queries
      *
      * @return the current {@link FilterByMode}
@@ -553,15 +486,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void setFilterByMode(final String filterByModeSetting) {
         this.filterByMode = FilterByMode.fromString(filterByModeSetting);
-    }
-
-    /**
-     * Validate the filter by mode setting
-     *
-     * @param filterByModeSetting the filter mode string value to validate
-     */
-    public void validateFilterByMode(final String filterByModeSetting) {
-        FilterByMode.fromString(filterByModeSetting);
     }
 
     /**
