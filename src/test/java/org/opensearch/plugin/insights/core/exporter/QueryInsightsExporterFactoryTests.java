@@ -54,19 +54,6 @@ public class QueryInsightsExporterFactoryTests extends OpenSearchTestCase {
         OperationalMetricsCounter.initialize("cluster", metricsRegistry);
     }
 
-    public void testValidateConfigWhenResetExporter() {
-        try {
-            // empty settings
-            queryInsightsExporterFactory.validateExporterType(null);
-        } catch (Exception e) {
-            fail("No exception should be thrown when setting is null");
-        }
-    }
-
-    public void testInvalidExporterTypeConfig() {
-        assertThrows(IllegalArgumentException.class, () -> { queryInsightsExporterFactory.validateExporterType("some_invalid_type"); });
-    }
-
     public void testCreateAndCloseExporter() {
         QueryInsightsExporter exporter1 = queryInsightsExporterFactory.createLocalIndexExporter("id-index", format, "");
         assertTrue(exporter1 instanceof LocalIndexExporter);

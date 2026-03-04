@@ -18,8 +18,6 @@ import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.cluster.service.ClusterService;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
@@ -60,27 +58,6 @@ public class QueryInsightsExporterFactory {
         this.threadPool = threadPool;
         this.repositoriesServiceSupplier = repositoriesServiceSupplier;
         this.exporters = new HashMap<>();
-    }
-
-    /**
-     * Validate exporter sink config
-     *
-     * @param exporterType exporter sink type
-     * @throws IllegalArgumentException if provided exporter sink config settings are invalid
-     */
-    public void validateExporterType(final String exporterType) throws IllegalArgumentException {
-        // Disable exporter if the EXPORTER_TYPE setting is null
-        if (exporterType == null) {
-            return;
-        }
-        try {
-            SinkType.parse(exporterType);
-        } catch (IllegalArgumentException e) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Invalid exporter type [%s], type should be one of %s", exporterType, SinkType.allSinkTypes())
-            );
-        }
     }
 
     /**

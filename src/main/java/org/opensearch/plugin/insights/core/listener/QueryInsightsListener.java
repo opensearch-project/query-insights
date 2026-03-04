@@ -54,7 +54,6 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
-import reactor.util.annotation.NonNull;
 
 /**
  * The listener for query insights services.
@@ -118,51 +117,26 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(getTopNEnabledSetting(type), v -> this.setEnableTopQueries(type, v));
             clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    getTopNSizeSetting(type),
-                    v -> this.queryInsightsService.setTopNSize(type, v),
-                    v -> this.queryInsightsService.validateTopNSize(type, v)
-                );
+                .addSettingsUpdateConsumer(getTopNSizeSetting(type), v -> this.queryInsightsService.setTopNSize(type, v));
             clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    getTopNWindowSizeSetting(type),
-                    v -> this.queryInsightsService.setWindowSize(type, v),
-                    v -> this.queryInsightsService.validateWindowSize(type, v)
-                );
+                .addSettingsUpdateConsumer(getTopNWindowSizeSetting(type), v -> this.queryInsightsService.setWindowSize(type, v));
 
             this.setEnableTopQueries(type, clusterService.getClusterSettings().get(getTopNEnabledSetting(type)));
-            this.queryInsightsService.validateTopNSize(type, clusterService.getClusterSettings().get(getTopNSizeSetting(type)));
             this.queryInsightsService.setTopNSize(type, clusterService.getClusterSettings().get(getTopNSizeSetting(type)));
-            this.queryInsightsService.validateWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
 
         // Settings endpoints set for grouping top n queries
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_QUERIES_GROUP_BY,
-                v -> this.queryInsightsService.setGrouping(v),
-                v -> this.queryInsightsService.validateGrouping(v)
-            );
-        this.queryInsightsService.validateGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUP_BY, v -> this.queryInsightsService.setGrouping(v));
         this.queryInsightsService.setGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
 
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
-                v -> this.queryInsightsService.setMaximumGroups(v),
-                v -> this.queryInsightsService.validateMaximumGroups(v)
-            );
-        this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N, v -> this.queryInsightsService.setMaximumGroups(v));
         this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
 
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
-                this::setExcludedIndices,
-                this::validateExcludedIndices
-            );
-        validateExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
+            .addSettingsUpdateConsumer(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES, this::setExcludedIndices);
         setExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
 
         // Internal settings for grouping attributes
@@ -396,24 +370,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
-        }
-    }
-
-    /**
-     * Validate the index name for excluded indices
-     * @param excludedIndices list of index to validate
-     */
-    public void validateExcludedIndices(@NonNull List<String> excludedIndices) {
-        for (String index : excludedIndices) {
-            if (index == null) {
-                throw new IllegalArgumentException("Excluded index name cannot be null.");
-            }
-            if (index.isBlank()) {
-                throw new IllegalArgumentException("Excluded index name cannot be blank.");
-            }
-            if (index.chars().anyMatch(Character::isUpperCase)) {
-                throw new IllegalArgumentException("Index name must be lowercase.");
-            }
         }
     }
 
