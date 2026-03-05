@@ -32,7 +32,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
@@ -148,11 +147,23 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(QueryInsightsSettings.MAX_N_SIZE + 1); });
+        // Validation is now enforced at the Setting level via min/max bounds
+        assertThrows(IllegalArgumentException.class, () -> {
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.get(
+                org.opensearch.common.settings.Settings.builder()
+                    .put("search.insights.top_queries.latency.top_n_size", QueryInsightsSettings.MAX_N_SIZE + 1)
+                    .build()
+            );
+        });
     }
 
     public void testValidateNegativeTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(-1); });
+        // Validation is now enforced at the Setting level via min/max bounds
+        assertThrows(IllegalArgumentException.class, () -> {
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.top_n_size", -1).build()
+            );
+        });
     }
 
     public void testGetTopQueriesWhenNotEnabled() {
@@ -197,14 +208,17 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateWindowSize() {
+        // Validation is now enforced at the Setting level via min/max bounds and WindowSizeValidator
         assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MAX_WINDOW_SIZE.getSeconds() + 1, TimeUnit.SECONDS));
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_WINDOW_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.window_size", "2d").build()
+            );
         });
         assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MIN_WINDOW_SIZE.getSeconds() - 1, TimeUnit.SECONDS));
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_WINDOW_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.window_size", "7m").build()
+            );
         });
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(2, TimeUnit.DAYS)); });
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(7, TimeUnit.MINUTES)); });
     }
 
     private static void runUntilTimeoutOrFinish(DeterministicTaskQueue deterministicTaskQueue, long duration) {

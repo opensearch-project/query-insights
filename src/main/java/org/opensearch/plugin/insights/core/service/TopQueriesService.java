@@ -198,26 +198,6 @@ public class TopQueriesService {
     }
 
     /**
-     * Validate the top N size based on the internal constrains
-     *
-     * @param size the wanted top N size
-     */
-    public void validateTopNSize(final int size) {
-        if (size < 1 || size > QueryInsightsSettings.MAX_N_SIZE) {
-            throw new IllegalArgumentException(
-                "Top N size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be between 1 and "
-                    + QueryInsightsSettings.MAX_N_SIZE
-                    + ", was ("
-                    + size
-                    + ")"
-            );
-        }
-    }
-
-    /**
      * Set enable flag for the service
      *
      * @param enabled boolean
@@ -252,42 +232,6 @@ public class TopQueriesService {
         boolean changed = queryGrouper.setMaxGroups(maxGroups);
         if (changed) {
             drain();
-        }
-    }
-
-    /**
-     * Validate if the window size is valid, based on internal constrains.
-     *
-     * @param windowSize the window size to validate
-     */
-    public void validateWindowSize(final TimeValue windowSize) {
-        if (windowSize.compareTo(QueryInsightsSettings.MAX_WINDOW_SIZE) > 0
-            || windowSize.compareTo(QueryInsightsSettings.MIN_WINDOW_SIZE) < 0) {
-            throw new IllegalArgumentException(
-                "Window size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be between ["
-                    + QueryInsightsSettings.MIN_WINDOW_SIZE
-                    + ","
-                    + QueryInsightsSettings.MAX_WINDOW_SIZE
-                    + "]"
-                    + "was ("
-                    + windowSize
-                    + ")"
-            );
-        }
-        if (!(QueryInsightsSettings.VALID_WINDOW_SIZES_IN_MINUTES.contains(windowSize) || windowSize.getMinutes() % 60 == 0)) {
-            throw new IllegalArgumentException(
-                "Window size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be multiple of 1 hour, or one of "
-                    + QueryInsightsSettings.VALID_WINDOW_SIZES_IN_MINUTES
-                    + ", was ("
-                    + windowSize
-                    + ")"
-            );
         }
     }
 

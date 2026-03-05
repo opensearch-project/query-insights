@@ -50,6 +50,7 @@ import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -526,47 +527,29 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     }
 
     public void testExcludedIndicesValidation() {
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        // Validation is now enforced at the Setting level via ExcludedIndicesValidator
+        QueryInsightsSettings.ExcludedIndicesValidator validator = new QueryInsightsSettings.ExcludedIndicesValidator();
+
         List<String> containNullList = new ArrayList<>();
         containNullList.add("index1");
         containNullList.add(null);
-        assertThrows(
-            "Excluded index name cannot be null.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containNullList)
-        );
+        assertThrows("Excluded index name cannot be null.", IllegalArgumentException.class, () -> validator.validate(containNullList));
 
         List<String> containEmptyList = List.of("index1", "");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containEmptyList)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(containEmptyList));
 
         List<String> containBlankList = List.of("index1", "  ");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containBlankList)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(containBlankList));
 
         List<String> blankResetValue = List.of("");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(blankResetValue)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(blankResetValue));
 
         List<String> indexNameWithUpperCaseChar = List.of("acceptedIndex", "rejectedIndex");
-        assertThrows(
-            "Index name must be lowercase.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(indexNameWithUpperCaseChar)
-        );
+        assertThrows("Index name must be lowercase.", IllegalArgumentException.class, () -> validator.validate(indexNameWithUpperCaseChar));
 
         List<String> validIndicesList = List.of("first-index", "wildcard-index*");
         try {
-            queryInsightsListener.validateExcludedIndices(validIndicesList);
+            validator.validate(validIndicesList);
         } catch (Exception e) {
             fail("Expect no exception when valid excluded indices is set.");
         }
