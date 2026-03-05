@@ -23,8 +23,8 @@ buildscript {
       opensearch_build += "-SNAPSHOT"
     }
 
-    def os_platform = "linux"
-    def artifact_type = "tar"
+    os_platform = "linux"
+    artifact_type = "tar"
     if (System.properties['os.name'].toLowerCase().contains('windows')) {
       os_platform = "windows"
       artifact_type = "zip"
@@ -200,17 +200,21 @@ repositories {
 
 ext {
   getSecurityPluginDownloadLink = { ->
-    var repo = "https://ci.opensearch.org/ci/dbc/snapshots/maven/org/opensearch/plugin/" +
-      "opensearch-security/$opensearch_build_snapshot/"
-    var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
-    download.run {
-      src repo + "maven-metadata.xml"
-      dest metadataFile
-    }
-    def metadata = new XmlParser().parse(metadataFile)
-    def securitySnapshotVersion = metadata.versioning.snapshotVersions[0].snapshotVersion[0].value[0].text()
+    if (isSnapshot) {
+      var repo = "https://ci.opensearch.org/ci/dbc/snapshots/maven/org/opensearch/plugin/" +
+        "opensearch-security/$opensearch_build_snapshot/"
+      var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
+      download.run {
+        src repo + "maven-metadata.xml"
+        dest metadataFile
+      }
+      def metadata = new XmlParser().parse(metadataFile)
+      def securitySnapshotVersion = metadata.versioning.snapshotVersions[0].snapshotVersion[0].value[0].text()
 
-    return repo + "opensearch-security-${securitySnapshotVersion}.zip"
+      return repo + "opensearch-security-${securitySnapshotVersion}.zip"
+    } else {
+      return "https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/${opensearch_version_no_snapshot}/latest/${os_platform}/x64/${artifact_type}/builds/opensearch/plugins/opensearch-security-${opensearch_build}.zip"
+    }
   }
 
   var projectAbsPath = projectDir.getAbsolutePath()
