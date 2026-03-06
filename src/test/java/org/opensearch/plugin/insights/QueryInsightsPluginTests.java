@@ -115,7 +115,12 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
                 QueryInsightsSettings.REMOTE_EXPORTER_PATH,
                 QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
-                QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE
+                QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE,
+                // Recommendation settings
+                QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
+                QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
+                QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
+                QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES
             ),
             queryInsightsPlugin.getSettings()
         );
