@@ -91,7 +91,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
         @SuppressWarnings("unchecked")
         public TopQueriesResponse createNewResponse() {
-            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
             return newResponse(request, Collections.emptyList(), Collections.emptyList());
         }
     }
@@ -152,7 +152,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testHandleInMemoryDataResponse_noHistoricalData() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 1L,
@@ -174,12 +174,16 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
         actionToTest.handleInMemoryDataResponse(request, FilterByMode.NONE, null, inMemoryResponse, finalListener);
 
-        verify(finalListener).onResponse(inMemoryResponse);
+        ArgumentCaptor<TopQueriesResponse> captor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(captor.capture());
+        TopQueriesResponse capturedResponse = captor.getValue();
+        assertEquals(request.getMetricType(), capturedResponse.getMetricType());
+        assertEquals(1, capturedResponse.getNodes().size());
     }
 
     @SuppressWarnings("unchecked")
     public void testHandleInMemoryDataResponse_withHistoricalData_invokesFetch() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false, null);
         List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
         List<FailedNodeException> failures = Collections.emptyList();
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
@@ -207,7 +211,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataResponse_combinesDataCorrectly() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 1L,
@@ -246,7 +250,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataFailure_usesInMemoryData() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 3L,
@@ -276,7 +280,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataResponse_removesDuplicates() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, null);
 
         // in-memory record that's unique
         SearchQueryRecord uniqueInMemoryRecord = new SearchQueryRecord(

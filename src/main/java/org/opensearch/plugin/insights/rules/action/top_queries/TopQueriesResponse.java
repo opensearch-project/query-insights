@@ -10,7 +10,9 @@ package org.opensearch.plugin.insights.rules.action.top_queries;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.nodes.BaseNodesResponse;
@@ -20,8 +22,10 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 
 /**
  * Transport response for cluster/node level top queries information.
@@ -30,6 +34,10 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
 
     private static final String CLUSTER_LEVEL_RESULTS_KEY = "top_queries";
     private final MetricType metricType;
+
+    // Transient fields for recommendation enrichment (not serialized)
+    private transient boolean recommendationsRequested;
+    private transient RecommendationService recommendationService;
 
     /**
      * Constructor for TopQueriesResponse.
@@ -40,6 +48,8 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
     public TopQueriesResponse(final StreamInput in) throws IOException {
         super(in);
         metricType = in.readEnum(MetricType.class);
+        this.recommendationsRequested = false;
+        this.recommendationService = null;
     }
 
     /**
@@ -58,6 +68,19 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
     ) {
         super(clusterName, nodes, failures);
         this.metricType = metricType;
+        this.recommendationsRequested = false;
+        this.recommendationService = null;
+    }
+
+    /**
+     * Set recommendation enrichment context for serialization.
+     * This should be called before toXContent() if recommendations are requested.
+     *
+     * @param recommendationService The service to generate recommendations on-demand
+     */
+    public void setRecommendationContext(RecommendationService recommendationService) {
+        this.recommendationsRequested = true;
+        this.recommendationService = recommendationService;
     }
 
     /**
@@ -109,6 +132,17 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
      */
     private void toClusterLevelResult(final XContentBuilder builder, final Params params, final List<TopQueries> results)
         throws IOException {
+        // Merge pre-computed recommendations from all node responses
+        final Map<String, List<Recommendation>> mergedRecommendations;
+        if (recommendationsRequested) {
+            mergedRecommendations = new HashMap<>();
+            for (TopQueries tq : results) {
+                mergedRecommendations.putAll(tq.getRecommendations());
+            }
+        } else {
+            mergedRecommendations = null;
+        }
+
         final List<SearchQueryRecord> all_records = results.stream()
             .map(TopQueries::getTopQueriesRecord)
             .flatMap(Collection::stream)
@@ -117,7 +151,21 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
             .collect(Collectors.toList());
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
         for (SearchQueryRecord record : all_records) {
-            record.toXContent(builder, params);
+            if (recommendationsRequested) {
+                // Use pre-computed recommendations from data nodes if available
+                List<Recommendation> recs = mergedRecommendations != null ? mergedRecommendations.get(record.getId()) : null;
+                // Fall back to coordinator-side generation for historical records (from index)
+                if (recs == null && recommendationService != null) {
+                    recs = recommendationService.generateRecommendations(record);
+                }
+                if (recs != null && !recs.isEmpty()) {
+                    record.toXContentWithRecommendations(builder, params, recs);
+                } else {
+                    record.toXContent(builder, params);
+                }
+            } else {
+                record.toXContent(builder, params);
+            }
         }
         builder.endArray();
     }
