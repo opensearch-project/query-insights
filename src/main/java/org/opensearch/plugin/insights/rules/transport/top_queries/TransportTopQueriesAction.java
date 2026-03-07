@@ -11,8 +11,10 @@ package org.opensearch.plugin.insights.rules.transport.top_queries;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -30,12 +32,14 @@ import org.opensearch.plugin.insights.core.auth.TopQueriesRbacFilter;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportRequest;
@@ -118,7 +122,9 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         if (from != null && to != null) {
             fetchHistoricalData(request, filterByMode, userInfo, inMemoryTopQueries, inMemoryDataFailures, finalListener);
         } else {
-            finalListener.onResponse(inMemoryQueriesResponse);
+            finalListener.onResponse(
+                new TopQueriesResponse(clusterService.getClusterName(), inMemoryTopQueries, inMemoryDataFailures, request.getMetricType())
+            );
         }
     }
 
@@ -190,7 +196,21 @@ public class TransportTopQueriesAction extends TransportNodesAction<
             // Remove duplicates between in-memory and historical records
             List<SearchQueryRecord> deduplicatedHistoricalRecords = removeDuplicates(inMemoryTopQueries, historicalRecords);
             if (!deduplicatedHistoricalRecords.isEmpty()) {
-                combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), deduplicatedHistoricalRecords));
+                // Pre-compute recommendations for historical records (in-memory records already have them from nodeOperation)
+                Map<String, List<Recommendation>> historicalRecs = Collections.emptyMap();
+                if (Boolean.TRUE.equals(request.getRecommendations())) {
+                    RecommendationService recommendationService = queryInsightsService.getRecommendationService();
+                    if (recommendationService != null) {
+                        historicalRecs = new HashMap<>();
+                        for (SearchQueryRecord record : deduplicatedHistoricalRecords) {
+                            List<Recommendation> recs = recommendationService.generateRecommendations(record);
+                            if (recs != null && !recs.isEmpty()) {
+                                historicalRecs.put(record.getId(), recs);
+                            }
+                        }
+                    }
+                }
+                combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), deduplicatedHistoricalRecords, historicalRecs));
             }
         }
         finalListener.onResponse(
@@ -290,7 +310,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 try {
                     List<TopQueries> filteredNodes = response.getNodes().stream().map(topQueries -> {
                         List<SearchQueryRecord> filtered = TopQueriesRbacFilter.filterRecords(topQueries.getTopQueriesRecord(), mode, info);
-                        return new TopQueries(topQueries.getNode(), filtered);
+                        return new TopQueries(topQueries.getNode(), filtered, topQueries.getRecommendations());
                     }).collect(Collectors.toList());
                     delegate.onResponse(
                         new TopQueriesResponse(response.getClusterName(), filteredNodes, response.failures(), response.getMetricType())
@@ -329,11 +349,23 @@ public class TransportTopQueriesAction extends TransportNodesAction<
     @Override
     protected TopQueries nodeOperation(final NodeRequest nodeRequest) {
         final TopQueriesRequest request = nodeRequest.request;
-        return new TopQueries(
-            clusterService.localNode(),
-            queryInsightsService.getTopQueriesService(request.getMetricType())
-                .getTopQueriesRecords(true, request.getFrom(), request.getTo(), request.getId(), request.getVerbose())
-        );
+        List<SearchQueryRecord> records = queryInsightsService.getTopQueriesService(request.getMetricType())
+            .getTopQueriesRecords(true, request.getFrom(), request.getTo(), request.getId(), request.getVerbose());
+
+        if (Boolean.TRUE.equals(request.getRecommendations())) {
+            RecommendationService recommendationService = queryInsightsService.getRecommendationService();
+            if (recommendationService != null) {
+                Map<String, List<Recommendation>> recommendationsMap = new HashMap<>();
+                for (SearchQueryRecord record : records) {
+                    List<Recommendation> recs = recommendationService.generateRecommendations(record);
+                    if (recs != null && !recs.isEmpty()) {
+                        recommendationsMap.put(record.getId(), recs);
+                    }
+                }
+                return new TopQueries(clusterService.localNode(), records, recommendationsMap);
+            }
+        }
+        return new TopQueries(clusterService.localNode(), records);
     }
 
     /**

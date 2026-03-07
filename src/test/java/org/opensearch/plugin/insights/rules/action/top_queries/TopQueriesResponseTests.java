@@ -8,11 +8,17 @@
 
 package org.opensearch.plugin.insights.rules.action.top_queries;
 
+import static java.util.Collections.emptyMap;
+import static java.util.Collections.emptySet;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.opensearch.cluster.ClusterName;
+import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -20,8 +26,15 @@ import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.rules.model.AggregationType;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
+import org.opensearch.plugin.insights.rules.model.recommendations.RecommendationType;
 import org.opensearch.test.OpenSearchTestCase;
+import org.opensearch.test.VersionUtils;
 
 /**
  * Granular tests for the {@link TopQueriesResponse} class.
@@ -99,6 +112,117 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
         Arrays.sort(xContent);
 
         assertEquals(Arrays.hashCode(expectedXContent), Arrays.hashCode(xContent));
+    }
+
+    public void testToXContentWithRecommendations() throws IOException {
+        DiscoveryNode node = new DiscoveryNode(
+            "test_node",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+        String recordId = "rec_record_id";
+        SearchQueryRecord record = new SearchQueryRecord(
+            1706574180000L,
+            Map.of(MetricType.LATENCY, new Measurement(1L)),
+            Map.of(Attribute.NODE_ID, node.getId()),
+            recordId
+        );
+        Recommendation rec = Recommendation.builder()
+            .ruleId("test-rule")
+            .title("Test Recommendation")
+            .description("Test Description")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.95)
+            .build();
+
+        Map<String, List<Recommendation>> recsMap = new HashMap<>();
+        recsMap.put(recordId, List.of(rec));
+        TopQueries topQueries = new TopQueries(node, List.of(record), recsMap);
+
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        assertTrue(json.contains("\"recommendations\""));
+        assertTrue(json.contains("\"rule_id\":\"test-rule\""));
+        assertTrue(json.contains("\"title\":\"Test Recommendation\""));
+        assertTrue(json.contains("\"confidence\":0.95"));
+    }
+
+    public void testToXContentWithoutRecommendations() throws IOException {
+        String id = "no_rec_id";
+        TopQueries topQueries = QueryInsightsTestUtils.createFixedTopQueries(id);
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        assertFalse(json.contains("\"recommendations\""));
+    }
+
+    public void testToXContentMergesRecommendationsFromMultipleNodes() throws IOException {
+        DiscoveryNode node1 = new DiscoveryNode(
+            "node1",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+        DiscoveryNode node2 = new DiscoveryNode(
+            "node2",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            "id_node1"
+        );
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(5.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node2.getId()),
+            "id_node2"
+        );
+
+        Recommendation rec1 = Recommendation.builder()
+            .ruleId("rule-a")
+            .title("Rec A")
+            .description("From node1")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.8)
+            .build();
+        Recommendation rec2 = Recommendation.builder()
+            .ruleId("rule-b")
+            .title("Rec B")
+            .description("From node2")
+            .type(RecommendationType.INDEX_CONFIG)
+            .confidence(0.7)
+            .build();
+
+        Map<String, List<Recommendation>> recsMap1 = Map.of("id_node1", List.of(rec1));
+        Map<String, List<Recommendation>> recsMap2 = Map.of("id_node2", List.of(rec2));
+
+        TopQueries tq1 = new TopQueries(node1, List.of(record1), recsMap1);
+        TopQueries tq2 = new TopQueries(node2, List.of(record2), recsMap2);
+
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(tq1, tq2), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        assertTrue(json.contains("\"rule_id\":\"rule-a\""));
+        assertTrue(json.contains("\"rule_id\":\"rule-b\""));
     }
 
     /**

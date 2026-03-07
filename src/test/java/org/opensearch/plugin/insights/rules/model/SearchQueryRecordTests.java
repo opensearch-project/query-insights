@@ -23,10 +23,13 @@ import org.opensearch.common.xcontent.json.JsonXContent;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
+import org.opensearch.plugin.insights.rules.model.recommendations.RecommendationType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ThreadPool;
@@ -328,6 +331,43 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
             "The following SearchPhaseName enum values are missing from phase_latency_map: " + missingPhases,
             missingPhases.isEmpty()
         );
+    }
+
+    public void testToXContentWithRecommendations() throws IOException {
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("test_rec_id");
+
+        Recommendation rec = Recommendation.builder()
+            .ruleId("test-rule")
+            .title("Test Title")
+            .description("Test Description")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.85)
+            .build();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentWithRecommendations(builder, ToXContent.EMPTY_PARAMS, List.of(rec));
+        builder.flush();
+
+        String json = builder.toString();
+        assertTrue(json.contains("\"recommendations\""));
+        assertTrue(json.contains("\"rule_id\":\"test-rule\""));
+        assertTrue(json.contains("\"title\":\"Test Title\""));
+        assertTrue(json.contains("\"description\":\"Test Description\""));
+        assertTrue(json.contains("\"type\":\"query_rewrite\""));
+        assertTrue(json.contains("\"confidence\":0.85"));
+        assertTrue(json.contains("\"timestamp\":1706574180000"));
+        assertTrue(json.contains("\"id\":\"test_rec_id\""));
+    }
+
+    public void testToXContentWithEmptyRecommendations() throws IOException {
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("test_id");
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentWithRecommendations(builder, ToXContent.EMPTY_PARAMS, List.of());
+        builder.flush();
+
+        String json = builder.toString();
+        assertFalse("Empty recommendations list should not produce recommendations field", json.contains("\"recommendations\""));
     }
 
     /**

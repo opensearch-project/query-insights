@@ -40,6 +40,7 @@ import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
+import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
@@ -49,6 +50,8 @@ import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
+import org.opensearch.plugin.insights.rules.model.recommendations.RecommendationType;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
@@ -91,7 +94,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
         @SuppressWarnings("unchecked")
         public TopQueriesResponse createNewResponse() {
-            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+            TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
             return newResponse(request, Collections.emptyList(), Collections.emptyList());
         }
     }
@@ -152,7 +155,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testHandleInMemoryDataResponse_noHistoricalData() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 1L,
@@ -174,12 +177,16 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
         actionToTest.handleInMemoryDataResponse(request, FilterByMode.NONE, null, inMemoryResponse, finalListener);
 
-        verify(finalListener).onResponse(inMemoryResponse);
+        ArgumentCaptor<TopQueriesResponse> captor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(captor.capture());
+        TopQueriesResponse capturedResponse = captor.getValue();
+        assertEquals(request.getMetricType(), capturedResponse.getMetricType());
+        assertEquals(1, capturedResponse.getNodes().size());
     }
 
     @SuppressWarnings("unchecked")
     public void testHandleInMemoryDataResponse_withHistoricalData_invokesFetch() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false, null);
         List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
         List<FailedNodeException> failures = Collections.emptyList();
         ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
@@ -207,7 +214,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataResponse_combinesDataCorrectly() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 1L,
@@ -246,7 +253,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataFailure_usesInMemoryData() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", "id", false, null);
         List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
             new SearchQueryRecord(
                 3L,
@@ -276,7 +283,7 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
 
     @SuppressWarnings("unchecked")
     public void testOnHistoricalDataResponse_removesDuplicates() {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, null);
 
         // in-memory record that's unique
         SearchQueryRecord uniqueInMemoryRecord = new SearchQueryRecord(
@@ -504,6 +511,122 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         assertEquals(1, filteredResponse.getNodes().size());
         assertEquals(1, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
         assertEquals("rec1", filteredResponse.getNodes().get(0).getTopQueriesRecord().get(0).getId());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testHandleInMemoryDataResponse_withRecommendationsTrue_passesThrough() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false, true);
+
+        Recommendation rec = Recommendation.builder()
+            .ruleId("rule-1")
+            .title("Title")
+            .description("Desc")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.9)
+            .build();
+        Map<String, List<Recommendation>> recsMap = Map.of("rec_id", List.of(rec));
+
+        List<SearchQueryRecord> inMemoryRecords = Collections.singletonList(
+            new SearchQueryRecord(
+                1L,
+                Map.of(MetricType.CPU, new Measurement(1.0D, AggregationType.SUM)),
+                Map.of(Attribute.NODE_ID, node1.getId()),
+                new SearchSourceBuilder(),
+                new UserPrincipalContext(threadPool),
+                "rec_id"
+            )
+        );
+        TopQueries inMemoryTq = new TopQueries(node1, inMemoryRecords, recsMap);
+        TopQueriesResponse inMemoryResponse = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(inMemoryTq),
+            Collections.emptyList(),
+            request.getMetricType()
+        );
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.handleInMemoryDataResponse(request, FilterByMode.NONE, null, inMemoryResponse, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> captor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(captor.capture());
+        TopQueriesResponse capturedResponse = captor.getValue();
+        // Recommendations from nodeOperation should be preserved in the TopQueries nodes
+        assertEquals(1, capturedResponse.getNodes().size());
+        assertEquals(1, capturedResponse.getNodes().get(0).getRecommendations().size());
+        assertNotNull(capturedResponse.getNodes().get(0).getRecommendations().get("rec_id"));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnHistoricalDataResponse_withRecommendationsTrue_generatesForHistorical() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, true);
+
+        RecommendationService mockRecService = mock(RecommendationService.class);
+        when(queryInsightsService.getRecommendationService()).thenReturn(mockRecService);
+
+        Recommendation rec = Recommendation.builder()
+            .ruleId("hist-rule")
+            .title("Historical Rec")
+            .description("For historical record")
+            .type(RecommendationType.INDEX_CONFIG)
+            .confidence(0.75)
+            .build();
+        when(mockRecService.generateRecommendations(any(SearchQueryRecord.class))).thenReturn(List.of(rec));
+
+        List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
+        List<FailedNodeException> failures = Collections.emptyList();
+        List<SearchQueryRecord> histRecords = Collections.singletonList(
+            new SearchQueryRecord(
+                2L,
+                Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+                Map.of(Attribute.NODE_ID, node1.getId()),
+                null,
+                null,
+                "hist_entry"
+            )
+        );
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse response = responseCaptor.getValue();
+        // Node 0 = in-memory (empty), Node 1 = historical with recommendations
+        assertEquals(2, response.getNodes().size());
+        TopQueries historicalNode = response.getNodes().get(1);
+        assertEquals(1, historicalNode.getRecommendations().size());
+        assertNotNull(historicalNode.getRecommendations().get("hist_entry"));
+        assertEquals(rec, historicalNode.getRecommendations().get("hist_entry").get(0));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnHistoricalDataResponse_withRecommendationsFalse_noRecommendations() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, false);
+
+        List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
+        List<FailedNodeException> failures = Collections.emptyList();
+        List<SearchQueryRecord> histRecords = Collections.singletonList(
+            new SearchQueryRecord(
+                2L,
+                Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+                Map.of(Attribute.NODE_ID, node1.getId()),
+                null,
+                null,
+                "hist_entry"
+            )
+        );
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse response = responseCaptor.getValue();
+        assertEquals(2, response.getNodes().size());
+        TopQueries historicalNode = response.getNodes().get(1);
+        assertTrue(historicalNode.getRecommendations().isEmpty());
     }
 
     @SuppressWarnings("unchecked")

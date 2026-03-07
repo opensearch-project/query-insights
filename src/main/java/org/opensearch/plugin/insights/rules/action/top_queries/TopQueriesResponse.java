@@ -10,7 +10,9 @@ package org.opensearch.plugin.insights.rules.action.top_queries;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.opensearch.action.FailedNodeException;
 import org.opensearch.action.support.nodes.BaseNodesResponse;
@@ -22,6 +24,7 @@ import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 
 /**
  * Transport response for cluster/node level top queries information.
@@ -109,6 +112,12 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
      */
     private void toClusterLevelResult(final XContentBuilder builder, final Params params, final List<TopQueries> results)
         throws IOException {
+        // Merge pre-computed recommendations from all node responses
+        final Map<String, List<Recommendation>> mergedRecommendations = new HashMap<>();
+        for (TopQueries tq : results) {
+            mergedRecommendations.putAll(tq.getRecommendations());
+        }
+
         final List<SearchQueryRecord> all_records = results.stream()
             .map(TopQueries::getTopQueriesRecord)
             .flatMap(Collection::stream)
@@ -117,7 +126,12 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
             .collect(Collectors.toList());
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
         for (SearchQueryRecord record : all_records) {
-            record.toXContent(builder, params);
+            List<Recommendation> recs = mergedRecommendations.get(record.getId());
+            if (recs != null && !recs.isEmpty()) {
+                record.toXContentWithRecommendations(builder, params, recs);
+            } else {
+                record.toXContent(builder, params);
+            }
         }
         builder.endArray();
     }
