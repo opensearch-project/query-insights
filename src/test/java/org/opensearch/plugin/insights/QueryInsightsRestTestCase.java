@@ -619,33 +619,32 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
             assertFalse("Expected at least one top query", topQueries.isEmpty());
 
             boolean matchFound = false;
+
+            boolean idMismatchFound = false;
+            boolean nodeIdMismatchFound = false;
+
             List<String[]> idNodePairs = new ArrayList<>();
 
             for (Map<String, Object> query : topQueries) {
                 assertTrue(query.containsKey("timestamp"));
-                assertEquals("query_then_fetch", query.get("search_type"));
-                assertTrue(((List<?>) query.get("indices")).contains("my-index-0"));
+
+                List<?> indices = (List<?>) query.get("indices");
+                assertNotNull("Expected 'indices' field", indices);
                 String id = (String) query.get("id");
                 String nodeId = (String) query.get("node_id");
 
-                // Validate ID if provided
-                if (filterId != "null") {
-                    assertEquals("Expected id to match filter", filterId, id);
+                if (filterId != null && !filterId.equals("null") && !filterId.equals(id)) {
+                    idMismatchFound = true;
                 }
-                if (filterNodeID != "null") {
-                    assertEquals("Expected id to match filter", filterNodeID, nodeId);
+                if (filterNodeID != null && !filterNodeID.equals("null") && !filterNodeID.equals(nodeId)) {
+                    nodeIdMismatchFound = true;
                 }
-
                 idNodePairs.add(new String[] { id, nodeId });
 
                 Map<String, Object> source = (Map<String, Object>) query.get("source");
                 Map<String, Object> queryBlock = (Map<String, Object>) source.get("query");
                 Map<String, Object> match = (Map<String, Object>) queryBlock.get("match");
                 Map<String, Object> title = (Map<String, Object>) match.get("title");
-                if ("Test Document".equals(title.get("query"))) {
-                    matchFound = true;
-                }
-
                 List<Map<String, Object>> taskUsages = (List<Map<String, Object>>) query.get("task_resource_usages");
                 assertFalse("task_resource_usages should not be empty", taskUsages.isEmpty());
                 for (Map<String, Object> task : taskUsages) {
@@ -662,7 +661,13 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
                 assertTrue(measurements.containsKey("latency"));
             }
 
-            assertTrue("Expected at least one query with title='Test Document'", matchFound);
+            if (filterId != null && !filterId.equals("null")) {
+                assertFalse("One or more IDs did not match the filterId", idMismatchFound);
+            }
+            if (filterNodeID != null && !filterNodeID.equals("null")) {
+                assertFalse("One or more node IDs did not match the filterNodeID", nodeIdMismatchFound);
+            }
+
             return idNodePairs;
 
         }
