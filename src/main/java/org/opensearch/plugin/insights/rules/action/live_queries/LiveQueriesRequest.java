@@ -29,7 +29,6 @@ public class LiveQueriesRequest extends ActionRequest {
     // Node IDs to filter queries by
     private final String[] nodeIds;
     private String wlmGroupId;
-    private String taskId;
     private final boolean useFinishedCache;
 
     /**
@@ -48,7 +47,6 @@ public class LiveQueriesRequest extends ActionRequest {
             this.wlmGroupId = in.readOptionalString();
         }
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
-            this.taskId = in.readOptionalString();
             this.useFinishedCache = in.readBoolean();
         } else {
             this.useFinishedCache = false;
@@ -70,7 +68,6 @@ public class LiveQueriesRequest extends ActionRequest {
         final int size,
         final String[] nodeIds,
         String wlmGroupId,
-        String taskId,
         boolean useFinishedCache
     ) {
         this.verbose = verbose;
@@ -78,7 +75,6 @@ public class LiveQueriesRequest extends ActionRequest {
         this.size = size;
         this.nodeIds = nodeIds;
         this.wlmGroupId = wlmGroupId;
-        this.taskId = taskId;
         this.useFinishedCache = useFinishedCache;
     }
 
@@ -88,7 +84,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds the node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final String... nodeIds) {
-        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, null, false);
+        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, false);
     }
 
     /**
@@ -130,14 +126,6 @@ public class LiveQueriesRequest extends ActionRequest {
     }
 
     /**
-     * Get Task ID to filter by
-     * @return task ID
-     */
-    public String getTaskId() {
-        return taskId;
-    }
-
-    /**
      * Get whether to use finished queries cache
      * @return boolean indicating whether to use finished queries cache
      */
@@ -156,7 +144,6 @@ public class LiveQueriesRequest extends ActionRequest {
             out.writeOptionalString(wlmGroupId);
         }
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
-            out.writeOptionalString(taskId);
             out.writeBoolean(useFinishedCache);
         }
     }

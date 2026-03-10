@@ -40,7 +40,6 @@ import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.core.tasks.resourcetracker.TaskThreadUsage;
-import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -109,8 +108,6 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(adminClient.cluster()).thenReturn(clusterAdminClient);
 
         queryInsightsService = mock(QueryInsightsService.class);
-        FinishedQueriesCache finishedQueriesCache = mock(FinishedQueriesCache.class);
-        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(finishedQueriesCache);
 
         transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
     }
@@ -392,7 +389,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
     public void testTransportActionSortsByCpuAndLimitsSize() throws IOException {
         // Prepare a request to sort by CPU and limit to 1 result
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, false);
         // Create tasks with different CPU values
         TaskInfo lowCpu = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000L, "low", 100L, 100L);
         TaskInfo lowShard = createTaskInfo(
@@ -735,7 +732,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testNegativeSize() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, false);
         TaskInfo task = createTaskInfo(node1, "indices:data/read/search", 100L, 200L, "task", 100L, 200L);
         ListTasksResponse listTasksResponse = new ListTasksResponse(List.of(task), emptyList(), emptyList());
 
@@ -927,7 +924,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testSortByMemory() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.MEMORY, 1, new String[0], null, null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.MEMORY, 1, new String[0], null, false);
         TaskInfo low = createTaskInfo(node1, "indices:data/read/search", 100L, 1000L, "low", 100L, 100L);
         TaskInfo high = createTaskInfo(node1, "indices:data/read/search", 100L, 2000L, "high", 200L, 9000L);
         ListTasksResponse mockResponse = mock(ListTasksResponse.class);
@@ -946,7 +943,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testWlmGroupIdFilter() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "wlm-group-1", null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "wlm-group-1", false);
         TaskInfo task = createTaskInfo(node1, "indices:data/read/search", 100L, 1000L, "task", 100L, 200L);
         ListTasksResponse mockResponse = mock(ListTasksResponse.class);
         when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(task, emptyList())));
@@ -962,16 +959,13 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testFinishedCacheIncludedAndSorted() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, true);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, true);
         ListTasksResponse mockResponse = mock(ListTasksResponse.class);
         when(mockResponse.getTaskGroups()).thenReturn(emptyList());
         doAnswer(inv -> {
             ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
             return null;
-        }).when(clusterAdminClient).listTasks(any(), any());
-
-        FinishedQueriesCache cache = mock(FinishedQueriesCache.class);
-        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(cache);
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
         Map<MetricType, Measurement> m1 = new HashMap<>();
         m1.put(MetricType.LATENCY, new Measurement(100L));
@@ -985,14 +979,25 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         FinishedQueryRecord f1 = new FinishedQueryRecord(base1, "t1", "completed", "id1");
         FinishedQueryRecord f2 = new FinishedQueryRecord(base2, "t2", "completed", "id2");
         FinishedQueryRecord f3 = new FinishedQueryRecord(base3, "t3", "completed", "id3");
-        when(cache.getFinishedQueries()).thenReturn(List.of(f1, f2, f3));
+
+        // TransportLiveQueriesAction fans out via client.execute(FinishedQueriesAction)
+        doAnswer(inv -> {
+            ActionListener<org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse> listener = inv.getArgument(2);
+            org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesNodeResponse nodeResponse =
+                new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesNodeResponse(node1, List.of(f1, f2, f3));
+            org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse finishedResponse =
+                new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse(
+                    new ClusterName("test-cluster"), List.of(nodeResponse), emptyList());
+            listener.onResponse(finishedResponse);
+            return null;
+        }).when(client).execute(any(), any(), any());
 
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         LiveQueriesResponse response = future.actionGet();
 
         // f2 (500) > f1 (100) > f3 (null, sorted last)
-        List<org.opensearch.plugin.insights.rules.model.FinishedQueryRecord> finished = response.getFinishedQueries();
+        List<FinishedQueryRecord> finished = response.getFinishedQueries();
         assertEquals(3, finished.size());
         assertEquals("id2", finished.get(0).getId());
         assertEquals("id1", finished.get(1).getId());
@@ -1000,19 +1005,22 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testFinishedCacheNotQueriedWhenFlagFalse() throws Exception {
-        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], null, false);
         ListTasksResponse mockResponse = mock(ListTasksResponse.class);
         when(mockResponse.getTaskGroups()).thenReturn(emptyList());
         doAnswer(inv -> {
             ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
             return null;
-        }).when(clusterAdminClient).listTasks(any(), any());
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
 
         PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
         transportLiveQueriesAction.execute(request, future);
         future.actionGet();
 
-        verify(queryInsightsService, org.mockito.Mockito.never()).getFinishedQueriesCache();
+        // When useFinishedCache=false, client.execute(FinishedQueriesAction) should never be called
+        verify(client, org.mockito.Mockito.never()).execute(
+            org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction.INSTANCE),
+            any(), any());
     }
 
     public void testCoordinatorAndShardResourceAggregation() throws Exception {

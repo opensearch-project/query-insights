@@ -23,8 +23,9 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
-import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
@@ -45,11 +46,9 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private static final Logger logger = LogManager.getLogger(TransportLiveQueriesAction.class);
     private static final String TOTAL = "total";
-    private static final String SEARCH_ACTION = "indices:data/read/search";
 
     private final Client client;
     private final TransportService transportService;
-    private final QueryInsightsService queryInsightsService;
 
     @Inject
     public TransportLiveQueriesAction(
@@ -61,7 +60,6 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
-        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
@@ -167,24 +165,23 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
                     }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
 
-                    List<FinishedQueryRecord> finishedRecords = new ArrayList<>();
                     if (request.isUseFinishedCache()) {
-                        FinishedQueriesCache finishedCache = queryInsightsService.getFinishedQueriesCache();
-                        if (finishedCache != null) {
-                            finishedRecords.addAll(finishedCache.getFinishedQueries());
-                        }
+                        client.execute(
+                            FinishedQueriesAction.INSTANCE,
+                            new FinishedQueriesRequest(request.nodesIds()),
+                            ActionListener.wrap(
+                                finishedResponse -> listener.onResponse(
+                                    new LiveQueriesResponse(finalRecords, sortAndLimit(finishedResponse.getAllFinishedQueries(), request), true)
+                                ),
+                                ex -> {
+                                    logger.error("Failed to retrieve finished queries from nodes", ex);
+                                    listener.onFailure(ex);
+                                }
+                            )
+                        );
+                    } else {
+                        listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
                     }
-
-                    List<FinishedQueryRecord> finalFinishedRecords = finishedRecords.stream().sorted((a, b) -> {
-                        Measurement ma = a.getMeasurements().get(request.getSortBy());
-                        Measurement mb = b.getMeasurements().get(request.getSortBy());
-                        if (ma == null && mb == null) return 0;
-                        if (ma == null) return 1;
-                        if (mb == null) return -1;
-                        return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
-                    }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
-
-                    listener.onResponse(new LiveQueriesResponse(finalRecords, finalFinishedRecords, request.isUseFinishedCache()));
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -205,5 +202,16 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             result.add(new TaskDetails(info, info.isCancelled() ? "cancelled" : "running"));
             collectChildTasks(child, result);
         }
+    }
+
+    private List<FinishedQueryRecord> sortAndLimit(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
+        return records.stream().sorted((a, b) -> {
+            Measurement ma = a.getMeasurements().get(request.getSortBy());
+            Measurement mb = b.getMeasurements().get(request.getSortBy());
+            if (ma == null && mb == null) return 0;
+            if (ma == null) return 1;
+            if (mb == null) return -1;
+            return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
+        }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
     }
 }

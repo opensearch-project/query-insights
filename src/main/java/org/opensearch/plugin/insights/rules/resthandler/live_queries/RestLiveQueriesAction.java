@@ -66,7 +66,6 @@ public class RestLiveQueriesAction extends BaseRestHandler {
         final boolean useFinishedCache = request.paramAsBoolean("use_finished_cache", false);
         final String sortParam = request.param("sort", MetricType.LATENCY.toString());
         final String wlmGroupId = request.param("wlmGroupId", null);
-        final String taskId = request.param("task_id", null);
 
         if (!ALLOWED_METRICS.contains(sortParam)) {
             throw new IllegalArgumentException(
@@ -80,7 +79,7 @@ public class RestLiveQueriesAction extends BaseRestHandler {
                 String.format(Locale.ROOT, "request [%s] contains invalid size parameter [%d]. size must be positive", request.path(), size)
             );
         }
-        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId, taskId, useFinishedCache);
+        return new LiveQueriesRequest(verbose, sortBy, size, nodesIds, wlmGroupId, useFinishedCache);
     }
 
     @Override

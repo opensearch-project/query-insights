@@ -30,12 +30,6 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
     private final List<FinishedQueryRecord> finishedQueries;
     private final boolean useFinishedCache;
 
-    /**
-     * Constructor for LiveQueriesResponse.
-     *
-     * @param in A {@link StreamInput} object.
-     * @throws IOException if the stream cannot be deserialized.
-     */
     public LiveQueriesResponse(final StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
@@ -48,29 +42,13 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         }
     }
 
-    /**
-     * Constructor for LiveQueriesResponse
-     *
-     * @param liveQueries A flat list containing live queries results from relevant nodes
-     */
     public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries) {
         this.liveQueries = liveQueries;
         this.finishedQueries = List.of();
         this.useFinishedCache = false;
     }
 
-    /**
-     * Constructor for LiveQueriesResponse
-     *
-     * @param liveQueries A flat list containing live queries results from relevant nodes
-     * @param finishedQueries A flat list containing finished queries results
-     * @param useFinishedCache whether the finished queries cache was used
-     */
-    public LiveQueriesResponse(
-        final List<LiveQueryRecord> liveQueries,
-        final List<FinishedQueryRecord> finishedQueries,
-        boolean useFinishedCache
-    ) {
+    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<FinishedQueryRecord> finishedQueries, boolean useFinishedCache) {
         this.liveQueries = liveQueries;
         this.finishedQueries = finishedQueries;
         this.useFinishedCache = useFinishedCache;
@@ -94,16 +72,13 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
 
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
+        // Pre-V_3_6_0 nodes receive an empty response — intentional BWC, live queries not supported on older nodes.
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeList(liveQueries);
             out.writeBoolean(useFinishedCache);
             if (useFinishedCache) {
                 out.writeList(finishedQueries);
             }
-        } else {
-            // Older nodes expect nothing written; response will be empty on their side
-            // (pre-3.6 nodes used SearchQueryRecord list — incompatible type, return empty)
-            out.writeVInt(0);
         }
     }
 

@@ -27,7 +27,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         String[] nodeIds = new String[] { "nodeA", "nodeB", "nodeC" };
         String wlmGroupId = "DEFAULT_WORKLOAD_GROUP";
 
-        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, null, false);
+        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, false);
 
         BytesStreamOutput out = new BytesStreamOutput();
         originalRequest.writeTo(out);
@@ -48,7 +48,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         String[] nodeIds = new String[0];
         String wlmGroupId = "DEFAULT_WORKLOAD_GROUP";
 
-        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, null, false);
+        LiveQueriesRequest originalRequest = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, false);
 
         BytesStreamOutput out = new BytesStreamOutput();
         originalRequest.writeTo(out);
@@ -70,7 +70,7 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
         String[] nodeIds = { "node1", "node2" };
         String wlmGroupId = "DEFAULT_WORKLOAD_GROUP";
 
-        LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, null, false);
+        LiveQueriesRequest request = new LiveQueriesRequest(verbose, sortBy, size, nodeIds, wlmGroupId, false);
 
         assertTrue(request.isVerbose());
         assertEquals(MetricType.CPU, request.getSortBy());
@@ -109,7 +109,6 @@ public class LiveQueriesRequestTests extends OpenSearchTestCase {
             10,
             new String[] { "nodeA" },
             "DEFAULT_WORKLOAD_GROUP",
-            null,
             false
         );
         assertFalse(request.isVerbose());
