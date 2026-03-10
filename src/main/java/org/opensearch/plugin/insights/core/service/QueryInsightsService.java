@@ -142,7 +142,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
-    private volatile FinishedQueriesCache finishedQueriesCache;
+    private final FinishedQueriesCache finishedQueriesCache;
 
     SinkType sinkType;
 
@@ -217,10 +217,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.groupingType = DEFAULT_GROUPING_TYPE;
 
         // Initialize caches
-        this.finishedQueriesCache = null; // Will be created lazily
+        this.finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
         clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
-            FinishedQueriesCache cache = finishedQueriesCache;
-            if (cache != null) cache.setIdleTimeout(v.millis());
+            finishedQueriesCache.setIdleTimeout(v.millis());
         });
     }
 
@@ -569,12 +568,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             }
         }
 
-        synchronized (this) {
-            if (finishedQueriesCache != null) {
-                finishedQueriesCache.stop();
-                finishedQueriesCache = null;
-            }
-        }
+        finishedQueriesCache.stop();
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
@@ -669,34 +663,10 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Get the finished queries cache, starts it if not already started
+     * Get the finished queries cache
      * @return FinishedQueriesCache
      */
     public FinishedQueriesCache getFinishedQueriesCache() {
-        FinishedQueriesCache cache = finishedQueriesCache;
-        if (cache != null) return cache;
-        synchronized (this) {
-            if (finishedQueriesCache == null) {
-                FinishedQueriesCache newCache = new FinishedQueriesCache(clusterService, threadPool);
-                newCache.setOnExpired(() -> {
-                    synchronized (this) {
-                        // Only null out if it's still the same instance we created
-                        if (finishedQueriesCache == newCache) {
-                            finishedQueriesCache = null;
-                        }
-                    }
-                });
-                finishedQueriesCache = newCache;
-            }
-            return finishedQueriesCache;
-        }
-    }
-
-    /**
-     * Get the finished queries cache without lazy initialization
-     * @return FinishedQueriesCache or null if not initialized
-     */
-    public FinishedQueriesCache getFinishedQueriesCacheIfExists() {
         return finishedQueriesCache;
     }
 

@@ -11,6 +11,8 @@ package org.opensearch.plugin.insights.rules.model;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
@@ -74,7 +76,7 @@ public class FinishedQueryRecord extends SearchQueryRecord {
 
     private void serializeAttribute(XContentBuilder builder, Params params, Attribute key, Object value) throws IOException {
         if (value instanceof SourceString ss) {
-            builder.field(key.toString(), ss.getValue());
+            builder.rawField(key.toString(), new BytesArray(ss.getValue()).streamInput(), XContentType.JSON);
         } else {
             builder.field(key.toString(), value);
         }

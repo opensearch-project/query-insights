@@ -73,7 +73,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     private final QueryShapeGenerator queryShapeGenerator;
     private Set<Pattern> excludedIndicesPattern;
     private final ThreadPool threadPool;
-    private static final ThreadLocal<String> recordIdThreadLocal = new ThreadLocal<>();
 
     /**
      * Constructor for QueryInsightsListener
@@ -206,7 +205,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         if (anyFeatureEnabled && !super.isEnabled()) {
             super.setEnabled(true);
-            queryInsightsService.stop(); // Ensures a clean restart
             queryInsightsService.start();
         } else if (!anyFeatureEnabled && super.isEnabled()) {
             super.setEnabled(false);
@@ -234,29 +232,19 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = UUID.randomUUID().toString();
-        try {
-            recordIdThreadLocal.set(recordId);
-            SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
-            addToFinishedCache(context, record, false);
-        } finally {
-            recordIdThreadLocal.remove();
-        }
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        addToFinishedCache(context, record, false);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = UUID.randomUUID().toString();
-        try {
-            recordIdThreadLocal.set(recordId);
-            SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
-            addToFinishedCache(context, record, true);
-        } finally {
-            recordIdThreadLocal.remove();
-        }
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        addToFinishedCache(context, record, true);
     }
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record, boolean failed) {
-        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCacheIfExists();
+        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
         if (cache == null || record == null) return;
         cache.capture(record, failed, context.getTask().isCancelled(), context.getTask().getId());
     }
