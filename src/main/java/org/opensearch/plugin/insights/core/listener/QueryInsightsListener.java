@@ -205,6 +205,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
         if (anyFeatureEnabled && !super.isEnabled()) {
             super.setEnabled(true);
+            queryInsightsService.stop(); // Ensures a clean restart
             queryInsightsService.start();
         } else if (!anyFeatureEnabled && super.isEnabled()) {
             super.setEnabled(false);
@@ -233,20 +234,20 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = UUID.randomUUID().toString();
         SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
-        addToFinishedCache(context, record, false);
+        addToFinishedCache(context, record);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
         String recordId = UUID.randomUUID().toString();
         SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
-        addToFinishedCache(context, record, true);
+        addToFinishedCache(context, record);
     }
 
-    private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record, boolean failed) {
+    private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
         FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
         if (cache == null || record == null) return;
-        cache.capture(record, failed, context.getTask().isCancelled(), context.getTask().getId());
+        cache.capture(record, context.getTask().getId());
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {

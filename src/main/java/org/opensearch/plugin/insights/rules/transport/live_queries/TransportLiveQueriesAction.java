@@ -24,7 +24,6 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
-import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
@@ -54,8 +53,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     public TransportLiveQueriesAction(
         final TransportService transportService,
         final Client client,
-        final ActionFilters actionFilters,
-        final QueryInsightsService queryInsightsService
+        final ActionFilters actionFilters
     ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;

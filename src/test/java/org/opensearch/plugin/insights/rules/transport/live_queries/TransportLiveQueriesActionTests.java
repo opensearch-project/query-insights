@@ -109,7 +109,7 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
 
         queryInsightsService = mock(QueryInsightsService.class);
 
-        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
+        transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters);
     }
 
     private TaskInfo createTaskInfo(

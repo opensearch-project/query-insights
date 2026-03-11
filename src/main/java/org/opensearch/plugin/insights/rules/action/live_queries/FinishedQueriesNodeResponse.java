@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.action.live_queries;
 
 import java.io.IOException;
 import java.util.List;
+import org.opensearch.Version;
 import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -25,7 +26,9 @@ public class FinishedQueriesNodeResponse extends BaseNodeResponse {
 
     public FinishedQueriesNodeResponse(StreamInput in) throws IOException {
         super(in);
-        this.finishedQueries = in.readList(FinishedQueryRecord::new);
+        this.finishedQueries = in.getVersion().onOrAfter(Version.V_3_6_0)
+            ? in.readList(FinishedQueryRecord::new)
+            : List.of();
     }
 
     public FinishedQueriesNodeResponse(DiscoveryNode node, List<FinishedQueryRecord> finishedQueries) {
@@ -36,7 +39,9 @@ public class FinishedQueriesNodeResponse extends BaseNodeResponse {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeList(finishedQueries);
+        if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
+            out.writeList(finishedQueries);
+        }
     }
 
     public List<FinishedQueryRecord> getFinishedQueries() {
