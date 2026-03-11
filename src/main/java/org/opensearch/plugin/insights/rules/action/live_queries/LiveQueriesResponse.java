@@ -34,7 +34,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
             this.liveQueries = in.readList(LiveQueryRecord::new);
             this.useFinishedCache = in.readBoolean();
-            this.finishedQueries = useFinishedCache ? in.readList(FinishedQueryRecord::new) : List.of();
+            this.finishedQueries = in.readList(FinishedQueryRecord::new);
         } else {
             this.liveQueries = Collections.emptyList();
             this.useFinishedCache = false;
@@ -76,9 +76,7 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
             out.writeList(liveQueries);
             out.writeBoolean(useFinishedCache);
-            if (useFinishedCache) {
-                out.writeList(finishedQueries);
-            }
+            out.writeList(useFinishedCache ? finishedQueries : List.of());
         }
     }
 

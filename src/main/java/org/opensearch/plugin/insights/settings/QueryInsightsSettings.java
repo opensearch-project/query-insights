@@ -108,7 +108,9 @@ public class QueryInsightsSettings {
 
     /**
      * Setting for live queries cache idle timeout.
-     * Set to 0 to disable auto-stop. Minimum is 2 minutes, maximum is 10 minutes.
+     * Controls how long the cache remains active after the last API access before auto-deactivating.
+     * Set to 0 to disable the cache entirely.
+     * Minimum non-zero value is 2 minutes, maximum is 10 minutes.
      */
     public static final Setting<TimeValue> LIVE_QUERIES_CACHE_IDLE_TIMEOUT = Setting.timeSetting(
         "search.insights.live_queries.cache.idle_timeout",
