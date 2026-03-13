@@ -126,7 +126,7 @@ public final class SearchQueryCounters {
      * @param isStreaming whether the query is a streaming request
      */
     public void incrementAggCounter(double value, Tags tags, Map<MetricType, Measurement> measurements, boolean isStreaming) {
-        tags.addTag(IS_STREAMING_TAG, String.valueOf(isStreaming));
+        tags = tags.addTag(IS_STREAMING_TAG, String.valueOf(isStreaming));
         aggCounter.add(value, tags);
         incrementAllHistograms(tags, measurements);
     }
