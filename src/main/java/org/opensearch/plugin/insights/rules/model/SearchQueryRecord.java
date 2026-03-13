@@ -34,6 +34,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import reactor.util.annotation.NonNull;
@@ -596,6 +597,47 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             entry.getValue().toXContent(builder, params);  // Serialize Measurement object
         }
         builder.endObject();
+        return builder.endObject();
+    }
+
+    /**
+     * Serializes this object into an {@link XContentBuilder} with recommendations appended.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @param recommendations The list of recommendations to include.
+     * @return The updated {@link XContentBuilder} with this object's content and recommendations.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
+    public XContentBuilder toXContentWithRecommendations(
+        final XContentBuilder builder,
+        final Params params,
+        final List<Recommendation> recommendations
+    ) throws IOException {
+        builder.startObject();
+        builder.field("timestamp", timestamp);
+        builder.field("id", id);
+
+        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
+            if (entry.getKey() == Attribute.TOP_N_QUERY) {
+                continue;
+            }
+            builder.field(entry.getKey().toString(), entry.getValue());
+        }
+        builder.startObject(MEASUREMENTS);
+        for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
+            builder.field(entry.getKey().toString());
+            entry.getValue().toXContent(builder, params);
+        }
+        builder.endObject();
+
+        if (recommendations != null && !recommendations.isEmpty()) {
+            builder.startArray("recommendations");
+            for (Recommendation recommendation : recommendations) {
+                recommendation.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
         return builder.endObject();
     }
 
