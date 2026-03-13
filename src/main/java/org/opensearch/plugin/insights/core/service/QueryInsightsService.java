@@ -142,6 +142,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private final FinishedQueriesCache finishedQueriesCache;
+
     SinkType sinkType;
 
     private volatile FilterByMode filterByMode;
@@ -213,6 +215,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+            finishedQueriesCache.setIdleTimeout(v.millis());
+        });
     }
 
     /**
@@ -559,6 +567,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        finishedQueriesCache.stop();
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -650,4 +661,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
     }
+
+    /**
+     * Get the finished queries cache
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        return finishedQueriesCache;
+    }
+
 }
