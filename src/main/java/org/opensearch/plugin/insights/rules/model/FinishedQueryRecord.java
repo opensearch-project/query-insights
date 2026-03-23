@@ -76,7 +76,13 @@ public class FinishedQueryRecord extends SearchQueryRecord {
 
     private void serializeAttribute(XContentBuilder builder, Params params, Attribute key, Object value) throws IOException {
         if (value instanceof SourceString ss) {
-            builder.rawField(key.toString(), new BytesArray(ss.getValue()).streamInput(), XContentType.JSON);
+            // Truncated source is not valid JSON — write as a plain string to avoid parse errors.
+            Boolean truncated = (Boolean) getAttributes().get(Attribute.SOURCE_TRUNCATED);
+            if (truncated != null && truncated) {
+                builder.field(key.toString(), ss.getValue());
+            } else {
+                builder.rawField(key.toString(), new BytesArray(ss.getValue()).streamInput(), XContentType.JSON);
+            }
         } else {
             builder.field(key.toString(), value);
         }
