@@ -218,9 +218,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         // Initialize caches
         this.finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
-        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
-            finishedQueriesCache.setIdleTimeout(v.millis());
-        });
     }
 
     /**
@@ -368,12 +365,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Check if any feature of Query Insights service is enabled, right now includes Top N and Categorization.
+     * Check if any feature of Query Insights service is enabled.
+     * Includes Top N, search query categorization, and the finished queries cache.
      *
      * @return if query insights service is enabled
      */
     public boolean isAnyFeatureEnabled() {
-        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled();
+        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled() || isFinishedCacheEnabled();
     }
 
     /**
@@ -531,6 +529,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStart() {
+        finishedQueriesCache.activate();
         if (isAnyFeatureEnabled()) {
             scheduledFutures = new ArrayList<>();
             scheduledFutures.add(
@@ -668,6 +667,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public FinishedQueriesCache getFinishedQueriesCache() {
         return finishedQueriesCache;
+    }
+
+    /**
+     * Returns true if the finished queries cache is enabled (idle timeout is non-zero).
+     */
+    public boolean isFinishedCacheEnabled() {
+        return finishedQueriesCache != null && finishedQueriesCache.isEnabled();
     }
 
 }

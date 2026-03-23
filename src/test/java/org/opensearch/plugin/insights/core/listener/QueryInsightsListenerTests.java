@@ -9,6 +9,8 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,6 +47,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -590,6 +593,65 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         // UserPrincipalContext should be set but user string should be null
         assertNotNull(record.getUserPrincipalContext());
         assertNull(record.getUserPrincipalContext().getUserString());
+    }
+
+    public void testAddToFinishedCacheExceptionDoesNotPropagate() {
+        // Set up a cache mock that throws on capture
+        FinishedQueriesCache mockCache = mock(FinishedQueriesCache.class);
+        doThrow(new RuntimeException("simulated capture failure")).when(mockCache).capture(any(), anyLong());
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(mockCache);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        // Should not throw — the exception is caught inside addToFinishedCache
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        // Verify addRecord was still called (the main listener path wasn't blocked)
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testAddToFinishedCacheNullCacheDoesNotThrow() {
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(null);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        // Should not throw when cache is null
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testListenerEnabledWhenOnlyCacheIsEnabled() throws InvocationTargetException, NoSuchMethodException, IllegalAccessException {
+        // All top-N and metrics disabled, but isAnyFeatureEnabled returns true (cache is enabled)
+        QueryInsightsService mockService = mock(QueryInsightsService.class);
+        QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, false);
+
+        when(mockService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(mockService.isSearchQueryMetricsFeatureEnabled()).thenReturn(false);
+        // Cache is the only feature enabled
+        when(mockService.isAnyFeatureEnabled()).thenReturn(true);
+
+        listener.setEnableTopQueries(MetricType.LATENCY, false);
+        // Listener should be enabled because isAnyFeatureEnabled() returns true (cache)
+        assertTrue("Listener should be enabled when only cache is enabled", listener.isEnabled());
+    }
+
+    public void testListenerDisabledWhenAllFeaturesIncludingCacheDisabled()
+        throws InvocationTargetException, NoSuchMethodException, IllegalAccessException {
+        QueryInsightsService mockService = mock(QueryInsightsService.class);
+        QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, true);
+
+        when(mockService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(mockService.isSearchQueryMetricsFeatureEnabled()).thenReturn(false);
+        when(mockService.isAnyFeatureEnabled()).thenReturn(false);
+
+        listener.setEnableTopQueries(MetricType.LATENCY, false);
+        assertFalse("Listener should be disabled when all features including cache are disabled", listener.isEnabled());
     }
 
     private void setupValidSearchRequest() {

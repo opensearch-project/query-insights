@@ -29,13 +29,14 @@ import org.opensearch.threadpool.ThreadPool;
 
 /**
  * Cache for recently finished queries.
- * Activated on first API read (getFinishedQueries), deactivated on idle timeout.
+ * Activated at service startup via {@link #activate()}, which enables capture immediately.
+ * The idle-check timer is lazily scheduled on the first API read ({@link #getFinishedQueries()})
+ * and auto-deactivates the cache after {@code idleTimeoutMs} of no API access.
  *
  * Concurrency:
  * - capture() is fully lock-free: AtomicBoolean.active + ConcurrentLinkedDeque.
- * - getFinishedQueries() uses CAS on active to activate exactly once and
- *   AtomicReference to register the idle-check task without locks.
- * - stop() uses CAS to deactivate and AtomicReference.getAndSet to cancel the task.
+ * - getFinishedQueries() uses CAS on idleCheckTask to schedule the idle-check exactly once.
+ * - stop() unconditionally deactivates and clears; safe to call from any thread.
  */
 public class FinishedQueriesCache {
 
@@ -48,7 +49,7 @@ public class FinishedQueriesCache {
     private volatile long idleTimeoutMs;
     private final AtomicBoolean active = new AtomicBoolean(false);
     private final AtomicReference<Scheduler.Cancellable> idleCheckTask = new AtomicReference<>();
-    private final AtomicInteger size = new AtomicInteger(0);
+    private final AtomicInteger approximateSize = new AtomicInteger(0);
     private final ClusterService clusterService;
     private final ThreadPool threadPool;
 
@@ -65,30 +66,43 @@ public class FinishedQueriesCache {
     }
 
     /**
-     * Returns the most recent finished queries, activating the cache on first call.
-     * The cache auto-deactivates after idleTimeoutMs of no API access.
-     * Returns an empty list if the cache is disabled (idleTimeoutMs == 0).
+     * Activates the cache so that capture() starts storing queries.
+     * Called from doStart() — no idle-check timer is scheduled here; the service
+     * lifecycle (doStop) is responsible for deactivation on shutdown.
+     * Safe to call multiple times — idempotent via CAS.
+     */
+    public void activate() {
+        if (idleTimeoutMs == 0) return;
+        if (active.compareAndSet(false, true)) {
+            lastAccessTime = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Returns the most recent finished queries.
+     * Schedules the idle-check timer on first API call so the cache auto-deactivates
+     * after idleTimeoutMs of no API access.
+     * Returns an empty list if the cache is disabled (idleTimeoutMs == 0) or inactive.
      *
      * @return list of up to MAX_RETURNED_QUERIES most recent finished query records
      */
     public List<FinishedQueryRecord> getFinishedQueries() {
-        if (idleTimeoutMs == 0) return List.of();
+        if (idleTimeoutMs == 0 || !active.get()) return List.of();
 
-        // Activate exactly once via CAS — only the winning thread schedules the idle check
-        if (active.compareAndSet(false, true)) {
-            lastAccessTime = System.currentTimeMillis();
+        // Schedule the idle-check task exactly once on first API call.
+        // Benign race: two threads may both see null and schedule a task, but the CAS
+        // on idleCheckTask ensures only one wins — the loser's task is immediately cancelled.
+        if (idleCheckTask.get() == null) {
             long intervalMs = idleTimeoutMs / 4;
             Scheduler.Cancellable task = threadPool.scheduleWithFixedDelay(() -> {
                 if (isExpired() && active.compareAndSet(true, false)) {
                     Scheduler.Cancellable t = idleCheckTask.getAndSet(null);
                     finishedQueries.clear();
-                    size.set(0);
+                    approximateSize.set(0);
                     if (t != null) t.cancel();
                 }
             }, TimeValue.timeValueMillis(intervalMs), QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR);
-
             if (!idleCheckTask.compareAndSet(null, task)) {
-                // stop() already ran — cancel the task we just scheduled
                 task.cancel();
             }
         }
@@ -130,15 +144,18 @@ public class FinishedQueriesCache {
         String status = cancelled ? "cancelled" : (failed ? "failed" : "completed");
 
         finishedQueries.addLast(new FinishedQuery(new FinishedQueryRecord(record, record.getId(), status, liveQueryId)));
-        if (size.incrementAndGet() > MAX_FINISHED_QUERIES) {
-            finishedQueries.pollFirst();
-            size.decrementAndGet();
+        if (approximateSize.incrementAndGet() > MAX_FINISHED_QUERIES) {
+            if (finishedQueries.pollFirst() != null) {
+                approximateSize.decrementAndGet();
+            }
         }
     }
 
     /**
-     * Returns finished queries only if the cache is already active, without activating it.
-     * Used by fan-out nodes to avoid activating the cache cluster-wide on every API call.
+     * Returns finished queries only if the cache is already active, without scheduling the idle timer.
+     * Used by fan-out nodes in TransportFinishedQueriesAction to avoid activating the cache
+     * or resetting the idle timer cluster-wide on every API call.
+     * The coordinating node calls {@link #getFinishedQueries()} instead to manage the idle timer.
      *
      * @return list of most recent finished query records, or empty list if cache is inactive
      */
@@ -155,23 +172,26 @@ public class FinishedQueriesCache {
      * Called by QueryInsightsService.doStop().
      */
     public void stop() {
-        if (active.compareAndSet(true, false)) {
-            Scheduler.Cancellable task = idleCheckTask.getAndSet(null);
-            finishedQueries.clear();
-            size.set(0);
-            if (task != null) task.cancel();
-        }
+        active.set(false);
+        Scheduler.Cancellable task = idleCheckTask.getAndSet(null);
+        finishedQueries.clear();
+        approximateSize.set(0);
+        if (task != null) task.cancel();
     }
 
     /**
      * Removes queries older than RETENTION_MS from the head of the deque.
+     * Uses poll-only (no peek) to avoid TOCTOU races between concurrent callers.
      */
     private void removeExpiredQueries() {
         long currentTime = System.currentTimeMillis();
-        FinishedQuery head;
-        while ((head = finishedQueries.peekFirst()) != null && currentTime - head.timestamp > RETENTION_MS) {
-            finishedQueries.pollFirst();
-            size.decrementAndGet();
+        while (true) {
+            FinishedQuery head = finishedQueries.peekFirst();
+            if (head == null || currentTime - head.timestamp <= RETENTION_MS) break;
+            // Another thread may have already removed this element; only decrement if we actually removed one.
+            if (finishedQueries.remove(head)) {
+                approximateSize.decrementAndGet();
+            }
         }
     }
 
@@ -190,6 +210,13 @@ public class FinishedQueriesCache {
     public void setIdleTimeout(long idleTimeoutMs) {
         this.idleTimeoutMs = idleTimeoutMs;
         if (idleTimeoutMs == 0) stop();
+    }
+
+    /**
+     * Returns true if the cache is enabled (idle timeout is non-zero).
+     */
+    public boolean isEnabled() {
+        return idleTimeoutMs != 0;
     }
 
     private static class FinishedQuery {

@@ -157,6 +157,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
+
+        // Re-evaluate listener state when the finished cache idle timeout changes (e.g. 0 → 5m enables the cache)
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+                queryInsightsService.getFinishedQueriesCache().setIdleTimeout(v.millis());
+                updateQueryInsightsState();
+            });
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -245,9 +252,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
-        FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
-        if (cache == null || record == null) return;
-        cache.capture(record, context.getTask().getId());
+        try {
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
+            if (cache == null || record == null) return;
+            cache.capture(record, context.getTask().getId());
+        } catch (Exception e) {
+            log.debug("Failed to capture finished query into cache", e);
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {

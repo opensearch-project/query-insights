@@ -640,6 +640,9 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
     }
 
     public void testEnableCollectionClearsQueueWhenAllFeaturesDisabled() {
+        // Disable the finished cache so only top-N features control the queue lifecycle
+        queryInsightsService.getFinishedQueriesCache().setIdleTimeout(0);
+
         // Add some records to the queue
         List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(5);
         for (SearchQueryRecord record : records) {
@@ -777,6 +780,38 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Test that subsequent calls return the same instance
         FinishedQueriesCache cache2 = queryInsightsService.getFinishedQueriesCache();
         assertSame(cache1, cache2);
+    }
+
+    public void testIsFinishedCacheEnabledWithDefaultTimeout() {
+        assertTrue("Finished cache should be enabled with default 5min timeout", queryInsightsService.isFinishedCacheEnabled());
+    }
+
+    public void testIsFinishedCacheEnabledReturnsFalseWhenDisabled() {
+        queryInsightsService.getFinishedQueriesCache().setIdleTimeout(0);
+        assertFalse("Finished cache should be disabled when timeout is 0", queryInsightsService.isFinishedCacheEnabled());
+    }
+
+    public void testIsAnyFeatureEnabledReturnsTrueWhenOnlyCacheEnabled() {
+        // Disable all top-N features
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+        queryInsightsService.enableCollection(MetricType.MEMORY, false);
+        queryInsightsService.enableSearchQueryMetricsFeature(false);
+
+        // Cache is still enabled (default 5min timeout)
+        assertTrue("isAnyFeatureEnabled should return true when only cache is enabled", queryInsightsService.isAnyFeatureEnabled());
+    }
+
+    public void testIsAnyFeatureEnabledReturnsFalseWhenAllDisabled() {
+        // Disable all top-N features
+        queryInsightsService.enableCollection(MetricType.LATENCY, false);
+        queryInsightsService.enableCollection(MetricType.CPU, false);
+        queryInsightsService.enableCollection(MetricType.MEMORY, false);
+        queryInsightsService.enableSearchQueryMetricsFeature(false);
+        // Disable cache
+        queryInsightsService.getFinishedQueriesCache().setIdleTimeout(0);
+
+        assertFalse("isAnyFeatureEnabled should return false when everything is disabled", queryInsightsService.isAnyFeatureEnabled());
     }
 
     public void testRemoteExporterInitializationWithDefaults() {

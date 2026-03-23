@@ -23,6 +23,7 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
@@ -48,16 +49,19 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
     public TransportLiveQueriesAction(
         final TransportService transportService,
         final Client client,
-        final ActionFilters actionFilters
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
     ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
@@ -164,6 +168,11 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
 
                     if (request.isUseFinishedCache()) {
+                        // Touch the local cache on the coordinating node to schedule the idle-check
+                        // timer and update lastAccessTime. Fan-out nodes use getFinishedQueriesIfActive()
+                        // to avoid activating caches cluster-wide.
+                        queryInsightsService.getFinishedQueriesCache().getFinishedQueries();
+
                         client.execute(
                             FinishedQueriesAction.INSTANCE,
                             new FinishedQueriesRequest(request.nodesIds()),

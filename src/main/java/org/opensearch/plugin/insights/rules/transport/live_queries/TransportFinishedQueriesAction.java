@@ -82,7 +82,8 @@ public class TransportFinishedQueriesAction extends TransportNodesAction<
     @Override
     protected FinishedQueriesNodeResponse nodeOperation(NodeRequest nodeRequest) {
         // Only read from the cache if it is already active — do not activate it on fan-out nodes.
-        // Activation happens only on the coordinating node via the REST API path.
+        // The coordinating node activates the cache and schedules the idle timer via
+        // getFinishedQueries() in TransportLiveQueriesAction before this fan-out.
         List<FinishedQueryRecord> records = queryInsightsService.getFinishedQueriesCache().getFinishedQueriesIfActive();
         return new FinishedQueriesNodeResponse(clusterService.localNode(), records);
     }
