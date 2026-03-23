@@ -48,7 +48,11 @@ public class LiveQueriesResponse extends ActionResponse implements ToXContentObj
         this.useFinishedCache = false;
     }
 
-    public LiveQueriesResponse(final List<LiveQueryRecord> liveQueries, final List<FinishedQueryRecord> finishedQueries, boolean useFinishedCache) {
+    public LiveQueriesResponse(
+        final List<LiveQueryRecord> liveQueries,
+        final List<FinishedQueryRecord> finishedQueries,
+        boolean useFinishedCache
+    ) {
         this.liveQueries = liveQueries;
         this.finishedQueries = finishedQueries;
         this.useFinishedCache = useFinishedCache;

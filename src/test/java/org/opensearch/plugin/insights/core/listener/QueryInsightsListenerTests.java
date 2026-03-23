@@ -622,7 +622,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         verify(queryInsightsService, times(1)).addRecord(any());
     }
 
-    public void testListenerEnabledWhenOnlyCacheIsEnabled() throws InvocationTargetException, NoSuchMethodException, IllegalAccessException {
+    public void testListenerEnabledWhenOnlyCacheIsEnabled() throws InvocationTargetException, NoSuchMethodException,
+        IllegalAccessException {
         // All top-N and metrics disabled, but isAnyFeatureEnabled returns true (cache is enabled)
         QueryInsightsService mockService = mock(QueryInsightsService.class);
         QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, false);
@@ -639,8 +640,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertTrue("Listener should be enabled when only cache is enabled", listener.isEnabled());
     }
 
-    public void testListenerDisabledWhenAllFeaturesIncludingCacheDisabled()
-        throws InvocationTargetException, NoSuchMethodException, IllegalAccessException {
+    public void testListenerDisabledWhenAllFeaturesIncludingCacheDisabled() throws InvocationTargetException, NoSuchMethodException,
+        IllegalAccessException {
         QueryInsightsService mockService = mock(QueryInsightsService.class);
         QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, true);
 

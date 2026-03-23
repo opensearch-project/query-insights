@@ -26,9 +26,7 @@ public class FinishedQueriesNodeResponse extends BaseNodeResponse {
 
     public FinishedQueriesNodeResponse(StreamInput in) throws IOException {
         super(in);
-        this.finishedQueries = in.getVersion().onOrAfter(Version.V_3_6_0)
-            ? in.readList(FinishedQueryRecord::new)
-            : List.of();
+        this.finishedQueries = in.getVersion().onOrAfter(Version.V_3_6_0) ? in.readList(FinishedQueryRecord::new) : List.of();
     }
 
     public FinishedQueriesNodeResponse(DiscoveryNode node, List<FinishedQueryRecord> finishedQueries) {

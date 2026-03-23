@@ -991,7 +991,10 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
                 new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesNodeResponse(node1, List.of(f1, f2, f3));
             org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse finishedResponse =
                 new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse(
-                    new ClusterName("test-cluster"), List.of(nodeResponse), emptyList());
+                    new ClusterName("test-cluster"),
+                    List.of(nodeResponse),
+                    emptyList()
+                );
             listener.onResponse(finishedResponse);
             return null;
         }).when(client).execute(any(), any(), any());
@@ -1024,7 +1027,9 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         // When useFinishedCache=false, client.execute(FinishedQueriesAction) should never be called
         verify(client, org.mockito.Mockito.never()).execute(
             org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction.INSTANCE),
-            any(), any());
+            any(),
+            any()
+        );
     }
 
     public void testCoordinatorAndShardResourceAggregation() throws Exception {

@@ -50,8 +50,10 @@ public class LiveQueriesFinishedCacheIT extends OpenSearchIntegTestCase {
 
         Thread.sleep(1000);
 
-        LiveQueriesResponse response = client().execute(LiveQueriesAction.INSTANCE,
-            new LiveQueriesRequest(true, MetricType.LATENCY, 100, new String[0], null, true)).actionGet();
+        LiveQueriesResponse response = client().execute(
+            LiveQueriesAction.INSTANCE,
+            new LiveQueriesRequest(true, MetricType.LATENCY, 100, new String[0], null, true)
+        ).actionGet();
 
         // Both searches should be captured — one from each coordinator node
         assertEquals(2, response.getFinishedQueries().size());

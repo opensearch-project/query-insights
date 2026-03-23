@@ -178,7 +178,11 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             new FinishedQueriesRequest(request.nodesIds()),
                             ActionListener.wrap(
                                 finishedResponse -> listener.onResponse(
-                                    new LiveQueriesResponse(finalRecords, sortAndLimit(finishedResponse.getAllFinishedQueries(), request), true)
+                                    new LiveQueriesResponse(
+                                        finalRecords,
+                                        sortAndLimit(finishedResponse.getAllFinishedQueries(), request),
+                                        true
+                                    )
                                 ),
                                 ex -> {
                                     logger.error("Failed to retrieve finished queries from nodes", ex);

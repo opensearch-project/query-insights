@@ -110,9 +110,10 @@ public class FinishedQueriesCache {
         lastAccessTime = System.currentTimeMillis();
 
         removeExpiredQueries();
-        return StreamSupport.stream(
-            Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
+            .limit(MAX_RETURNED_QUERIES)
+            .map(fq -> fq.record)
+            .toList();
     }
 
     /**
@@ -162,9 +163,10 @@ public class FinishedQueriesCache {
     public List<FinishedQueryRecord> getFinishedQueriesIfActive() {
         if (!active.get()) return List.of();
         removeExpiredQueries();
-        return StreamSupport.stream(
-            Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES).map(fq -> fq.record).toList();
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
+            .limit(MAX_RETURNED_QUERIES)
+            .map(fq -> fq.record)
+            .toList();
     }
 
     /**

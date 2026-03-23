@@ -159,11 +159,10 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
 
         // Re-evaluate listener state when the finished cache idle timeout changes (e.g. 0 → 5m enables the cache)
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
-                queryInsightsService.getFinishedQueriesCache().setIdleTimeout(v.millis());
-                updateQueryInsightsState();
-            });
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+            queryInsightsService.getFinishedQueriesCache().setIdleTimeout(v.millis());
+            updateQueryInsightsState();
+        });
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
