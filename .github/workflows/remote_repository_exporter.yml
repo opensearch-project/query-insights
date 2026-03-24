@@ -35,18 +35,28 @@ jobs:
 
       - name: Pull LocalStack Docker image
         run: |
-          docker pull localstack/localstack:latest
+          docker pull localstack/localstack:4.4
 
       - name: Run LocalStack
         run: |
-          docker run --rm -d --name localstack-query-insights -p 4566:4566 localstack/localstack:latest
+          docker run --rm -d --name localstack-query-insights -p 4566:4566 localstack/localstack:4.4
 
       - name: Verify LocalStack is ready
         run: |
-          if ! timeout 30 bash -c 'until curl --silent --fail http://localhost:4566/_localstack/health; do sleep 1; done'; then
-            echo "LocalStack health check failed after 30 seconds"
-            exit 1
-          fi
+          echo "Waiting for LocalStack to be ready..."
+          for i in $(seq 1 60); do
+            if curl --silent --fail http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+              echo "LocalStack is ready after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "LocalStack health check failed after 120 seconds"
+          echo "--- Container logs ---"
+          docker logs localstack-query-insights 2>&1 | tail -50
+          echo "--- Docker ps ---"
+          docker ps -a
+          exit 1
 
       - name: Create S3 Bucket in LocalStack
         run: |
