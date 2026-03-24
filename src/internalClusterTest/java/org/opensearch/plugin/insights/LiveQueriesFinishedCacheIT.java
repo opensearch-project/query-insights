@@ -39,6 +39,15 @@ public class LiveQueriesFinishedCacheIT extends OpenSearchIntegTestCase {
         prepareCreate("test").get();
         ensureGreen("test");
 
+        // Prime the finished queries cache on every node so capture() is active
+        // before the searches run. The cache is lazy — it only activates on the
+        // first getFinishedQueries() API call.
+        for (String node : nodes) {
+            internalCluster().client(node)
+                .execute(LiveQueriesAction.INSTANCE, new LiveQueriesRequest(true, MetricType.LATENCY, 100, new String[0], null, true))
+                .actionGet();
+        }
+
         // Run a search from each node so both act as coordinator
         for (String node : nodes) {
             SearchResponse searchResponse = internalCluster().client(node)

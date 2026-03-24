@@ -248,6 +248,105 @@ public class FinishedQueriesCacheTimeoutTests extends OpenSearchTestCase {
         cache.stop();
     }
 
+    // --- stop prevents reactivation ---
+
+    public void testGetFinishedQueriesCannotReactivateAfterStop() {
+        FinishedQueriesCache cache = createCache();
+        cache.activate();
+        cache.capture(createSearchQueryRecord(), 1L);
+        assertEquals(1, cache.getFinishedQueriesIfActive().size());
+
+        cache.stop();
+
+        // getFinishedQueries() should NOT reactivate the cache after stop()
+        assertTrue("getFinishedQueries should return empty after stop", cache.getFinishedQueries().isEmpty());
+        // capture should also be a no-op after stop
+        cache.capture(createSearchQueryRecord(), 2L);
+        assertTrue("capture should be no-op after stop", cache.getFinishedQueriesIfActive().isEmpty());
+    }
+
+    public void testActivateCanResetStoppedState() {
+        FinishedQueriesCache cache = createCache();
+        cache.activate();
+        cache.capture(createSearchQueryRecord(), 1L);
+
+        cache.stop();
+        assertTrue("Cache should be empty after stop", cache.getFinishedQueriesIfActive().isEmpty());
+
+        // activate() (called from setIdleTimeout non-zero) should clear the stopped flag
+        cache.activate();
+        cache.capture(createSearchQueryRecord(), 2L);
+        assertEquals("Cache should accept captures after re-activation", 1, cache.getFinishedQueriesIfActive().size());
+        cache.stop();
+    }
+
+    public void testClearStoppedAllowsLazyActivation() {
+        FinishedQueriesCache cache = createCache();
+        // Simulate doStart → doStop → doStart cycle
+        cache.activate();
+        cache.capture(createSearchQueryRecord(), 1L);
+
+        cache.stop();
+        assertTrue("Cache should be empty after stop", cache.getFinishedQueriesIfActive().isEmpty());
+        assertTrue("getFinishedQueries should return empty after stop", cache.getFinishedQueries().isEmpty());
+
+        // doStart calls clearStopped() — cache is NOT active yet, but CAN be activated
+        cache.clearStopped();
+        assertFalse("Cache should not be active after clearStopped alone", cache.getFinishedQueriesIfActive().size() > 0);
+
+        // First API call lazily activates the cache
+        cache.getFinishedQueries();
+        cache.capture(createSearchQueryRecord(), 2L);
+        assertEquals("Cache should accept captures after lazy activation", 1, cache.getFinishedQueriesIfActive().size());
+        cache.stop();
+    }
+
+    public void testSetIdleTimeoutNonZeroReactivatesAfterDisable() {
+        FinishedQueriesCache cache = createCache();
+        cache.activate();
+        cache.capture(createSearchQueryRecord(), 1L);
+        assertEquals(1, cache.getFinishedQueriesIfActive().size());
+
+        // Disable via timeout=0
+        cache.setIdleTimeout(0);
+        assertTrue("Cache should be empty after disable", cache.getFinishedQueriesIfActive().isEmpty());
+        assertFalse("Cache should be disabled", cache.isEnabled());
+
+        // Re-enable via non-zero timeout — should clear stopped flag and reactivate
+        cache.setIdleTimeout(300000);
+        assertTrue("Cache should be enabled again", cache.isEnabled());
+        cache.capture(createSearchQueryRecord(), 2L);
+        assertEquals("Cache should accept captures after re-enable", 1, cache.getFinishedQueriesIfActive().size());
+        cache.stop();
+    }
+
+    // --- capture does not mutate original record (Bug 3 regression test) ---
+
+    public void testCaptureDoesNotMutateOriginalRecord() {
+        FinishedQueriesCache cache = createCache();
+        cache.activate();
+
+        // Create a record WITHOUT Attribute.SOURCE set — this triggers setSourceAndTruncation
+        SearchQueryRecord record = createSearchQueryRecord();
+        assertNull("Precondition: SOURCE should be null before capture", record.getAttributes().get(Attribute.SOURCE));
+
+        cache.capture(record, 42L);
+
+        // The original record's attributes must remain untouched
+        assertNull("capture() must not mutate the original record's SOURCE attribute", record.getAttributes().get(Attribute.SOURCE));
+        assertNull(
+            "capture() must not mutate the original record's SOURCE_TRUNCATED attribute",
+            record.getAttributes().get(Attribute.SOURCE_TRUNCATED)
+        );
+
+        // But the finished copy in the cache SHOULD have SOURCE set
+        List<FinishedQueryRecord> results = cache.getFinishedQueriesIfActive();
+        assertEquals(1, results.size());
+        // SOURCE may or may not be set depending on whether searchSourceBuilder was null,
+        // but the key invariant is the original record was not mutated.
+        cache.stop();
+    }
+
     // --- size cap at MAX_FINISHED_QUERIES (1000) ---
 
     public void testSizeCapEvictsOldest() {

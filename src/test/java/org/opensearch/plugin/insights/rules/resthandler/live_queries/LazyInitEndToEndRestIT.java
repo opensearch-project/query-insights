@@ -26,6 +26,13 @@ public class LazyInitEndToEndRestIT extends QueryInsightsRestTestCase {
         // Create test index
         client().performRequest(new Request("PUT", "/test-index"));
 
+        // Prime the cache on all nodes — the cache is lazy and only activates on the
+        // first getFinishedQueries() API call. The REST client round-robins across nodes,
+        // so we send enough priming requests to cover every node in the cluster.
+        for (int i = 0; i < 10; i++) {
+            client().performRequest(new Request("GET", QueryInsightsSettings.LIVE_QUERIES_BASE_URI + "?use_finished_cache=true"));
+        }
+
         // Run a search to produce a finished query
         Request searchRequest = new Request("GET", "/test-index/_search");
         searchRequest.setJsonEntity("{\"query\":{\"match_all\":{}}}");
@@ -34,7 +41,7 @@ public class LazyInitEndToEndRestIT extends QueryInsightsRestTestCase {
         // Wait for capture
         Thread.sleep(1000);
 
-        // Poll until finished queries appear (cache activates on first write)
+        // Poll until finished queries appear
         boolean hasFinishedQueries = false;
         for (int i = 0; i < 5; i++) {
             Response response = client().performRequest(

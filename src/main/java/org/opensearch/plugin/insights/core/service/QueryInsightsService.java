@@ -529,7 +529,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStart() {
-        finishedQueriesCache.activate();
+        // The finished queries cache is lazy — it activates on first API call
+        // (getFinishedQueries), not at node startup. This avoids capturing queries
+        // into memory on nodes where the finished queries feature is never used.
+        // Clear the stopped flag so the cache CAN be activated by an API call after a restart.
+        finishedQueriesCache.clearStopped();
         if (isAnyFeatureEnabled()) {
             scheduledFutures = new ArrayList<>();
             scheduledFutures.add(
