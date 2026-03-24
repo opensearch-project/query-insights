@@ -25,6 +25,7 @@ import org.opensearch.core.action.ActionResponse;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
@@ -120,7 +121,8 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
                 QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
                 QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
-                QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES
+                QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES,
+                QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT
             ),
             queryInsightsPlugin.getSettings()
         );
@@ -168,12 +170,13 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetActions() {
         List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> components = queryInsightsPlugin.getActions();
-        assertEquals(5, components.size());
+        assertEquals(6, components.size());
         assertTrue(components.get(0).getAction() instanceof TopQueriesAction);
         assertTrue(components.get(1).getAction() instanceof HealthStatsAction);
         assertTrue(components.get(2).getAction() instanceof LiveQueriesAction);
-        assertTrue(components.get(3).getAction() instanceof GetQueryInsightsSettingsAction);
-        assertTrue(components.get(4).getAction() instanceof UpdateQueryInsightsSettingsAction);
+        assertTrue(components.get(3).getAction() instanceof FinishedQueriesAction);
+        assertTrue(components.get(4).getAction() instanceof GetQueryInsightsSettingsAction);
+        assertTrue(components.get(5).getAction() instanceof UpdateQueryInsightsSettingsAction);
     }
 
     public void testLiveQueriesActionRegistration() {
