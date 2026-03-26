@@ -42,6 +42,7 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.plugin.insights.QueryInsightsPlugin;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -372,6 +373,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             String userProvidedLabel = context.getTask().getHeader(Task.X_OPAQUE_ID);
             if (userProvidedLabel != null) {
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
+            }
+            // Retrieve custom source tracking headers
+            String applicationId = context.getTask().getHeader(QueryInsightsPlugin.APPLICATION_ID_HEADER);
+            if (applicationId != null) {
+                labels.put(QueryInsightsPlugin.APPLICATION_ID_HEADER, applicationId);
             }
             attributes.put(Attribute.LABELS, labels);
 
