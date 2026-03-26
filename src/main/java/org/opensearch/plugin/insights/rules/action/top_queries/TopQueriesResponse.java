@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.action.top_queries;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -115,7 +116,11 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
         // Merge pre-computed recommendations from all node responses
         final Map<String, List<Recommendation>> mergedRecommendations = new HashMap<>();
         for (TopQueries tq : results) {
-            mergedRecommendations.putAll(tq.getRecommendations());
+            tq.getRecommendations().forEach((key, value) -> mergedRecommendations.merge(key, value, (existing, incoming) -> {
+                List<Recommendation> merged = new ArrayList<>(existing);
+                merged.addAll(incoming);
+                return merged;
+            }));
         }
 
         final List<SearchQueryRecord> all_records = results.stream()
@@ -127,7 +132,7 @@ public class TopQueriesResponse extends BaseNodesResponse<TopQueries> implements
         builder.startArray(CLUSTER_LEVEL_RESULTS_KEY);
         for (SearchQueryRecord record : all_records) {
             List<Recommendation> recs = mergedRecommendations.get(record.getId());
-            if (recs != null && !recs.isEmpty()) {
+            if (recs != null) {
                 record.toXContentWithRecommendations(builder, params, recs);
             } else {
                 record.toXContent(builder, params);

@@ -165,6 +165,39 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
         assertFalse(json.contains("\"recommendations\""));
     }
 
+    public void testToXContentWithEmptyRecommendationsArray() throws IOException {
+        DiscoveryNode node = new DiscoveryNode(
+            "test_node",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+        String recordId = "empty_rec_record_id";
+        SearchQueryRecord record = new SearchQueryRecord(
+            1706574180000L,
+            Map.of(MetricType.LATENCY, new Measurement(1L)),
+            Map.of(Attribute.NODE_ID, node.getId()),
+            recordId
+        );
+
+        // Recommendations requested but no rules matched — empty list in map
+        Map<String, List<Recommendation>> recsMap = new HashMap<>();
+        recsMap.put(recordId, List.of());
+        TopQueries topQueries = new TopQueries(node, List.of(record), recsMap);
+
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        assertTrue(
+            "Should contain empty recommendations array when requested but no rules matched",
+            json.contains("\"recommendations\":[]")
+        );
+    }
+
     public void testToXContentMergesRecommendationsFromMultipleNodes() throws IOException {
         DiscoveryNode node1 = new DiscoveryNode(
             "node1",
@@ -221,6 +254,66 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
         XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
         String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
 
+        assertTrue(json.contains("\"rule_id\":\"rule-a\""));
+        assertTrue(json.contains("\"rule_id\":\"rule-b\""));
+    }
+
+    public void testToXContentMergesRecommendationsForDuplicateRecordId() throws IOException {
+        DiscoveryNode node1 = new DiscoveryNode(
+            "node1",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+        DiscoveryNode node2 = new DiscoveryNode(
+            "node2",
+            buildNewFakeTransportAddress(),
+            emptyMap(),
+            emptySet(),
+            VersionUtils.randomVersion(random())
+        );
+
+        // Same record ID on both nodes (e.g. grouped query)
+        String sharedId = "shared_id";
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node1.getId()),
+            sharedId
+        );
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+            Map.of(Attribute.NODE_ID, node2.getId()),
+            sharedId
+        );
+
+        Recommendation recA = Recommendation.builder()
+            .ruleId("rule-a")
+            .title("Rec A")
+            .description("From node1")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.8)
+            .build();
+        Recommendation recB = Recommendation.builder()
+            .ruleId("rule-b")
+            .title("Rec B")
+            .description("From node2")
+            .type(RecommendationType.INDEX_CONFIG)
+            .confidence(0.7)
+            .build();
+
+        TopQueries tq1 = new TopQueries(node1, List.of(record1), Map.of(sharedId, List.of(recA)));
+        TopQueries tq2 = new TopQueries(node2, List.of(record2), Map.of(sharedId, List.of(recB)));
+
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(tq1, tq2), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        // Both recommendations should be present (merged, not dropped)
         assertTrue(json.contains("\"rule_id\":\"rule-a\""));
         assertTrue(json.contains("\"rule_id\":\"rule-b\""));
     }

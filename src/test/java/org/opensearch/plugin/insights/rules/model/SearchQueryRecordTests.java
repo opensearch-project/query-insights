@@ -367,7 +367,18 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         builder.flush();
 
         String json = builder.toString();
-        assertFalse("Empty recommendations list should not produce recommendations field", json.contains("\"recommendations\""));
+        assertTrue("Empty recommendations list should produce empty recommendations array", json.contains("\"recommendations\":[]"));
+    }
+
+    public void testToXContentWithNullRecommendations() throws IOException {
+        SearchQueryRecord record = QueryInsightsTestUtils.createFixedSearchQueryRecord("test_id");
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentWithRecommendations(builder, ToXContent.EMPTY_PARAMS, null);
+        builder.flush();
+
+        String json = builder.toString();
+        assertFalse("Null recommendations should not produce recommendations field", json.contains("\"recommendations\""));
     }
 
     /**

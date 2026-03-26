@@ -199,15 +199,13 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 // Pre-compute recommendations for historical records (in-memory records already have them from nodeOperation)
                 Map<String, List<Recommendation>> historicalRecs = Collections.emptyMap();
                 if (Boolean.TRUE.equals(request.getRecommendations())) {
+                    historicalRecs = new HashMap<>();
                     RecommendationService recommendationService = queryInsightsService.getRecommendationService();
-                    if (recommendationService != null) {
-                        historicalRecs = new HashMap<>();
-                        for (SearchQueryRecord record : deduplicatedHistoricalRecords) {
-                            List<Recommendation> recs = recommendationService.generateRecommendations(record);
-                            if (recs != null && !recs.isEmpty()) {
-                                historicalRecs.put(record.getId(), recs);
-                            }
-                        }
+                    for (SearchQueryRecord record : deduplicatedHistoricalRecords) {
+                        List<Recommendation> recs = (recommendationService != null)
+                            ? recommendationService.generateRecommendations(record)
+                            : null;
+                        historicalRecs.put(record.getId(), recs != null ? recs : Collections.emptyList());
                     }
                 }
                 combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), deduplicatedHistoricalRecords, historicalRecs));
@@ -310,7 +308,13 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 try {
                     List<TopQueries> filteredNodes = response.getNodes().stream().map(topQueries -> {
                         List<SearchQueryRecord> filtered = TopQueriesRbacFilter.filterRecords(topQueries.getTopQueriesRecord(), mode, info);
-                        return new TopQueries(topQueries.getNode(), filtered, topQueries.getRecommendations());
+                        Set<String> filteredIds = filtered.stream().map(SearchQueryRecord::getId).collect(Collectors.toSet());
+                        Map<String, List<Recommendation>> filteredRecs = topQueries.getRecommendations()
+                            .entrySet()
+                            .stream()
+                            .filter(e -> filteredIds.contains(e.getKey()))
+                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                        return new TopQueries(topQueries.getNode(), filtered, filteredRecs);
                     }).collect(Collectors.toList());
                     delegate.onResponse(
                         new TopQueriesResponse(response.getClusterName(), filteredNodes, response.failures(), response.getMetricType())
@@ -353,17 +357,13 @@ public class TransportTopQueriesAction extends TransportNodesAction<
             .getTopQueriesRecords(true, request.getFrom(), request.getTo(), request.getId(), request.getVerbose());
 
         if (Boolean.TRUE.equals(request.getRecommendations())) {
+            Map<String, List<Recommendation>> recommendationsMap = new HashMap<>();
             RecommendationService recommendationService = queryInsightsService.getRecommendationService();
-            if (recommendationService != null) {
-                Map<String, List<Recommendation>> recommendationsMap = new HashMap<>();
-                for (SearchQueryRecord record : records) {
-                    List<Recommendation> recs = recommendationService.generateRecommendations(record);
-                    if (recs != null && !recs.isEmpty()) {
-                        recommendationsMap.put(record.getId(), recs);
-                    }
-                }
-                return new TopQueries(clusterService.localNode(), records, recommendationsMap);
+            for (SearchQueryRecord record : records) {
+                List<Recommendation> recs = (recommendationService != null) ? recommendationService.generateRecommendations(record) : null;
+                recommendationsMap.put(record.getId(), recs != null ? recs : Collections.emptyList());
             }
+            return new TopQueries(clusterService.localNode(), records, recommendationsMap);
         }
         return new TopQueries(clusterService.localNode(), records);
     }

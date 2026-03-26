@@ -600,7 +600,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         final List<Recommendation> recommendations
     ) throws IOException {
         toXContentInner(builder, params);
-        if (recommendations != null && !recommendations.isEmpty()) {
+        if (recommendations != null) {
             builder.startArray("recommendations");
             for (Recommendation recommendation : recommendations) {
                 recommendation.toXContent(builder, params);

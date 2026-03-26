@@ -514,6 +514,80 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
     }
 
     @SuppressWarnings("unchecked")
+    public void testWrapWithRbacFilter_filtersOrphanedRecommendations() {
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user1", List.of("team_a"), List.of("role1"));
+
+        ActionListener<TopQueriesResponse> wrapped = actionToTest.wrapWithRbacFilter(finalListener, FilterByMode.BACKEND_ROLES, userInfo);
+
+        Map<Attribute, Object> attrs1 = new HashMap<>();
+        attrs1.put(Attribute.BACKEND_ROLES, new String[] { "team_a" });
+        attrs1.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record1 = new SearchQueryRecord(
+            1L,
+            Map.of(MetricType.LATENCY, new Measurement(1.0D, AggregationType.AVERAGE)),
+            attrs1,
+            "kept_rec"
+        );
+
+        Map<Attribute, Object> attrs2 = new HashMap<>();
+        attrs2.put(Attribute.BACKEND_ROLES, new String[] { "team_c" });
+        attrs2.put(Attribute.NODE_ID, node1.getId());
+        SearchQueryRecord record2 = new SearchQueryRecord(
+            2L,
+            Map.of(MetricType.LATENCY, new Measurement(2.0D, AggregationType.AVERAGE)),
+            attrs2,
+            "filtered_out_rec"
+        );
+
+        Recommendation rec1 = Recommendation.builder()
+            .ruleId("rule-kept")
+            .title("Kept")
+            .description("Should survive")
+            .type(RecommendationType.QUERY_REWRITE)
+            .confidence(0.9)
+            .build();
+        Recommendation rec2 = Recommendation.builder()
+            .ruleId("rule-orphan")
+            .title("Orphan")
+            .description("Should be removed")
+            .type(RecommendationType.INDEX_CONFIG)
+            .confidence(0.8)
+            .build();
+
+        Map<String, List<Recommendation>> recsMap = new HashMap<>();
+        recsMap.put("kept_rec", List.of(rec1));
+        recsMap.put("filtered_out_rec", List.of(rec2));
+
+        List<SearchQueryRecord> records = new ArrayList<>();
+        records.add(record1);
+        records.add(record2);
+        TopQueries topQueries = new TopQueries(node1, records, recsMap);
+        TopQueriesResponse response = new TopQueriesResponse(
+            clusterService.getClusterName(),
+            Collections.singletonList(topQueries),
+            Collections.emptyList(),
+            MetricType.LATENCY
+        );
+
+        wrapped.onResponse(response);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse filteredResponse = responseCaptor.getValue();
+        assertEquals(1, filteredResponse.getNodes().size());
+        TopQueries filteredTq = filteredResponse.getNodes().get(0);
+        // Only record1 survives RBAC filtering
+        assertEquals(1, filteredTq.getTopQueriesRecord().size());
+        assertEquals("kept_rec", filteredTq.getTopQueriesRecord().get(0).getId());
+        // Recommendations map should only contain the surviving record's entry
+        assertEquals(1, filteredTq.getRecommendations().size());
+        assertNotNull(filteredTq.getRecommendations().get("kept_rec"));
+        assertNull(filteredTq.getRecommendations().get("filtered_out_rec"));
+    }
+
+    @SuppressWarnings("unchecked")
     public void testHandleInMemoryDataResponse_withRecommendationsTrue_passesThrough() {
         TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, null, null, null, false, true);
 
@@ -627,6 +701,77 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         assertEquals(2, response.getNodes().size());
         TopQueries historicalNode = response.getNodes().get(1);
         assertTrue(historicalNode.getRecommendations().isEmpty());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnHistoricalDataResponse_withRecommendationsTrue_noRulesMatch_emptyArray() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, true);
+
+        RecommendationService mockRecService = mock(RecommendationService.class);
+        when(queryInsightsService.getRecommendationService()).thenReturn(mockRecService);
+        // Service returns empty list — no rules matched
+        when(mockRecService.generateRecommendations(any(SearchQueryRecord.class))).thenReturn(Collections.emptyList());
+
+        List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
+        List<FailedNodeException> failures = Collections.emptyList();
+        List<SearchQueryRecord> histRecords = Collections.singletonList(
+            new SearchQueryRecord(
+                2L,
+                Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+                Map.of(Attribute.NODE_ID, node1.getId()),
+                null,
+                null,
+                "hist_entry"
+            )
+        );
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse response = responseCaptor.getValue();
+        assertEquals(2, response.getNodes().size());
+        TopQueries historicalNode = response.getNodes().get(1);
+        // Key should be present with empty list (not absent)
+        assertEquals(1, historicalNode.getRecommendations().size());
+        assertNotNull(historicalNode.getRecommendations().get("hist_entry"));
+        assertTrue(historicalNode.getRecommendations().get("hist_entry").isEmpty());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnHistoricalDataResponse_withRecommendationsTrue_nullService_emptyArray() {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, "from", "to", "id", true, true);
+
+        when(queryInsightsService.getRecommendationService()).thenReturn(null);
+
+        List<TopQueries> inMemoryTopQueries = Collections.singletonList(new TopQueries(node1, Collections.emptyList()));
+        List<FailedNodeException> failures = Collections.emptyList();
+        List<SearchQueryRecord> histRecords = Collections.singletonList(
+            new SearchQueryRecord(
+                2L,
+                Map.of(MetricType.LATENCY, new Measurement(10.0D, AggregationType.AVERAGE)),
+                Map.of(Attribute.NODE_ID, node1.getId()),
+                null,
+                null,
+                "hist_entry"
+            )
+        );
+        ActionListener<TopQueriesResponse> finalListener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, inMemoryTopQueries, failures, histRecords, finalListener);
+
+        ArgumentCaptor<TopQueriesResponse> responseCaptor = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(finalListener).onResponse(responseCaptor.capture());
+
+        TopQueriesResponse response = responseCaptor.getValue();
+        assertEquals(2, response.getNodes().size());
+        TopQueries historicalNode = response.getNodes().get(1);
+        // Key should be present with empty list even when service is null
+        assertEquals(1, historicalNode.getRecommendations().size());
+        assertNotNull(historicalNode.getRecommendations().get("hist_entry"));
+        assertTrue(historicalNode.getRecommendations().get("hist_entry").isEmpty());
     }
 
     @SuppressWarnings("unchecked")
