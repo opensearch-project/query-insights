@@ -142,6 +142,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private final FinishedQueriesCache finishedQueriesCache;
+
     SinkType sinkType;
 
     private volatile FilterByMode filterByMode;
@@ -213,6 +215,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
     }
 
     /**
@@ -360,12 +365,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Check if any feature of Query Insights service is enabled, right now includes Top N and Categorization.
+     * Check if any feature of Query Insights service is enabled.
+     * Includes Top N, search query categorization, and the finished queries cache.
      *
      * @return if query insights service is enabled
      */
     public boolean isAnyFeatureEnabled() {
-        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled();
+        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled() || isFinishedCacheEnabled();
     }
 
     /**
@@ -523,6 +529,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStart() {
+        // The finished queries cache is lazy — it activates on first API call
+        // (getFinishedQueries), not at node startup. This avoids capturing queries
+        // into memory on nodes where the finished queries feature is never used.
+        // Clear the stopped flag so the cache CAN be activated by an API call after a restart.
+        finishedQueriesCache.clearStopped();
         if (isAnyFeatureEnabled()) {
             scheduledFutures = new ArrayList<>();
             scheduledFutures.add(
@@ -559,6 +570,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        finishedQueriesCache.stop();
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -650,4 +664,20 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
     }
+
+    /**
+     * Get the finished queries cache
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        return finishedQueriesCache;
+    }
+
+    /**
+     * Returns true if the finished queries cache is enabled (idle timeout is non-zero).
+     */
+    public boolean isFinishedCacheEnabled() {
+        return finishedQueriesCache != null && finishedQueriesCache.isEnabled();
+    }
+
 }

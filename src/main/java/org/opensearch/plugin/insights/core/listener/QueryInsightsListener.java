@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -44,6 +45,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -155,6 +157,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
+
+        // Re-evaluate listener state when the finished cache idle timeout changes (e.g. 0 → 5m enables the cache)
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+            queryInsightsService.getFinishedQueriesCache().setIdleTimeout(v.millis());
+            updateQueryInsightsState();
+        });
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -230,12 +238,26 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, false);
+        String recordId = UUID.randomUUID().toString();
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        addToFinishedCache(context, record);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext, true);
+        String recordId = UUID.randomUUID().toString();
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        addToFinishedCache(context, record);
+    }
+
+    private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
+        try {
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
+            if (cache == null || record == null) return;
+            cache.capture(record, context.getTask().getId());
+        } catch (Exception e) {
+            log.debug("Failed to capture finished query into cache", e);
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -272,13 +294,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(
+    private SearchQueryRecord constructSearchQueryRecord(
         final SearchPhaseContext context,
         final SearchRequestContext searchRequestContext,
+        final String recordId,
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return;
+            return null;
         }
 
         SearchTask searchTask = context.getTask();
@@ -363,13 +386,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 attributes,
                 request.source(),
                 userPrincipalContext,
-                null
+                recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);
+            return record;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
+            return null;
         }
     }
 
