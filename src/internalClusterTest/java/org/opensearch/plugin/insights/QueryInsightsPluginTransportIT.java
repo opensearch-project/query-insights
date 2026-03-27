@@ -90,7 +90,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
@@ -104,7 +104,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        TopQueriesRequest request2 = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesRequest request2 = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
         TopQueriesResponse response2 = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request2).actionGet();
         Assert.assertEquals(0, response2.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response2.getNodes().size());
@@ -133,7 +133,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
@@ -162,7 +162,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
@@ -193,7 +193,7 @@ public class QueryInsightsPluginTransportIT extends OpenSearchIntegTestCase {
         // making search requests to get top queries
         makeSearchRequests(nodes);
 
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
         TopQueriesResponse response = OpenSearchIntegTestCase.client().execute(TopQueriesAction.INSTANCE, request).actionGet();
         Assert.assertEquals(0, response.failures().size());
         Assert.assertEquals(TOTAL_NUMBER_OF_NODES, response.getNodes().size());
