@@ -23,10 +23,15 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.TaskDetails;
 import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskInfo;
@@ -44,12 +49,19 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private final Client client;
     private final TransportService transportService;
+    private final QueryInsightsService queryInsightsService;
 
     @Inject
-    public TransportLiveQueriesAction(final TransportService transportService, final Client client, final ActionFilters actionFilters) {
+    public TransportLiveQueriesAction(
+        final TransportService transportService,
+        final Client client,
+        final ActionFilters actionFilters,
+        final QueryInsightsService queryInsightsService
+    ) {
         super(LiveQueriesAction.NAME, transportService, actionFilters, LiveQueriesRequest::new, ThreadPool.Names.GENERIC);
         this.transportService = transportService;
         this.client = client;
+        this.queryInsightsService = queryInsightsService;
     }
 
     @Override
@@ -109,33 +121,22 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             }
                         }
 
-                        // Build shard tasks
+                        // Build shard tasks (recursively collect all descendants)
                         List<TaskDetails> shardTasks = new ArrayList<>();
-                        long totalCpu = coordCpu;
-                        long totalMem = coordMem;
+                        collectChildTasks(taskGroup, shardTasks);
 
-                        for (TaskGroup childTask : taskGroup.getChildTasks()) {
-                            TaskInfo shardInfo = childTask.getTaskInfo();
-
-                            TaskResourceStats shardStats = shardInfo.getResourceStats();
-                            long shardCpu = 0L;
-                            long shardMem = 0L;
-                            if (shardStats != null) {
-                                Map<String, TaskResourceUsage> usageInfo = shardStats.getResourceUsageInfo();
-                                if (usageInfo != null) {
-                                    TaskResourceUsage totalUsage = usageInfo.get(TOTAL);
-                                    if (totalUsage != null) {
-                                        shardCpu = totalUsage.getCpuTimeInNanos();
-                                        shardMem = totalUsage.getMemoryInBytes();
-                                    }
-                                }
-                            }
-
-                            totalCpu += shardCpu;
-                            totalMem += shardMem;
-                            String shardStatus = shardInfo.isCancelled() ? "cancelled" : "running";
-                            shardTasks.add(new TaskDetails(shardInfo, shardStatus));
-                        }
+                        long totalCpu = coordCpu + shardTasks.stream().mapToLong(t -> {
+                            Map<String, TaskResourceUsage> u = t.getTaskInfo().getResourceStats() != null
+                                ? t.getTaskInfo().getResourceStats().getResourceUsageInfo()
+                                : null;
+                            return (u != null && u.get(TOTAL) != null) ? u.get(TOTAL).getCpuTimeInNanos() : 0L;
+                        }).sum();
+                        long totalMem = coordMem + shardTasks.stream().mapToLong(t -> {
+                            Map<String, TaskResourceUsage> u = t.getTaskInfo().getResourceStats() != null
+                                ? t.getTaskInfo().getResourceStats().getResourceUsageInfo()
+                                : null;
+                            return (u != null && u.get(TOTAL) != null) ? u.get(TOTAL).getMemoryInBytes() : 0L;
+                        }).sum();
 
                         // Determine status based on coordinator cancellation
                         String queryStatus = coordinatorInfo.isCancelled() ? "cancelled" : "running";
@@ -165,7 +166,33 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                                 return Long.compare(b.getTotalLatency(), a.getTotalLatency());
                         }
                     }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
-                    listener.onResponse(new LiveQueriesResponse(finalRecords));
+
+                    if (request.isUseFinishedCache()) {
+                        // Touch the local cache on the coordinating node to schedule the idle-check
+                        // timer and update lastAccessTime. Fan-out nodes use getFinishedQueriesIfActive()
+                        // to avoid activating caches cluster-wide.
+                        queryInsightsService.getFinishedQueriesCache().getFinishedQueries();
+
+                        client.execute(
+                            FinishedQueriesAction.INSTANCE,
+                            new FinishedQueriesRequest(request.nodesIds()),
+                            ActionListener.wrap(
+                                finishedResponse -> listener.onResponse(
+                                    new LiveQueriesResponse(
+                                        finalRecords,
+                                        sortAndLimit(finishedResponse.getAllFinishedQueries(), request),
+                                        true
+                                    )
+                                ),
+                                ex -> {
+                                    logger.error("Failed to retrieve finished queries from nodes", ex);
+                                    listener.onFailure(ex);
+                                }
+                            )
+                        );
+                    } else {
+                        listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
+                    }
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -178,5 +205,24 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 listener.onFailure(e);
             }
         });
+    }
+
+    private void collectChildTasks(TaskGroup group, List<TaskDetails> result) {
+        for (TaskGroup child : group.getChildTasks()) {
+            TaskInfo info = child.getTaskInfo();
+            result.add(new TaskDetails(info, info.isCancelled() ? "cancelled" : "running"));
+            collectChildTasks(child, result);
+        }
+    }
+
+    private List<FinishedQueryRecord> sortAndLimit(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
+        return records.stream().sorted((a, b) -> {
+            Measurement ma = a.getMeasurements().get(request.getSortBy());
+            Measurement mb = b.getMeasurements().get(request.getSortBy());
+            if (ma == null && mb == null) return 0;
+            if (ma == null) return 1;
+            if (mb == null) return -1;
+            return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
+        }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
     }
 }

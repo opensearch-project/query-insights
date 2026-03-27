@@ -33,6 +33,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
@@ -43,6 +44,7 @@ import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryIns
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.TransportFinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportUpdateQueryInsightsSettingsAction;
@@ -101,7 +103,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsExporterFactory(client, clusterService, threadPool, repositoriesServiceSupplier),
             new QueryInsightsReaderFactory(client)
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        return List.of(queryInsightsService, queryInsightsListener);
     }
 
     @Override
@@ -141,6 +144,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class),
             new ActionPlugin.ActionHandler<>(HealthStatsAction.INSTANCE, TransportHealthStatsAction.class),
             new ActionPlugin.ActionHandler<>(LiveQueriesAction.INSTANCE, TransportLiveQueriesAction.class),
+            new ActionPlugin.ActionHandler<>(FinishedQueriesAction.INSTANCE, TransportFinishedQueriesAction.class),
             new ActionPlugin.ActionHandler<>(GetQueryInsightsSettingsAction.INSTANCE, TransportGetQueryInsightsSettingsAction.class),
             new ActionPlugin.ActionHandler<>(UpdateQueryInsightsSettingsAction.INSTANCE, TransportUpdateQueryInsightsSettingsAction.class)
         );
@@ -176,7 +180,8 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
             QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
             QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
-            QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES
+            QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES,
+            QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT
         );
     }
 }
