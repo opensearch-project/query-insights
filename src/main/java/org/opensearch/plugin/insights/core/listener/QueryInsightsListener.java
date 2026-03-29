@@ -366,6 +366,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 null
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
+            record.setHitsLength(searchRequestContext.getHitsLength());
             queryInsightsService.addRecord(record);
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
