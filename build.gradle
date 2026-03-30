@@ -564,6 +564,11 @@ task integTestRemote(type: RestIntegTestTask) {
   // Set default query size limit
   systemProperty 'defaultQuerySizeLimit', '10000'
 
+  // Exclude remote repository tests - run separately in integTestRemoteRepository
+  exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
+  // Exclude RBAC tests - require security plugin, run in integTestWithSecurity
+  exclude 'org/opensearch/plugin/insights/rules/resthandler/top_queries/TopQueriesRbacIT.class'
+
   // Only REST-based integration tests can run with remote cluster
   if (System.getProperty("tests.rest.cluster") != null) {
     filter {
@@ -571,6 +576,10 @@ task integTestRemote(type: RestIntegTestTask) {
       // Exclude tests that require multi-node cluster or internal cluster access
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsPluginTransportIT'
+      // Exclude remote repository tests - run separately in integTestRemoteRepository
+      excludeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
+      // Exclude RBAC tests - require security plugin
+      excludeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRbacIT'
     }
   }
 
