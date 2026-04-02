@@ -107,5 +107,33 @@ cluster_node_num=`echo $ENDPOINT_LIST | jq -r '.[].data_nodes | length'`
 
 echo "cluster_name: $cluster_name, cluster_node1_endpoint: $cluster_node1_endpoint, cluster_node1_port: $cluster_node1_port, cluster_node_num: $cluster_node_num"
 
+# Determine protocol based on security setting
+if [ "$SECURITY_ENABLED" = "true" ]; then
+  PROTOCOL="https"
+  CURL_AUTH="-u $USERNAME:$PASSWORD --insecure"
+else
+  PROTOCOL="http"
+  CURL_AUTH=""
+fi
+
+# Wait for all nodes to join the cluster before running tests
+echo "Waiting for cluster to form with $cluster_node_num node(s)..."
+max_wait=120
+elapsed=0
+while [ $elapsed -lt $max_wait ]; do
+    node_count=$(curl -s $CURL_AUTH "$PROTOCOL://$cluster_node1_endpoint:$cluster_node1_port/_cat/nodes" 2>/dev/null | wc -l)
+    if [ "$node_count" -ge "$cluster_node_num" ]; then
+        echo "Cluster ready with $node_count node(s)"
+        break
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+    echo "Waiting... ($elapsed/${max_wait}s, nodes: $node_count/$cluster_node_num)"
+done
+
+if [ $elapsed -ge $max_wait ]; then
+    echo "WARNING: Cluster did not reach $cluster_node_num node(s) within ${max_wait}s, proceeding anyway"
+fi
+
 echo "./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain"
 ./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain
