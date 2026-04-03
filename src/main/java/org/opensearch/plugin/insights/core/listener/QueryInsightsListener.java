@@ -88,8 +88,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final ThreadPool threadPool
     ) {
         this(clusterService, queryInsightsService, threadPool, false);
-        groupingFieldNameEnabled = false;
-        groupingFieldTypeEnabled = false;
     }
 
     /**
