@@ -550,7 +550,9 @@ testClusters.integTestRemoteRepository {
   }
 }
 
-task integTestRemote(type: RestIntegTestTask) {
+// Use plain Test instead of RestIntegTestTask to avoid RestTestBasePlugin
+// auto-creating a testcluster that spins up unnecessary nodes on CI.
+task integTestRemote(type: Test) {
   testClassesDirs = sourceSets.test.output.classesDirs
   classpath = sourceSets.test.runtimeClasspath
   systemProperty 'tests.security.manager', 'false'
@@ -569,8 +571,10 @@ task integTestRemote(type: RestIntegTestTask) {
   // Exclude RBAC tests - require security plugin, run in integTestWithSecurity
   exclude 'org/opensearch/plugin/insights/rules/resthandler/top_queries/TopQueriesRbacIT.class'
 
-  // Only REST-based integration tests can run with remote cluster
+  // Remote cluster is shared; serialize tests to avoid cross-test interference.
   if (System.getProperty("tests.rest.cluster") != null) {
+    maxParallelForks = 1
+    forkEvery = 0
     filter {
       includeTestsMatching 'org.opensearch.plugin.insights.*IT'
       // Exclude tests that require multi-node cluster or internal cluster access
