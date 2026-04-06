@@ -22,9 +22,27 @@ public class TopQueriesRequestTests extends OpenSearchTestCase {
      * Check that we can set the metric type
      */
     public void testSetMetricType() throws Exception {
-        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, randomAlphaOfLength(5), null);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, randomAlphaOfLength(5), null, null);
         TopQueriesRequest deserializedRequest = roundTripRequest(request);
         assertEquals(request.getMetricType(), deserializedRequest.getMetricType());
+    }
+
+    public void testRecommendationsTrueRoundTrip() throws Exception {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, true);
+        TopQueriesRequest deserialized = roundTripRequest(request);
+        assertEquals(true, deserialized.getRecommendations());
+    }
+
+    public void testRecommendationsFalseRoundTrip() throws Exception {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, false);
+        TopQueriesRequest deserialized = roundTripRequest(request);
+        assertEquals(false, deserialized.getRecommendations());
+    }
+
+    public void testRecommendationsNullRoundTrip() throws Exception {
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.LATENCY, null, null, null, null, null);
+        TopQueriesRequest deserialized = roundTripRequest(request);
+        assertNull(deserialized.getRecommendations());
     }
 
     /**

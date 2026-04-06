@@ -25,6 +25,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
     final String to;
     final String id;
     final Boolean verbose;
+    final Boolean recommendations;
 
     /**
      * Constructor for TopQueriesRequest
@@ -46,6 +47,11 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
             this.id = null;
             this.verbose = null;
         }
+        if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
+            this.recommendations = in.readOptionalBoolean();
+        } else {
+            this.recommendations = null;
+        }
     }
 
     /**
@@ -57,6 +63,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
      * @param to end timestamp
      * @param id query/group id
      * @param verbose whether to return full output
+     * @param recommendations whether to include recommendations
      * @param nodesIds the nodeIds specified in the request
      */
     public TopQueriesRequest(
@@ -65,6 +72,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
         final String to,
         final String id,
         final Boolean verbose,
+        final Boolean recommendations,
         final String... nodesIds
     ) {
         super(nodesIds);
@@ -73,6 +81,7 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
         this.to = to;
         this.verbose = verbose;
         this.id = id;
+        this.recommendations = recommendations;
     }
 
     /**
@@ -115,6 +124,14 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
         return verbose;
     }
 
+    /**
+     * Get recommendations flag
+     * @return Boolean of recommendations flag
+     */
+    public Boolean getRecommendations() {
+        return recommendations;
+    }
+
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -124,6 +141,9 @@ public class TopQueriesRequest extends BaseNodesRequest<TopQueriesRequest> {
             out.writeOptionalString(to);
             out.writeOptionalString(id);
             out.writeOptionalBoolean(verbose);
+        }
+        if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
+            out.writeOptionalBoolean(recommendations);
         }
     }
 }
