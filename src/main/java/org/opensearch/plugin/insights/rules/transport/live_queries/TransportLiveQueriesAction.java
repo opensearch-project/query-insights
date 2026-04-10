@@ -141,6 +141,31 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         // Determine status based on coordinator cancellation
                         String queryStatus = coordinatorInfo.isCancelled() ? "cancelled" : "running";
 
+                        // Extract user info from task headers
+                        String username = null;
+                        List<String> userRoles = List.of();
+                        List<String> backendRoles = List.of();
+                        Map<String, String> taskHeaders = coordinatorInfo.getHeaders();
+                        if (taskHeaders != null) {
+                            String userInfoStr = taskHeaders.get("_opendistro_security_user_info");
+                            if (userInfoStr != null && !userInfoStr.isEmpty()) {
+                                String[] parts = userInfoStr.split("(?<!\\\\)\\|");
+                                if (parts.length > 0 && !parts[0].isEmpty()) {
+                                    username = parts[0].replace("\\|", "|").trim();
+                                }
+                                if (parts.length > 1 && !parts[1].isEmpty()) {
+                                    backendRoles = java.util.Arrays.stream(parts[1].split(","))
+                                        .map(s -> s.replace("\\|", "|").trim())
+                                        .toList();
+                                }
+                                if (parts.length > 2 && !parts[2].isEmpty()) {
+                                    userRoles = java.util.Arrays.stream(parts[2].split(","))
+                                        .map(s -> s.replace("\\|", "|").trim())
+                                        .toList();
+                                }
+                            }
+                        }
+
                         LiveQueryRecord record = new LiveQueryRecord(
                             queryId,
                             queryStatus,
@@ -150,7 +175,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             totalCpu,
                             totalMem,
                             new TaskDetails(coordinatorInfo, queryStatus),
-                            shardTasks
+                            shardTasks,
+                            username,
+                            userRoles,
+                            backendRoles
                         );
 
                         allRecords.add(record);
