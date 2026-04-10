@@ -224,7 +224,29 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     @Override
-    public void onPhaseStart(SearchPhaseContext context) {}
+    public void onPhaseStart(SearchPhaseContext context) {
+        // Capture user identity at search phase start for live queries
+        try {
+            if (context.getTask() != null) {
+                long taskIdNum = context.getTask().getId();
+                String nodeId = clusterService.localNode().getId();
+                String taskId = nodeId + ":" + taskIdNum;
+                // Only capture once per task
+                if (queryInsightsService.getLiveQueryUserInfo(taskId) == null) {
+                    UserPrincipalContext ctx = new UserPrincipalContext(threadPool);
+                    String rawUserStr = ctx.getUserString();
+                    log.debug("onPhaseStart taskId={} rawUserStr={}", taskId, rawUserStr);
+                    UserPrincipalContext.UserPrincipalInfo userInfo = ctx.extractUserInfo();
+                    if (userInfo != null) {
+                        log.debug("Captured user for task {}: {}", taskId, userInfo.getUserName());
+                        queryInsightsService.putLiveQueryUserInfo(taskId, userInfo);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to capture user info in onPhaseStart", e);
+        }
+    }
 
     @Override
     public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {}
@@ -251,6 +273,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
         try {
+            // Clean up live query user map
+            if (context.getTask() != null) {
+                long taskIdNum = context.getTask().getId();
+                String nodeId = clusterService.localNode().getId();
+                queryInsightsService.removeLiveQueryUserInfo(nodeId + ":" + taskIdNum);
+            }
             FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
             if (cache == null || record == null) return;
             cache.capture(record, context.getTask().getId());
