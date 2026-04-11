@@ -48,6 +48,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -279,6 +280,8 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 String nodeId = clusterService.localNode().getId();
                 queryInsightsService.removeLiveQueryUserInfo(nodeId + ":" + taskIdNum);
             }
+            // Extract user info into record attributes before caching
+            TopQueriesService.setUserInfo(record);
             FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
             if (cache == null || record == null) return;
             cache.capture(record, context.getTask().getId());
