@@ -141,6 +141,17 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         // Determine status based on coordinator cancellation
                         String queryStatus = coordinatorInfo.isCancelled() ? "cancelled" : "running";
 
+                        // Look up user info captured by the listener at search start
+                        String username = null;
+                        List<String> userRoles = List.of();
+                        List<String> backendRoles = List.of();
+                        var userInfo = queryInsightsService.getLiveQueryUserInfo(queryId);
+                        if (userInfo != null) {
+                            username = userInfo.getUserName();
+                            userRoles = userInfo.getRoles();
+                            backendRoles = userInfo.getBackendRoles();
+                        }
+
                         LiveQueryRecord record = new LiveQueryRecord(
                             queryId,
                             queryStatus,
@@ -150,7 +161,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             totalCpu,
                             totalMem,
                             new TaskDetails(coordinatorInfo, queryStatus),
-                            shardTasks
+                            shardTasks,
+                            username,
+                            userRoles,
+                            backendRoles
                         );
 
                         allRecords.add(record);

@@ -42,11 +42,13 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
+import org.opensearch.plugin.insights.QueryInsightsPlugin;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -223,7 +225,29 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     @Override
-    public void onPhaseStart(SearchPhaseContext context) {}
+    public void onPhaseStart(SearchPhaseContext context) {
+        // Capture user identity at search phase start for live queries
+        try {
+            if (context.getTask() != null) {
+                long taskIdNum = context.getTask().getId();
+                String nodeId = clusterService.localNode().getId();
+                String taskId = nodeId + ":" + taskIdNum;
+                // Only capture once per task
+                if (queryInsightsService.getLiveQueryUserInfo(taskId) == null) {
+                    UserPrincipalContext ctx = new UserPrincipalContext(threadPool);
+                    String rawUserStr = ctx.getUserString();
+                    log.debug("onPhaseStart taskId={} rawUserStr={}", taskId, rawUserStr);
+                    UserPrincipalContext.UserPrincipalInfo userInfo = ctx.extractUserInfo();
+                    if (userInfo != null) {
+                        log.debug("Captured user for task {}: {}", taskId, userInfo.getUserName());
+                        queryInsightsService.putLiveQueryUserInfo(taskId, userInfo);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to capture user info in onPhaseStart", e);
+        }
+    }
 
     @Override
     public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {}
@@ -250,6 +274,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
         try {
+            // Clean up live query user map
+            if (context.getTask() != null) {
+                long taskIdNum = context.getTask().getId();
+                String nodeId = clusterService.localNode().getId();
+                queryInsightsService.removeLiveQueryUserInfo(nodeId + ":" + taskIdNum);
+            }
+            // Extract user info into record attributes before caching
+            TopQueriesService.setUserInfo(record);
             FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
             if (cache == null || record == null) return;
             cache.capture(record, context.getTask().getId());
@@ -372,6 +404,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             String userProvidedLabel = context.getTask().getHeader(Task.X_OPAQUE_ID);
             if (userProvidedLabel != null) {
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
+            }
+            // Retrieve custom source tracking headers
+            String applicationId = context.getTask().getHeader(QueryInsightsPlugin.APPLICATION_ID_HEADER);
+            if (applicationId != null) {
+                labels.put(QueryInsightsPlugin.APPLICATION_ID_HEADER, applicationId);
             }
             attributes.put(Attribute.LABELS, labels);
 
