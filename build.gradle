@@ -10,7 +10,7 @@ import java.util.stream.Collectors
 
 buildscript {
   ext {
-    opensearch_version = System.getProperty("opensearch.version", "3.6.0-SNAPSHOT")
+    opensearch_version = System.getProperty("opensearch.version", "3.7.0-SNAPSHOT")
     isSnapshot = "true" == System.getProperty("build.snapshot", "true")
     buildVersionQualifier = System.getProperty("build.version_qualifier", "")
     version_tokens = opensearch_version.tokenize('-')
@@ -550,7 +550,9 @@ testClusters.integTestRemoteRepository {
   }
 }
 
-task integTestRemote(type: RestIntegTestTask) {
+// Use plain Test instead of RestIntegTestTask to avoid RestTestBasePlugin
+// auto-creating a testcluster that spins up unnecessary nodes on CI.
+task integTestRemote(type: Test) {
   testClassesDirs = sourceSets.test.output.classesDirs
   classpath = sourceSets.test.runtimeClasspath
   systemProperty 'tests.security.manager', 'false'
@@ -564,13 +566,24 @@ task integTestRemote(type: RestIntegTestTask) {
   // Set default query size limit
   systemProperty 'defaultQuerySizeLimit', '10000'
 
-  // Only REST-based integration tests can run with remote cluster
+  // Exclude remote repository tests - run separately in integTestRemoteRepository
+  exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
+  // Exclude RBAC tests - require security plugin, run in integTestWithSecurity
+  exclude 'org/opensearch/plugin/insights/rules/resthandler/top_queries/TopQueriesRbacIT.class'
+
+  // Remote cluster is shared; serialize tests to avoid cross-test interference.
   if (System.getProperty("tests.rest.cluster") != null) {
+    maxParallelForks = 1
+    forkEvery = 0
     filter {
       includeTestsMatching 'org.opensearch.plugin.insights.*IT'
       // Exclude tests that require multi-node cluster or internal cluster access
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsPluginTransportIT'
+      // Exclude remote repository tests - run separately in integTestRemoteRepository
+      excludeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
+      // Exclude RBAC tests - require security plugin
+      excludeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRbacIT'
     }
   }
 
