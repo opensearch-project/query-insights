@@ -66,6 +66,7 @@ import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 
 /**
  * Service responsible for gathering, analyzing, storing and exporting
@@ -143,6 +144,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     private final FinishedQueriesCache finishedQueriesCache;
+    private final java.util.concurrent.ConcurrentHashMap<String, UserPrincipalContext.UserPrincipalInfo> liveQueryUserMap = new java.util.concurrent.ConcurrentHashMap<>();
 
     SinkType sinkType;
 
@@ -671,6 +673,18 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public FinishedQueriesCache getFinishedQueriesCache() {
         return finishedQueriesCache;
+    }
+
+    public void putLiveQueryUserInfo(String taskId, UserPrincipalContext.UserPrincipalInfo userInfo) {
+        liveQueryUserMap.put(taskId, userInfo);
+    }
+
+    public UserPrincipalContext.UserPrincipalInfo getLiveQueryUserInfo(String taskId) {
+        return liveQueryUserMap.get(taskId);
+    }
+
+    public void removeLiveQueryUserInfo(String taskId) {
+        liveQueryUserMap.remove(taskId);
     }
 
     /**

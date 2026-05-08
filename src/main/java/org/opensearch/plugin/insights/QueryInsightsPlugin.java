@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
 import org.opensearch.action.ActionRequest;
+import org.opensearch.rest.RestHeaderDefinition;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
@@ -70,10 +71,26 @@ import org.opensearch.watcher.ResourceWatcherService;
  * Plugin class for Query Insights.
  */
 public class QueryInsightsPlugin extends Plugin implements ActionPlugin, TelemetryAwarePlugin {
+
+    /**
+     * Custom task header for tracking the application/source that initiated a query.
+     */
+    public static final String APPLICATION_ID_HEADER = "X-QI-Application-Id";
+
     /**
      * Default constructor
      */
     public QueryInsightsPlugin() {}
+
+    @Override
+    public Collection<RestHeaderDefinition> getRestHeaders() {
+        return List.of(new RestHeaderDefinition(APPLICATION_ID_HEADER, false));
+    }
+
+    @Override
+    public Collection<String> getTaskHeaders() {
+        return List.of(APPLICATION_ID_HEADER);
+    }
 
     @Override
     public Collection<Object> createComponents(
