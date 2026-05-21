@@ -13,7 +13,6 @@ import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTo
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
@@ -88,26 +87,6 @@ class LocalIndexLifecycleManager {
             deleteAllTopNIndices();
         } else {
             deleteExpiredTopNIndices();
-        }
-    }
-
-    /**
-     * Validate the delete after value
-     *
-     * @param deleteAfter the number of days after which Top N local indices should be deleted
-     */
-    void validateDeleteAfter(final int deleteAfter) {
-        if (deleteAfter < QueryInsightsSettings.MIN_DELETE_AFTER_VALUE || deleteAfter > QueryInsightsSettings.MAX_DELETE_AFTER_VALUE) {
-            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.INVALID_EXPORTER_TYPE_FAILURES);
-            throw new IllegalArgumentException(
-                String.format(
-                    Locale.ROOT,
-                    "Invalid delete_after_days setting [%d], value should be an integer between %d and %d.",
-                    deleteAfter,
-                    QueryInsightsSettings.MIN_DELETE_AFTER_VALUE,
-                    QueryInsightsSettings.MAX_DELETE_AFTER_VALUE
-                )
-            );
         }
     }
 

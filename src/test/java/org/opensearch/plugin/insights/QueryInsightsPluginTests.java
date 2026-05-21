@@ -25,6 +25,7 @@ import org.opensearch.core.action.ActionResponse;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
@@ -38,6 +39,7 @@ import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLive
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
+import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestHandler;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -110,13 +112,24 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
                 QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
-                QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
+                QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
+                QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
+                QueryInsightsSettings.REMOTE_EXPORTER_PATH,
+                QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
+                QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE,
+                // Recommendation settings
+                QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
+                QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
+                QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
+                QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES,
+                QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT
             ),
             queryInsightsPlugin.getSettings()
         );
     }
 
     public void testCreateComponent() {
+        RepositoriesService repositoriesService = mock(RepositoriesService.class);
         List<Object> components = (List<Object>) queryInsightsPlugin.createComponents(
             client,
             clusterService,
@@ -128,7 +141,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             null,
             null,
-            null,
+            () -> repositoriesService,
             null,
             metricsRegistry
         );
@@ -157,12 +170,13 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testGetActions() {
         List<ActionPlugin.ActionHandler<? extends ActionRequest, ? extends ActionResponse>> components = queryInsightsPlugin.getActions();
-        assertEquals(5, components.size());
+        assertEquals(6, components.size());
         assertTrue(components.get(0).getAction() instanceof TopQueriesAction);
         assertTrue(components.get(1).getAction() instanceof HealthStatsAction);
         assertTrue(components.get(2).getAction() instanceof LiveQueriesAction);
-        assertTrue(components.get(3).getAction() instanceof GetQueryInsightsSettingsAction);
-        assertTrue(components.get(4).getAction() instanceof UpdateQueryInsightsSettingsAction);
+        assertTrue(components.get(3).getAction() instanceof FinishedQueriesAction);
+        assertTrue(components.get(4).getAction() instanceof GetQueryInsightsSettingsAction);
+        assertTrue(components.get(5).getAction() instanceof UpdateQueryInsightsSettingsAction);
     }
 
     public void testLiveQueriesActionRegistration() {

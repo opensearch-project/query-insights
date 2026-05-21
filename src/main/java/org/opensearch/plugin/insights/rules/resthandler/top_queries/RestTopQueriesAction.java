@@ -81,6 +81,7 @@ public class RestTopQueriesAction extends BaseRestHandler {
         final String to = request.param("to", null);
         final String id = request.param("id", null);
         final boolean verbose = request.paramAsBoolean("verbose", true);
+        final boolean recommendations = request.paramAsBoolean("recommendations", false);
         if (!ALLOWED_METRICS.contains(metricType)) {
             throw new IllegalArgumentException(
                 String.format(Locale.ROOT, "request [%s] contains invalid metric type [%s]", request.path(), metricType)
@@ -91,7 +92,7 @@ public class RestTopQueriesAction extends BaseRestHandler {
             validateTimeRange(request, from, to);
         }
 
-        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, id, verbose, nodesIds);
+        return new TopQueriesRequest(MetricType.fromString(metricType), from, to, id, verbose, recommendations, nodesIds);
     }
 
     private static void validateTimeRange(RestRequest request, String from, String to) {

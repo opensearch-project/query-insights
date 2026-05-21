@@ -5,4 +5,4 @@
         h: component
 
   - match:
-      $body: /^rename\n$/
+      $body: /^query-insights\n$/

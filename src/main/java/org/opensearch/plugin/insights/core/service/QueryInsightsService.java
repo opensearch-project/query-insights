@@ -10,11 +10,16 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_EXPORTER_ID;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_READER_ID;
+import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_GROUPING_TYPE;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_TOP_N_QUERIES_INDEX_PATTERN;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.QUERY_INSIGHTS_EXECUTOR;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_ENABLED;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_PATH;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_EXPORTER_TYPE;
+import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -41,6 +46,7 @@ import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
@@ -48,6 +54,8 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
+import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -127,9 +135,18 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     private QueryShapeGenerator queryShapeGenerator;
 
+    /**
+     * Recommendation service for generating query recommendations
+     */
+    private final RecommendationService recommendationService;
+
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
+    private final FinishedQueriesCache finishedQueriesCache;
+
     SinkType sinkType;
+
+    private volatile FilterByMode filterByMode;
 
     /**
      * Constructor of the QueryInsightsService
@@ -167,27 +184,40 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             );
         }
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_EXPORTER_TYPE,
-                (v -> setExporterAndReaderType(SinkType.parse(v))),
-                (this::validateExporterType)
-            );
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_TYPE, (v -> setExporterAndReaderType(SinkType.parse(v))));
+
+        // Initialize recommendation service
+        this.recommendationService = new RecommendationService(clusterService, namedXContentRegistry);
+
         this.localIndexLifecycleManager = new LocalIndexLifecycleManager(
             threadPool,
             client,
             clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER)
         );
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_EXPORTER_DELETE_AFTER,
-                (localIndexLifecycleManager::setDeleteAfterAndDelete),
-                (localIndexLifecycleManager::validateDeleteAfter)
-            );
+            .addSettingsUpdateConsumer(TOP_N_EXPORTER_DELETE_AFTER, (localIndexLifecycleManager::setDeleteAfterAndDelete));
+        queryInsightsExporterFactory.createRemoteRepositoryExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID,
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_PATH),
+            clusterService.getClusterSettings().get(REMOTE_EXPORTER_ENABLED)
+        );
+
+        // Listen for remote repository exporter setting changes - update individual settings
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_REPOSITORY, this::updateRemoteExporterRepository);
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_PATH, this::updateRemoteExporterPath);
+
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(TOP_N_QUERIES_FILTER_BY_MODE, this::setFilterByMode);
+        this.filterByMode = FilterByMode.fromString(clusterService.getClusterSettings().get(TOP_N_QUERIES_FILTER_BY_MODE));
 
         this.setExporterAndReaderType(SinkType.parse(clusterService.getClusterSettings().get(TOP_N_EXPORTER_TYPE)));
         this.searchQueryCategorizer = SearchQueryCategorizer.getInstance(metricsRegistry);
         this.enableSearchQueryMetricsFeature(false);
         this.groupingType = DEFAULT_GROUPING_TYPE;
+
+        // Initialize caches
+        this.finishedQueriesCache = new FinishedQueriesCache(clusterService, threadPool);
     }
 
     /**
@@ -281,14 +311,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate grouping given grouping type setting
-     * @param groupingTypeSetting grouping setting
-     */
-    public void validateGrouping(final String groupingTypeSetting) {
-        GroupingType.getGroupingTypeFromSettingAndValidate(groupingTypeSetting);
-    }
-
-    /**
      * Set grouping
      * @param groupingTypeSetting grouping
      */
@@ -316,29 +338,20 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate max number of groups. Should be between 1 and MAX_GROUPS_LIMIT
-     * @param maxGroups maximum number of groups that should be tracked when calculating Top N groups
-     */
-    public void validateMaximumGroups(final int maxGroups) {
-        if (maxGroups < 0 || maxGroups > QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT) {
-            throw new IllegalArgumentException(
-                "Max groups setting"
-                    + " should be between 0 and "
-                    + QueryInsightsSettings.MAX_GROUPS_EXCLUDING_TOPN_LIMIT
-                    + ", was ("
-                    + maxGroups
-                    + ")"
-            );
-        }
-    }
-
-    /**
      * Get the grouping type based on the metricType
      * @return GroupingType
      */
 
     public GroupingType getGrouping() {
         return groupingType;
+    }
+
+    /**
+     * Get the recommendation service
+     * @return the recommendation service
+     */
+    public RecommendationService getRecommendationService() {
+        return recommendationService;
     }
 
     /**
@@ -352,12 +365,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Check if any feature of Query Insights service is enabled, right now includes Top N and Categorization.
+     * Check if any feature of Query Insights service is enabled.
+     * Includes Top N, search query categorization, and the finished queries cache.
      *
      * @return if query insights service is enabled
      */
     public boolean isAnyFeatureEnabled() {
-        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled();
+        return isTopNFeatureEnabled() || isSearchQueryMetricsFeatureEnabled() || isFinishedCacheEnabled();
     }
 
     /**
@@ -400,18 +414,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the window size config for a metricType
-     *
-     * @param type {@link MetricType}
-     * @param windowSize {@link TimeValue}
-     */
-    public void validateWindowSize(final MetricType type, final TimeValue windowSize) {
-        if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).validateWindowSize(windowSize);
-        }
-    }
-
-    /**
      * Set window size for a metricType
      *
      * @param type {@link MetricType}
@@ -420,18 +422,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public void setWindowSize(final MetricType type, final TimeValue windowSize) {
         if (topQueriesServices.containsKey(type)) {
             topQueriesServices.get(type).setWindowSize(windowSize);
-        }
-    }
-
-    /**
-     * Validate the top n size config for a metricType
-     *
-     * @param type {@link MetricType}
-     * @param topNSize top n size
-     */
-    public void validateTopNSize(final MetricType type, final int topNSize) {
-        if (topQueriesServices.containsKey(type)) {
-            topQueriesServices.get(type).validateTopNSize(topNSize);
         }
     }
 
@@ -505,12 +495,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Validate the exporter type config
+     * Get the current RBAC filter mode for top queries
      *
-     * @param exporterType exporter type
+     * @return the current {@link FilterByMode}
      */
-    public void validateExporterType(final String exporterType) {
-        queryInsightsExporterFactory.validateExporterType(exporterType);
+    public FilterByMode getFilterByMode() {
+        return filterByMode;
+    }
+
+    /**
+     * Set the RBAC filter mode for top queries
+     *
+     * @param filterByModeSetting the filter mode string value
+     */
+    public void setFilterByMode(final String filterByModeSetting) {
+        this.filterByMode = FilterByMode.fromString(filterByModeSetting);
     }
 
     /**
@@ -530,6 +529,11 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     @Override
     protected void doStart() {
+        // The finished queries cache is lazy — it activates on first API call
+        // (getFinishedQueries), not at node startup. This avoids capturing queries
+        // into memory on nodes where the finished queries feature is never used.
+        // Clear the stopped flag so the cache CAN be activated by an API call after a restart.
+        finishedQueriesCache.clearStopped();
         if (isAnyFeatureEnabled()) {
             scheduledFutures = new ArrayList<>();
             scheduledFutures.add(
@@ -566,6 +570,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 }
             }
         }
+
+        finishedQueriesCache.stop();
+
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
 
@@ -605,6 +612,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void setQueryShapeGenerator(final QueryShapeGenerator queryShapeGenerator) {
         this.queryShapeGenerator = queryShapeGenerator;
+        this.recommendationService.setQueryShapeGenerator(queryShapeGenerator);
     }
 
     /**
@@ -621,9 +629,55 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Update remote repository exporter with the given settings
+     */
+    private void updateRemoteExporterEnabled(Boolean enabled) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setEnabled(enabled != null ? enabled : false);
+        }
+    }
+
+    private void updateRemoteExporterRepository(String repository) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setRepositoryName(repository);
+        }
+    }
+
+    private void updateRemoteExporterPath(String path) {
+        RemoteRepositoryExporter exporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        if (exporter != null) {
+            exporter.setBasePath(path);
+        }
+    }
+
+    /**
      * Gets the {@link LocalIndexLifecycleManager} instance.
      */
     LocalIndexLifecycleManager getLocalIndexLifecycleManager() {
         return localIndexLifecycleManager;
     }
+
+    /**
+     * Get the finished queries cache
+     * @return FinishedQueriesCache
+     */
+    public FinishedQueriesCache getFinishedQueriesCache() {
+        return finishedQueriesCache;
+    }
+
+    /**
+     * Returns true if the finished queries cache is enabled (idle timeout is non-zero).
+     */
+    public boolean isFinishedCacheEnabled() {
+        return finishedQueriesCache != null && finishedQueriesCache.isEnabled();
+    }
+
 }

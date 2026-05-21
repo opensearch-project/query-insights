@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -44,6 +45,7 @@ import org.opensearch.core.tasks.resourcetracker.TaskResourceInfo;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -54,7 +56,6 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import org.opensearch.threadpool.ThreadPool;
-import reactor.util.annotation.NonNull;
 
 /**
  * The listener for query insights services.
@@ -87,8 +88,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final ThreadPool threadPool
     ) {
         this(clusterService, queryInsightsService, threadPool, false);
-        groupingFieldNameEnabled = false;
-        groupingFieldTypeEnabled = false;
     }
 
     /**
@@ -118,51 +117,26 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             clusterService.getClusterSettings()
                 .addSettingsUpdateConsumer(getTopNEnabledSetting(type), v -> this.setEnableTopQueries(type, v));
             clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    getTopNSizeSetting(type),
-                    v -> this.queryInsightsService.setTopNSize(type, v),
-                    v -> this.queryInsightsService.validateTopNSize(type, v)
-                );
+                .addSettingsUpdateConsumer(getTopNSizeSetting(type), v -> this.queryInsightsService.setTopNSize(type, v));
             clusterService.getClusterSettings()
-                .addSettingsUpdateConsumer(
-                    getTopNWindowSizeSetting(type),
-                    v -> this.queryInsightsService.setWindowSize(type, v),
-                    v -> this.queryInsightsService.validateWindowSize(type, v)
-                );
+                .addSettingsUpdateConsumer(getTopNWindowSizeSetting(type), v -> this.queryInsightsService.setWindowSize(type, v));
 
             this.setEnableTopQueries(type, clusterService.getClusterSettings().get(getTopNEnabledSetting(type)));
-            this.queryInsightsService.validateTopNSize(type, clusterService.getClusterSettings().get(getTopNSizeSetting(type)));
             this.queryInsightsService.setTopNSize(type, clusterService.getClusterSettings().get(getTopNSizeSetting(type)));
-            this.queryInsightsService.validateWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
             this.queryInsightsService.setWindowSize(type, clusterService.getClusterSettings().get(getTopNWindowSizeSetting(type)));
         }
 
         // Settings endpoints set for grouping top n queries
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_QUERIES_GROUP_BY,
-                v -> this.queryInsightsService.setGrouping(v),
-                v -> this.queryInsightsService.validateGrouping(v)
-            );
-        this.queryInsightsService.validateGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_GROUP_BY, v -> this.queryInsightsService.setGrouping(v));
         this.queryInsightsService.setGrouping(clusterService.getClusterSettings().get(TOP_N_QUERIES_GROUP_BY));
 
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
-                v -> this.queryInsightsService.setMaximumGroups(v),
-                v -> this.queryInsightsService.validateMaximumGroups(v)
-            );
-        this.queryInsightsService.validateMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
+            .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N, v -> this.queryInsightsService.setMaximumGroups(v));
         this.queryInsightsService.setMaximumGroups(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N));
 
         clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(
-                QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
-                this::setExcludedIndices,
-                this::validateExcludedIndices
-            );
-        validateExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
+            .addSettingsUpdateConsumer(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES, this::setExcludedIndices);
         setExcludedIndices(clusterService.getClusterSettings().get(TOP_N_QUERIES_EXCLUDED_INDICES));
 
         // Internal settings for grouping attributes
@@ -181,6 +155,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(TOP_N_QUERIES_MAX_SOURCE_LENGTH, this.queryInsightsService::setMaxSourceLength);
         this.queryInsightsService.setMaxSourceLength(clusterService.getClusterSettings().get(TOP_N_QUERIES_MAX_SOURCE_LENGTH));
+
+        // Re-evaluate listener state when the finished cache idle timeout changes (e.g. 0 → 5m enables the cache)
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT, v -> {
+            queryInsightsService.getFinishedQueriesCache().setIdleTimeout(v.millis());
+            updateQueryInsightsState();
+        });
     }
 
     private void setExcludedIndices(List<String> excludedIndices) {
@@ -256,12 +236,26 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onRequestEnd(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        String recordId = UUID.randomUUID().toString();
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, false);
+        addToFinishedCache(context, record);
     }
 
     @Override
     public void onRequestFailure(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
-        constructSearchQueryRecord(context, searchRequestContext);
+        String recordId = UUID.randomUUID().toString();
+        SearchQueryRecord record = constructSearchQueryRecord(context, searchRequestContext, recordId, true);
+        addToFinishedCache(context, record);
+    }
+
+    private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
+        try {
+            FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
+            if (cache == null || record == null) return;
+            cache.capture(record, context.getTask().getId());
+        } catch (Exception e) {
+            log.debug("Failed to capture finished query into cache", e);
+        }
     }
 
     private boolean skipSearchRequest(final SearchRequestContext searchRequestContext) {
@@ -298,9 +292,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return excludedIndicesPattern.stream().anyMatch(pattern -> pattern.matcher(indexName).matches());
     }
 
-    private void constructSearchQueryRecord(final SearchPhaseContext context, final SearchRequestContext searchRequestContext) {
+    private SearchQueryRecord constructSearchQueryRecord(
+        final SearchPhaseContext context,
+        final SearchRequestContext searchRequestContext,
+        final String recordId,
+        final boolean failed
+    ) {
         if (skipSearchRequest(searchRequestContext)) {
-            return;
+            return null;
         }
 
         SearchTask searchTask = context.getTask();
@@ -346,6 +345,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.NODE_ID, clusterService.localNode().getId());
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
             attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
+            attributes.put(Attribute.FAILED, failed);
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(
@@ -384,30 +384,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 attributes,
                 request.source(),
                 userPrincipalContext,
-                null
+                recordId
             );
+            record.setStreaming(searchRequestContext.isStreamingRequest());
             queryInsightsService.addRecord(record);
+            return record;
         } catch (Exception e) {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.DATA_INGEST_EXCEPTIONS);
             log.error(String.format(Locale.ROOT, "fail to ingest query insight data, error: %s", e));
-        }
-    }
-
-    /**
-     * Validate the index name for excluded indices
-     * @param excludedIndices list of index to validate
-     */
-    public void validateExcludedIndices(@NonNull List<String> excludedIndices) {
-        for (String index : excludedIndices) {
-            if (index == null) {
-                throw new IllegalArgumentException("Excluded index name cannot be null.");
-            }
-            if (index.isBlank()) {
-                throw new IllegalArgumentException("Excluded index name cannot be blank.");
-            }
-            if (index.chars().anyMatch(Character::isUpperCase)) {
-                throw new IllegalArgumentException("Index name must be lowercase.");
-            }
+            return null;
         }
     }
 

@@ -33,6 +33,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
@@ -43,6 +44,7 @@ import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryIns
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.TransportFinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportUpdateQueryInsightsSettingsAction;
@@ -98,10 +100,11 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             client,
             metricsRegistry,
             xContentRegistry,
-            new QueryInsightsExporterFactory(client, clusterService),
+            new QueryInsightsExporterFactory(client, clusterService, threadPool, repositoriesServiceSupplier),
             new QueryInsightsReaderFactory(client)
         );
-        return List.of(queryInsightsService, new QueryInsightsListener(clusterService, queryInsightsService, threadPool, false));
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        return List.of(queryInsightsService, queryInsightsListener);
     }
 
     @Override
@@ -141,6 +144,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class),
             new ActionPlugin.ActionHandler<>(HealthStatsAction.INSTANCE, TransportHealthStatsAction.class),
             new ActionPlugin.ActionHandler<>(LiveQueriesAction.INSTANCE, TransportLiveQueriesAction.class),
+            new ActionPlugin.ActionHandler<>(FinishedQueriesAction.INSTANCE, TransportFinishedQueriesAction.class),
             new ActionPlugin.ActionHandler<>(GetQueryInsightsSettingsAction.INSTANCE, TransportGetQueryInsightsSettingsAction.class),
             new ActionPlugin.ActionHandler<>(UpdateQueryInsightsSettingsAction.INSTANCE, TransportUpdateQueryInsightsSettingsAction.class)
         );
@@ -168,7 +172,16 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_EXPORTER_TYPE,
             QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES,
             QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH,
-            QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY
+            QueryCategorizationSettings.SEARCH_QUERY_FIELD_TYPE_CACHE_SIZE_KEY,
+            QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY,
+            QueryInsightsSettings.REMOTE_EXPORTER_PATH,
+            QueryInsightsSettings.REMOTE_EXPORTER_ENABLED,
+            QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE,
+            QueryInsightsSettings.RECOMMENDATIONS_ENABLED,
+            QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE,
+            QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT,
+            QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES,
+            QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT
         );
     }
 }

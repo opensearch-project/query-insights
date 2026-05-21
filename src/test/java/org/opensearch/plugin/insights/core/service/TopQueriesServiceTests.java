@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_CREATION_DATE;
@@ -31,7 +32,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
@@ -46,6 +46,7 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
@@ -100,6 +101,15 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
 
         when(client.admin()).thenReturn(adminClient);
         when(adminClient.indices()).thenReturn(indicesAdminClient);
+
+        // Mock threadPool executor for remote export tests
+        java.util.concurrent.ExecutorService mockExecutor = mock(java.util.concurrent.ExecutorService.class);
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(mockExecutor).execute(any(Runnable.class));
+        when(threadPool.executor(anyString())).thenReturn(mockExecutor);
     }
 
     public void testIngestQueryDataWithLargeWindow() {
@@ -137,11 +147,23 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(QueryInsightsSettings.MAX_N_SIZE + 1); });
+        // Validation is now enforced at the Setting level via min/max bounds
+        assertThrows(IllegalArgumentException.class, () -> {
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.get(
+                org.opensearch.common.settings.Settings.builder()
+                    .put("search.insights.top_queries.latency.top_n_size", QueryInsightsSettings.MAX_N_SIZE + 1)
+                    .build()
+            );
+        });
     }
 
     public void testValidateNegativeTopNSize() {
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateTopNSize(-1); });
+        // Validation is now enforced at the Setting level via min/max bounds
+        assertThrows(IllegalArgumentException.class, () -> {
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.top_n_size", -1).build()
+            );
+        });
     }
 
     public void testGetTopQueriesWhenNotEnabled() {
@@ -186,14 +208,17 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     }
 
     public void testValidateWindowSize() {
+        // Validation is now enforced at the Setting level via min/max bounds and WindowSizeValidator
         assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MAX_WINDOW_SIZE.getSeconds() + 1, TimeUnit.SECONDS));
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_WINDOW_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.window_size", "2d").build()
+            );
         });
         assertThrows(IllegalArgumentException.class, () -> {
-            topQueriesService.validateWindowSize(new TimeValue(QueryInsightsSettings.MIN_WINDOW_SIZE.getSeconds() - 1, TimeUnit.SECONDS));
+            QueryInsightsSettings.TOP_N_LATENCY_QUERIES_WINDOW_SIZE.get(
+                org.opensearch.common.settings.Settings.builder().put("search.insights.top_queries.latency.window_size", "7m").build()
+            );
         });
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(2, TimeUnit.DAYS)); });
-        assertThrows(IllegalArgumentException.class, () -> { topQueriesService.validateWindowSize(new TimeValue(7, TimeUnit.MINUTES)); });
     }
 
     private static void runUntilTimeoutOrFinish(DeterministicTaskQueue deterministicTaskQueue, long duration) {
@@ -638,10 +663,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(5, 5, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new ArrayList<>(mockRecords));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(true), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -684,14 +709,14 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         }
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             String readerIdFilter = invocation.getArgument(2);
             List<SearchQueryRecord> recordsToReturn = mockRecords.stream()
                 .filter(r -> readerIdFilter == null || readerIdFilter.equals(r.getId()))
                 .toList();
             listener.onResponse(new java.util.ArrayList<>(recordsToReturn));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(targetId), eq(null), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -722,11 +747,11 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         List<SearchQueryRecord> mockRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, currentTime, 0);
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             // Simulate reader returning simplified records if verbose is false
             listener.onResponse(mockRecords.stream().map(SearchQueryRecord::copyAndSimplifyRecord).collect(Collectors.toList()));
             return null;
-        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(ActionListener.class));
+        }).when(mockReader).read(eq(from), eq(to), eq(null), eq(false), eq(MetricType.LATENCY), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -752,10 +777,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         String to = ZonedDateTime.now().toString();
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onResponse(new java.util.ArrayList<>());
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<List<SearchQueryRecord>> listCaptor = ArgumentCaptor.forClass(List.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -776,10 +801,10 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         Exception testException = new RuntimeException("Reader failed");
 
         doAnswer(invocation -> {
-            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(5);
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(7);
             listener.onFailure(testException);
             return null;
-        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(ActionListener.class));
+        }).when(mockReader).read(anyString(), anyString(), any(), any(), any(MetricType.class), any(), any(), any(ActionListener.class));
 
         ArgumentCaptor<Exception> exceptionCaptor = ArgumentCaptor.forClass(Exception.class);
         ActionListener<List<SearchQueryRecord>> mockListener = mock(ActionListener.class);
@@ -1019,6 +1044,36 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "admin", "user" }, (String[]) record.getAttributes().get(Attribute.USER_ROLES));
     }
 
+    public void testSetUserInfoWithBackendRoles() {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(100);
+
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+        Map<Attribute, Object> attributes = new HashMap<>();
+
+        // threadPool already has user info from createMockThreadPool()
+        // Format: "testuser|role1,role2|admin,user|tenant1|access1"
+        // backend_roles (index 1) = "role1,role2"
+        UserPrincipalContext userPrincipalContext = new UserPrincipalContext(threadPool);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            searchSourceBuilder,
+            userPrincipalContext,
+            "test-id"
+        );
+
+        assertNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+
+        topQueriesService.consumeRecords(List.of(record));
+
+        assertNotNull(record.getAttributes().get(Attribute.BACKEND_ROLES));
+        assertArrayEquals(new String[] { "role1", "role2" }, (String[]) record.getAttributes().get(Attribute.BACKEND_ROLES));
+    }
+
     public void testSetUserInfoWithNullUserPrincipalContext() {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.size(100);
@@ -1069,4 +1124,79 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertNull(record.getAttributes().get(Attribute.USERNAME));
         assertNull(record.getAttributes().get(Attribute.USER_ROLES));
     }
+
+    public void testRemoteExportWhenExporterExists() {
+        // Test remote export when exporter exists and is enabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(true);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation and export
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify remote exporter was called during window rotation
+        verify(mockRemoteExporter, times(1)).export(any(), any());
+    }
+
+    public void testRemoteExportWhenExporterDoesNotExist() {
+        // Test remote export when no exporter exists
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(null);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is null
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
+    public void testRemoteExportWhenExporterDisabled() {
+        // Test remote export when exporter exists but is disabled
+        RemoteRepositoryExporter mockRemoteExporter = mock(RemoteRepositoryExporter.class);
+        when(mockRemoteExporter.isEnabled()).thenReturn(false);
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_REMOTE_EXPORTER_ID)).thenReturn(mockRemoteExporter);
+
+        topQueriesService.setWindowSize(TimeValue.timeValueMinutes(10));
+
+        // First consume records to initialize the window
+        final List<SearchQueryRecord> oldRecords = QueryInsightsTestUtils.generateQueryInsightRecords(
+            2,
+            2,
+            System.currentTimeMillis() - 1000 * 60 * 15,
+            0
+        );
+        topQueriesService.consumeRecords(oldRecords);
+
+        // Then consume new records to trigger window rotation
+        final List<SearchQueryRecord> newRecords = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis(), 0);
+        topQueriesService.consumeRecords(newRecords);
+
+        // Verify no export happened since exporter is disabled
+        verify(mockRemoteExporter, times(0)).export(any());
+    }
+
 }

@@ -376,7 +376,7 @@ public class QueryShapeGenerator implements ClusterStateListener {
         return " [" + String.join(", ", fieldDataList) + "]";
     }
 
-    String getFieldType(String fieldName, Map<String, Object> propertiesAsMap, Index index) {
+    public String getFieldType(String fieldName, Map<String, Object> propertiesAsMap, Index index) {
         if (propertiesAsMap == null || index == null) {
             return null;
         }

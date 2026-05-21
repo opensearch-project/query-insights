@@ -84,7 +84,7 @@ public final class SearchQueryCategorizer {
         Map<MetricType, Measurement> measurements = record.getMeasurements();
 
         incrementQueryTypeCounters(source.query(), measurements);
-        incrementQueryAggregationCounters(source.aggregations(), measurements);
+        incrementQueryAggregationCounters(source.aggregations(), measurements, record.isStreaming());
         incrementQuerySortCounters(source.sorts(), measurements);
     }
 
@@ -97,12 +97,20 @@ public final class SearchQueryCategorizer {
         }
     }
 
-    private void incrementQueryAggregationCounters(AggregatorFactories.Builder aggregations, Map<MetricType, Measurement> measurements) {
+    private void incrementQueryAggregationCounters(
+        AggregatorFactories.Builder aggregations,
+        Map<MetricType, Measurement> measurements,
+        boolean isStreaming
+    ) {
         if (aggregations == null) {
             return;
         }
 
-        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(aggregations.getAggregatorFactories(), measurements);
+        searchQueryAggregationCategorizer.incrementSearchQueryAggregationCounters(
+            aggregations.getAggregatorFactories(),
+            measurements,
+            isStreaming
+        );
     }
 
     private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Measurement> measurements) {

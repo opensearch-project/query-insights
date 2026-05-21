@@ -1,5 +1,6 @@
 import org.opensearch.gradle.test.RestIntegTestTask
 import org.opensearch.gradle.testclusters.OpenSearchCluster
+import org.opensearch.gradle.testclusters.RunTask
 
 import groovy.xml.XmlParser
 import java.nio.file.Paths
@@ -9,7 +10,7 @@ import java.util.stream.Collectors
 
 buildscript {
   ext {
-    opensearch_version = System.getProperty("opensearch.version", "3.5.0-SNAPSHOT")
+    opensearch_version = System.getProperty("opensearch.version", "3.7.0-SNAPSHOT")
     isSnapshot = "true" == System.getProperty("build.snapshot", "true")
     buildVersionQualifier = System.getProperty("build.version_qualifier", "")
     version_tokens = opensearch_version.tokenize('-')
@@ -21,6 +22,16 @@ buildscript {
     if (isSnapshot) {
       opensearch_build += "-SNAPSHOT"
     }
+
+    os_platform = "linux"
+    artifact_type = "tar"
+    if (System.properties['os.name'].toLowerCase().contains('windows')) {
+      os_platform = "windows"
+      artifact_type = "zip"
+    }
+    opensearch_version_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+    repo_s3_resource_folder = "build/resource/repository-s3"
+    repo_s3_download_url = "https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/${opensearch_version_no_snapshot}/latest/${os_platform}/x64/${artifact_type}/builds/opensearch/core-plugins/repository-s3-${opensearch_version_no_snapshot}.zip"
   }
 
   repositories {
@@ -65,6 +76,10 @@ configurations.all {
         details.requested.name == 'commons-beanutils2') {
         details.useVersion '2.0.0-M2'
       }
+      if (details.requested.group == 'com.google.errorprone' &&
+        details.requested.name == 'error_prone_annotations') {
+        details.useVersion '2.45.0'
+      }
     }
   }
 }
@@ -75,6 +90,8 @@ apply plugin: 'eclipse'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.rest-test'
+apply plugin: 'opensearch.yaml-rest-test'
+apply plugin: 'opensearch.internal-cluster-test'
 apply plugin: 'opensearch.repositories'
 apply plugin: 'opensearch.java-agent'
 apply plugin: 'jacoco'
@@ -143,7 +160,7 @@ spotless {
     }
     removeUnusedImports()
     importOrder()
-    eclipse().withP2Mirrors(Map.of("https://download.eclipse.org/", "https://mirror.umd.edu/eclipse/")).configFile rootProject.file('config/formatterConfig.xml')
+    eclipse().configFile rootProject.file('config/formatterConfig.xml')
     trimTrailingWhitespace()
     endWithNewline()
   }
@@ -183,21 +200,46 @@ repositories {
 
 ext {
   getSecurityPluginDownloadLink = { ->
-    var repo = "https://ci.opensearch.org/ci/dbc/snapshots/maven/org/opensearch/plugin/" +
-      "opensearch-security/$opensearch_build_snapshot/"
-    var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
-    download.run {
-      src repo + "maven-metadata.xml"
-      dest metadataFile
-    }
-    def metadata = new XmlParser().parse(metadataFile)
-    def securitySnapshotVersion = metadata.versioning.snapshotVersions[0].snapshotVersion[0].value[0].text()
+    if (isSnapshot) {
+      var repo = "https://ci.opensearch.org/ci/dbc/snapshots/maven/org/opensearch/plugin/" +
+        "opensearch-security/$opensearch_build_snapshot/"
+      var metadataFile = Paths.get(projectDir.toString(), "build", "maven-metadata.xml").toAbsolutePath().toFile()
+      download.run {
+        src repo + "maven-metadata.xml"
+        dest metadataFile
+      }
+      def metadata = new XmlParser().parse(metadataFile)
+      def securitySnapshotVersion = metadata.versioning.snapshotVersions[0].snapshotVersion[0].value[0].text()
 
-    return repo + "opensearch-security-${securitySnapshotVersion}.zip"
+      return repo + "opensearch-security-${securitySnapshotVersion}.zip"
+    } else {
+      return "https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/${opensearch_version_no_snapshot}/latest/${os_platform}/x64/${artifact_type}/builds/opensearch/plugins/opensearch-security-${opensearch_build}.zip"
+    }
   }
 
   var projectAbsPath = projectDir.getAbsolutePath()
   File downloadedSecurityPlugin = Paths.get(projectAbsPath, 'bin', 'opensearch-security-snapshot.zip').toFile()
+
+  configureS3Plugin = { OpenSearchCluster cluster ->
+    cluster.plugin(provider(new Callable<RegularFile>(){
+      @Override
+      RegularFile call() throws Exception {
+        return new RegularFile() {
+          @Override
+          File getAsFile() {
+            if (new File("$project.rootDir/$repo_s3_resource_folder").exists()) {
+              project.delete(files("$project.rootDir/$repo_s3_resource_folder"))
+            }
+            project.mkdir repo_s3_resource_folder
+            ant.get(src: repo_s3_download_url,
+                    dest: repo_s3_resource_folder,
+                    httpusecaches: false)
+            return fileTree(repo_s3_resource_folder).getSingleFile()
+          }
+        }
+      }
+    }))
+  }
 
   configureSecurityPlugin = { OpenSearchCluster cluster ->
 
@@ -265,7 +307,7 @@ test {
 tasks.named("check").configure { dependsOn(integTest) }
 
 integTest {
-  useCluster testClusters.integTest
+  useCluster project, testClusters.integTest
   // The --debug-jvm command-line option makes the cluster debuggable; this makes the tests debuggable
   if (System.getProperty("test.debug") != null) {
     jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
@@ -329,6 +371,8 @@ integTest {
   }
   // Exclude QueryInsightsClusterIT from withoutSecurity scenarios
   exclude 'org/opensearch/plugin/insights/QueryInsightsClusterIT.class'
+  // Exclude remote repository tests - run separately in integTestRemoteRepository
+  exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
 }
 
 tasks.named("integTest").configure {
@@ -336,7 +380,10 @@ tasks.named("integTest").configure {
 }
 
 testClusters.all {
-    testDistribution = "ARCHIVE"
+  testDistribution = "ARCHIVE"
+  if (name != "yamlRestTest") {
+    numberOfNodes = 2
+
     // This installs our plugin into the testClusters
     plugin(project.tasks.bundlePlugin.archiveFile)
 
@@ -354,14 +401,24 @@ testClusters.all {
     } else {
       logger.warn("WLM plugin not found at ${wlmPluginFile}")
     }
-}
-
-testClusters.integTest {
-    numberOfNodes = 2
+  }
 }
 
 run {
-    useCluster testClusters.integTest
+    useCluster project, testClusters.integTest
+}
+
+// Cluster and task for running OpenSearch with security plugin enabled
+testClusters.register('runWithSecurity') {
+}
+
+configureSecurityPlugin(testClusters.'runWithSecurity')
+
+tasks.register('runWithSecurity', RunTask) {
+    dependsOn(project.tasks.bundlePlugin)
+    useCluster testClusters.'runWithSecurity'
+    description = 'Runs OpenSearch with security plugin in the foreground'
+    group = 'Verification'
 }
 
 jacocoTestReport {
@@ -376,7 +433,7 @@ check.dependsOn spotlessCheck
 check.dependsOn jacocoTestReport
 
 task integTestWithSecurity(type: RestIntegTestTask) {
-  useCluster testClusters.integTestWithSecurity
+  useCluster project, testClusters.integTestWithSecurity
 
   systemProperty "cluster.names",
     getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
@@ -429,10 +486,73 @@ task integTestWithSecurity(type: RestIntegTestTask) {
     includeTestsMatching 'org.opensearch.plugin.insights.*IT'
     // QueryInsightsClusterIT requires 2+ nodes; excluded because demo SSL certs don't support multi-node in Java 21
     excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
+    // Exclude remote repository tests - run separately in integTestRemoteRepository
+    excludeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
   }
 }
 
-task integTestRemote(type: RestIntegTestTask) {
+task integTestRemoteRepository(type: RestIntegTestTask) {
+  useCluster testClusters.integTestRemoteRepository
+
+  systemProperty "cluster.names",
+    getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
+
+  dependsOn project.tasks.bundlePlugin
+  testLogging {
+    events "passed", "skipped", "failed"
+  }
+  afterTest { desc, result ->
+    logger.quiet "${desc.className}.${desc.name}: ${result.resultType} ${(result.getEndTime() - result.getStartTime())/1000}s"
+  }
+
+  systemProperty 'tests.security.manager', 'false'
+  systemProperty 'project.root', project.projectDir.absolutePath
+  systemProperty 'defaultQuerySizeLimit', '10000'
+
+  doFirst {
+    systemProperty 'cluster.debug', getDebug()
+    getClusters().forEach { cluster ->
+      String allTransportSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllTransportPortURI().stream()
+      }.collect(Collectors.joining(","))
+      String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+        node.getAllHttpSocketURI().stream()
+      }.collect(Collectors.joining(","))
+
+      systemProperty "tests.rest.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+      systemProperty "tests.rest.${cluster.name}.transport_hosts", "${-> allTransportSocketURI}"
+    }
+
+    systemProperty "https", "false"
+  }
+
+  if (System.getProperty("test.debug") != null) {
+    jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005'
+  }
+
+  filter {
+    includeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
+  }
+}
+
+testClusters.integTestRemoteRepository {
+  configureS3Plugin(testClusters.integTestRemoteRepository)
+  def accessKey = System.getProperty("access_key")
+  def secretKey = System.getProperty("secret_key")
+  def sessionToken = System.getProperty("session_token")
+  if (gradle.startParameter.taskNames.contains('integTestRemoteRepository')) {
+    if (!accessKey || !secretKey || !sessionToken) {
+      throw new GradleException("S3 credentials are required. Run with: -Daccess_key=<key> -Dsecret_key=<key> -Dsession_token=<token>")
+    }
+    keystore 's3.client.default.access_key', accessKey
+    keystore 's3.client.default.secret_key', secretKey
+    keystore 's3.client.default.session_token', sessionToken
+  }
+}
+
+// Use plain Test instead of RestIntegTestTask to avoid RestTestBasePlugin
+// auto-creating a testcluster that spins up unnecessary nodes on CI.
+task integTestRemote(type: Test) {
   testClassesDirs = sourceSets.test.output.classesDirs
   classpath = sourceSets.test.runtimeClasspath
   systemProperty 'tests.security.manager', 'false'
@@ -446,13 +566,24 @@ task integTestRemote(type: RestIntegTestTask) {
   // Set default query size limit
   systemProperty 'defaultQuerySizeLimit', '10000'
 
-  // Only REST-based integration tests can run with remote cluster
+  // Exclude remote repository tests - run separately in integTestRemoteRepository
+  exclude 'org/opensearch/plugin/insights/core/exporter/RemoteRepositoryExporterIT.class'
+  // Exclude RBAC tests - require security plugin, run in integTestWithSecurity
+  exclude 'org/opensearch/plugin/insights/rules/resthandler/top_queries/TopQueriesRbacIT.class'
+
+  // Remote cluster is shared; serialize tests to avoid cross-test interference.
   if (System.getProperty("tests.rest.cluster") != null) {
+    maxParallelForks = 1
+    forkEvery = 0
     filter {
       includeTestsMatching 'org.opensearch.plugin.insights.*IT'
       // Exclude tests that require multi-node cluster or internal cluster access
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsClusterIT'
       excludeTestsMatching 'org.opensearch.plugin.insights.QueryInsightsPluginTransportIT'
+      // Exclude remote repository tests - run separately in integTestRemoteRepository
+      excludeTestsMatching 'org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporterIT'
+      // Exclude RBAC tests - require security plugin
+      excludeTestsMatching 'org.opensearch.plugin.insights.rules.resthandler.top_queries.TopQueriesRbacIT'
     }
   }
 

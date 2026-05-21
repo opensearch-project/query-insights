@@ -29,6 +29,7 @@ public class LiveQueriesRequest extends ActionRequest {
     // Node IDs to filter queries by
     private final String[] nodeIds;
     private String wlmGroupId;
+    private final boolean useFinishedCache;
 
     /**
      * Constructor for LiveQueriesRequest
@@ -45,6 +46,11 @@ public class LiveQueriesRequest extends ActionRequest {
         if (in.getVersion().onOrAfter(Version.V_3_3_0)) {
             this.wlmGroupId = in.readOptionalString();
         }
+        if (in.getVersion().onOrAfter(Version.V_3_6_0)) {
+            this.useFinishedCache = in.readBoolean();
+        } else {
+            this.useFinishedCache = false;
+        }
     }
 
     /**
@@ -56,12 +62,20 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param size maximum number of results
      * @param nodeIds The node IDs specified in the request
      */
-    public LiveQueriesRequest(final boolean verbose, final MetricType sortBy, final int size, final String[] nodeIds, String wlmGroupId) {
+    public LiveQueriesRequest(
+        final boolean verbose,
+        final MetricType sortBy,
+        final int size,
+        final String[] nodeIds,
+        String wlmGroupId,
+        boolean useFinishedCache
+    ) {
         this.verbose = verbose;
         this.sortBy = sortBy;
         this.size = size;
         this.nodeIds = nodeIds;
         this.wlmGroupId = wlmGroupId;
+        this.useFinishedCache = useFinishedCache;
     }
 
     /**
@@ -70,7 +84,7 @@ public class LiveQueriesRequest extends ActionRequest {
      * @param nodeIds the node IDs specified in the request
      */
     public LiveQueriesRequest(final boolean verbose, final String... nodeIds) {
-        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null);
+        this(verbose, MetricType.LATENCY, QueryInsightsSettings.DEFAULT_LIVE_QUERIES_SIZE, nodeIds, null, false);
     }
 
     /**
@@ -111,6 +125,14 @@ public class LiveQueriesRequest extends ActionRequest {
         return wlmGroupId;
     }
 
+    /**
+     * Get whether to use finished queries cache
+     * @return boolean indicating whether to use finished queries cache
+     */
+    public boolean isUseFinishedCache() {
+        return useFinishedCache;
+    }
+
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -120,6 +142,9 @@ public class LiveQueriesRequest extends ActionRequest {
         out.writeStringArray(nodeIds);
         if (out.getVersion().onOrAfter(Version.V_3_3_0)) {
             out.writeOptionalString(wlmGroupId);
+        }
+        if (out.getVersion().onOrAfter(Version.V_3_6_0)) {
+            out.writeBoolean(useFinishedCache);
         }
     }
 

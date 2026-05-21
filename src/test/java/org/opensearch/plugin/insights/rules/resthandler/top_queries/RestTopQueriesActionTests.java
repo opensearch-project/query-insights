@@ -130,6 +130,32 @@ public class RestTopQueriesActionTests extends OpenSearchTestCase {
         );
     }
 
+    public void testRecommendationsParamTrue() {
+        Map<String, String> params = new HashMap<>();
+        params.put("type", "latency");
+        params.put("recommendations", "true");
+        RestRequest restRequest = buildRestRequest(params);
+        TopQueriesRequest actual = RestTopQueriesAction.prepareRequest(restRequest);
+        assertEquals(true, actual.getRecommendations());
+    }
+
+    public void testRecommendationsParamFalse() {
+        Map<String, String> params = new HashMap<>();
+        params.put("type", "latency");
+        params.put("recommendations", "false");
+        RestRequest restRequest = buildRestRequest(params);
+        TopQueriesRequest actual = RestTopQueriesAction.prepareRequest(restRequest);
+        assertEquals(false, actual.getRecommendations());
+    }
+
+    public void testRecommendationsParamDefaultsFalse() {
+        Map<String, String> params = new HashMap<>();
+        params.put("type", "latency");
+        RestRequest restRequest = buildRestRequest(params);
+        TopQueriesRequest actual = RestTopQueriesAction.prepareRequest(restRequest);
+        assertEquals(false, actual.getRecommendations());
+    }
+
     public void testGetRoutes() {
         RestTopQueriesAction action = new RestTopQueriesAction();
         List<RestHandler.Route> routes = action.routes();

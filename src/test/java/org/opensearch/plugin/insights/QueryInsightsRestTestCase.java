@@ -172,31 +172,35 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
 
     @SuppressWarnings("unchecked")
     @After
-    public void wipeAllQueryInsightsIndices() throws Exception {
-        Response response = adminClient().performRequest(new Request("GET", "/_cat/indices?format=json&expand_wildcards=all"));
-        MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
-        try (
-            XContentParser parser = mediaType.xContent()
-                .createParser(
-                    NamedXContentRegistry.EMPTY,
-                    DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
-                    response.getEntity().getContent()
-                )
-        ) {
-            XContentParser.Token token = parser.nextToken();
-            List<Map<String, Object>> parserList = null;
-            if (token == XContentParser.Token.START_ARRAY) {
-                parserList = parser.listOrderedMap().stream().map(obj -> (Map<String, Object>) obj).collect(Collectors.toList());
-            } else {
-                parserList = Collections.singletonList(parser.mapOrdered());
-            }
+    protected void wipeAllQueryInsightsIndices() throws Exception {
+        try {
+            Response response = adminClient().performRequest(new Request("GET", "/_cat/indices?format=json&expand_wildcards=all"));
+            MediaType mediaType = MediaType.fromMediaType(response.getEntity().getContentType());
+            try (
+                XContentParser parser = mediaType.xContent()
+                    .createParser(
+                        NamedXContentRegistry.EMPTY,
+                        DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                        response.getEntity().getContent()
+                    )
+            ) {
+                XContentParser.Token token = parser.nextToken();
+                List<Map<String, Object>> parserList = null;
+                if (token == XContentParser.Token.START_ARRAY) {
+                    parserList = parser.listOrderedMap().stream().map(obj -> (Map<String, Object>) obj).collect(Collectors.toList());
+                } else {
+                    parserList = Collections.singletonList(parser.mapOrdered());
+                }
 
-            for (Map<String, Object> index : parserList) {
-                final String indexName = (String) index.get("index");
-                if (indexName.startsWith(QUERY_INSIGHTS_INDICES_PREFIX)) {
-                    adminClient().performRequest(new Request("DELETE", "/" + indexName));
+                for (Map<String, Object> index : parserList) {
+                    final String indexName = (String) index.get("index");
+                    if (indexName.startsWith(QUERY_INSIGHTS_INDICES_PREFIX)) {
+                        adminClient().performRequest(new Request("DELETE", "/" + indexName));
+                    }
                 }
             }
+        } catch (java.net.ConnectException e) {
+            // Cluster unavailable during cleanup, ignore
         }
     }
 

@@ -197,6 +197,7 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
             attributes.put(Attribute.USERNAME, randomAlphaOfLengthBetween(5, 10));
             attributes.put(Attribute.USER_ROLES, new String[] { randomAlphaOfLengthBetween(4, 8), randomAlphaOfLengthBetween(4, 8) });
+            attributes.put(Attribute.BACKEND_ROLES, new String[] { randomAlphaOfLengthBetween(4, 8), randomAlphaOfLengthBetween(4, 8) });
             attributes.put(
                 Attribute.TASK_RESOURCE_USAGES,
                 List.of(
@@ -224,6 +225,8 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.WLM_GROUP_ID, randomAlphaOfLengthBetween(5, 10));
             // Add is_cancelled attribute
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
+            // Add failed attribute
+            attributes.put(Attribute.FAILED, random().nextBoolean());
 
             SearchQueryRecord record = new SearchQueryRecord(
                 timestamp,
@@ -333,6 +336,8 @@ final public class QueryInsightsTestUtils {
         attributes.put(Attribute.TOP_N_QUERY, DEFAULT_TOP_N_QUERY_MAP);
         attributes.put(Attribute.USERNAME, "testuser");
         attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
+        attributes.put(Attribute.FAILED, false);
+        attributes.put(Attribute.BACKEND_ROLES, new String[] { "role1", "role2" });
 
         return new SearchQueryRecord(
             timestamp,
@@ -445,7 +450,17 @@ final public class QueryInsightsTestUtils {
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_EXPORTER_DELETE_AFTER);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_EXCLUDED_INDICES);
         clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_MAX_SOURCE_LENGTH);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_REPOSITORY);
+        clusterSettings.registerSetting(QueryInsightsSettings.REMOTE_EXPORTER_PATH);
+        clusterSettings.registerSetting(QueryInsightsSettings.TOP_N_QUERIES_FILTER_BY_MODE);
+        clusterSettings.registerSetting(QueryInsightsSettings.LIVE_QUERIES_CACHE_IDLE_TIMEOUT);
         clusterSettings.registerSetting(QueryCategorizationSettings.SEARCH_QUERY_METRICS_ENABLED_SETTING);
+        // Recommendation settings
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_ENABLED);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_MIN_CONFIDENCE);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_MAX_COUNT);
+        clusterSettings.registerSetting(QueryInsightsSettings.RECOMMENDATIONS_ENABLED_RULES);
     }
 
     /**

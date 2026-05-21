@@ -9,6 +9,8 @@
 package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,11 +47,13 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValueType;
 import org.opensearch.search.builder.SearchSourceBuilder;
@@ -83,6 +87,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
         ClusterServiceUtils.setState(clusterService, state);
         when(queryInsightsService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(true);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(queryInsightsService.getTopQueriesService(MetricType.LATENCY)).thenReturn(topQueriesService);
         when(searchRequestContext.getRequest()).thenReturn(searchRequest);
         ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
@@ -129,6 +134,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(searchRequest.source()).thenReturn(searchSourceBuilder);
         when(searchRequest.indices()).thenReturn(indices);
         when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchRequestContext.isStreamingRequest()).thenReturn(true);
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(numberOfShards);
         when(searchPhaseContext.getTask()).thenReturn(task);
@@ -141,12 +147,54 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(timestamp.longValue(), generatedRecord.getTimestamp());
         assertEquals(numberOfShards, generatedRecord.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals(searchType.toString().toLowerCase(Locale.ROOT), generatedRecord.getAttributes().get(Attribute.SEARCH_TYPE));
+        assertTrue(generatedRecord.isStreaming());
         // SOURCE attribute should be null initially (set asynchronously in drainRecords)
         assertNull(generatedRecord.getAttributes().get(Attribute.SOURCE));
         // But SearchSourceBuilder should be available for async processing
         assertEquals(searchSourceBuilder.toString(), generatedRecord.getSearchSourceBuilder().toString());
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
+        assertEquals(false, generatedRecord.getAttributes().get(Attribute.FAILED));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOnRequestFailure() {
+        Long timestamp = System.currentTimeMillis() - 100L;
+        SearchType searchType = SearchType.QUERY_THEN_FETCH;
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(0);
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        String[] indices = new String[] { "index-1", "index-2" };
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("query", 20L);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(searchType);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchRequest.indices()).thenReturn(indices);
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(10);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+
+        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        SearchQueryRecord generatedRecord = captor.getValue();
+        assertEquals(true, generatedRecord.getAttributes().get(Attribute.FAILED));
     }
 
     public void testConcurrentOnRequestEnd() throws InterruptedException {
@@ -428,6 +476,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
     public void testExcludeInternalIndex() {
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608" });
         // Search request having internal index
@@ -441,6 +490,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search top_queries* index along with other indices
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(new String[] { "top_queries-2025.11.18-85608", "index-1" });
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(2);
@@ -466,6 +516,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test when request indices is null
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(null);
         queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
@@ -473,6 +524,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         // test search with empty indices array should not skip
         queryInsightsService = mock(QueryInsightsService.class);
+        when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);
         when(searchRequest.indices()).thenReturn(new String[0]);
         when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
             new HashSet<>(List.of(new Index("index-1", "uuid-1"), new Index("index-2", "uuid-2")))
@@ -483,47 +535,29 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
     }
 
     public void testExcludedIndicesValidation() {
-        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        // Validation is now enforced at the Setting level via ExcludedIndicesValidator
+        QueryInsightsSettings.ExcludedIndicesValidator validator = new QueryInsightsSettings.ExcludedIndicesValidator();
+
         List<String> containNullList = new ArrayList<>();
         containNullList.add("index1");
         containNullList.add(null);
-        assertThrows(
-            "Excluded index name cannot be null.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containNullList)
-        );
+        assertThrows("Excluded index name cannot be null.", IllegalArgumentException.class, () -> validator.validate(containNullList));
 
         List<String> containEmptyList = List.of("index1", "");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containEmptyList)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(containEmptyList));
 
         List<String> containBlankList = List.of("index1", "  ");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(containBlankList)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(containBlankList));
 
         List<String> blankResetValue = List.of("");
-        assertThrows(
-            "Excluded index name cannot be blank.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(blankResetValue)
-        );
+        assertThrows("Excluded index name cannot be blank.", IllegalArgumentException.class, () -> validator.validate(blankResetValue));
 
         List<String> indexNameWithUpperCaseChar = List.of("acceptedIndex", "rejectedIndex");
-        assertThrows(
-            "Index name must be lowercase.",
-            IllegalArgumentException.class,
-            () -> queryInsightsListener.validateExcludedIndices(indexNameWithUpperCaseChar)
-        );
+        assertThrows("Index name must be lowercase.", IllegalArgumentException.class, () -> validator.validate(indexNameWithUpperCaseChar));
 
         List<String> validIndicesList = List.of("first-index", "wildcard-index*");
         try {
-            queryInsightsListener.validateExcludedIndices(validIndicesList);
+            validator.validate(validIndicesList);
         } catch (Exception e) {
             fail("Expect no exception when valid excluded indices is set.");
         }
@@ -559,6 +593,66 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         // UserPrincipalContext should be set but user string should be null
         assertNotNull(record.getUserPrincipalContext());
         assertNull(record.getUserPrincipalContext().getUserString());
+    }
+
+    public void testAddToFinishedCacheExceptionDoesNotPropagate() {
+        // Set up a cache mock that throws on capture
+        FinishedQueriesCache mockCache = mock(FinishedQueriesCache.class);
+        doThrow(new RuntimeException("simulated capture failure")).when(mockCache).capture(any(), anyLong());
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(mockCache);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        // Should not throw — the exception is caught inside addToFinishedCache
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        // Verify addRecord was still called (the main listener path wasn't blocked)
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testAddToFinishedCacheNullCacheDoesNotThrow() {
+        when(queryInsightsService.getFinishedQueriesCache()).thenReturn(null);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        setupValidSearchRequest();
+
+        // Should not throw when cache is null
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testListenerEnabledWhenOnlyCacheIsEnabled() throws InvocationTargetException, NoSuchMethodException,
+        IllegalAccessException {
+        // All top-N and metrics disabled, but isAnyFeatureEnabled returns true (cache is enabled)
+        QueryInsightsService mockService = mock(QueryInsightsService.class);
+        QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, false);
+
+        when(mockService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(mockService.isSearchQueryMetricsFeatureEnabled()).thenReturn(false);
+        // Cache is the only feature enabled
+        when(mockService.isAnyFeatureEnabled()).thenReturn(true);
+
+        listener.setEnableTopQueries(MetricType.LATENCY, false);
+        // Listener should be enabled because isAnyFeatureEnabled() returns true (cache)
+        assertTrue("Listener should be enabled when only cache is enabled", listener.isEnabled());
+    }
+
+    public void testListenerDisabledWhenAllFeaturesIncludingCacheDisabled() throws InvocationTargetException, NoSuchMethodException,
+        IllegalAccessException {
+        QueryInsightsService mockService = mock(QueryInsightsService.class);
+        QueryInsightsListener listener = new QueryInsightsListener(clusterService, mockService, threadPool, true);
+
+        when(mockService.isCollectionEnabled(MetricType.LATENCY)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.CPU)).thenReturn(false);
+        when(mockService.isCollectionEnabled(MetricType.MEMORY)).thenReturn(false);
+        when(mockService.isSearchQueryMetricsFeatureEnabled()).thenReturn(false);
+        when(mockService.isAnyFeatureEnabled()).thenReturn(false);
+
+        listener.setEnableTopQueries(MetricType.LATENCY, false);
+        assertFalse("Listener should be disabled when all features including cache are disabled", listener.isEnabled());
     }
 
     private void setupValidSearchRequest() {

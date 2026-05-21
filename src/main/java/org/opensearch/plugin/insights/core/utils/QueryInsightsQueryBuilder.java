@@ -9,10 +9,12 @@
 package org.opensearch.plugin.insights.core.utils;
 
 import static org.opensearch.plugin.insights.rules.model.Measurement.NUMBER;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.BACKEND_ROLES;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.ID;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.MEASUREMENTS;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TIMESTAMP;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.TOP_N_QUERY;
+import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.USERNAME;
 import static org.opensearch.plugin.insights.rules.model.SearchQueryRecord.VERBOSE_ONLY_FIELDS;
 import static org.opensearch.plugin.insights.settings.QueryInsightsSettings.DEFAULT_SEARCH_REQUEST_TIMEOUT;
 
@@ -21,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.support.IndicesOptions;
+import org.opensearch.common.Nullable;
 import org.opensearch.core.common.Strings;
 import org.opensearch.index.query.BoolQueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
@@ -103,6 +106,36 @@ public final class QueryInsightsQueryBuilder {
         final Boolean verbose,
         final MetricType metricType
     ) {
+        return buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType, null, null);
+    }
+
+    /**
+     * Builds a search request for TopN queries with optional RBAC filtering.
+     *
+     * <p>When {@code username} or {@code backendRoles} are provided, additional filter clauses
+     * are added to the query to restrict results to records matching the caller's identity.
+     * These use {@code filter} context (no scoring) since RBAC filtering is a binary yes/no check.
+     *
+     * @param indexNames List of index names to search
+     * @param start Start timestamp for the query range
+     * @param end End timestamp for the query range
+     * @param id Optional query/group id to filter by
+     * @param verbose Whether to return full output (if false, excludes verbose-only fields)
+     * @param metricType Metric type to filter by
+     * @param username Optional username to filter records by (for RBAC USERNAME mode)
+     * @param backendRoles Optional backend roles to filter records by (for RBAC BACKEND_ROLES mode)
+     * @return Configured SearchRequest ready for execution
+     */
+    public static SearchRequest buildTopNSearchRequest(
+        final List<String> indexNames,
+        final ZonedDateTime start,
+        final ZonedDateTime end,
+        final String id,
+        final Boolean verbose,
+        final MetricType metricType,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles
+    ) {
         SearchRequest searchRequest = new SearchRequest(indexNames.toArray(new String[0]));
 
         searchRequest.indicesOptions(IndicesOptions.fromOptions(true, true, true, false));
@@ -110,7 +143,7 @@ public final class QueryInsightsQueryBuilder {
         // Enable request caching for better performance on repeated queries
         searchRequest.requestCache(true);
 
-        SearchSourceBuilder searchSourceBuilder = buildSearchSourceBuilder(start, end, id, verbose, metricType);
+        SearchSourceBuilder searchSourceBuilder = buildSearchSourceBuilder(start, end, id, verbose, metricType, username, backendRoles);
 
         // Set timeout to prevent long-running queries from blocking resources
         searchSourceBuilder.timeout(DEFAULT_SEARCH_REQUEST_TIMEOUT);
@@ -128,6 +161,8 @@ public final class QueryInsightsQueryBuilder {
      * @param id Optional query/group id to filter by
      * @param verbose Whether to return full output
      * @param metricType Metric type to filter by
+     * @param username Optional username for RBAC filtering
+     * @param backendRoles Optional backend roles for RBAC filtering
      * @return Configured SearchSourceBuilder
      */
     private static SearchSourceBuilder buildSearchSourceBuilder(
@@ -135,12 +170,14 @@ public final class QueryInsightsQueryBuilder {
         final ZonedDateTime end,
         final String id,
         final Boolean verbose,
-        @NonNull final MetricType metricType
+        @NonNull final MetricType metricType,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles
     ) {
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_TOP_N_INDEX_READ_SIZE);
 
         // Build the main query
-        BoolQueryBuilder query = buildTopNQuery(start, end, id, metricType);
+        BoolQueryBuilder query = buildTopNQuery(start, end, id, metricType, username, backendRoles);
         searchSourceBuilder.query(query);
 
         // Configure field exclusions for non-verbose mode
@@ -164,13 +201,17 @@ public final class QueryInsightsQueryBuilder {
      * @param end End timestamp for the query range
      * @param id Optional query/group id to filter by
      * @param metricType Metric type to filter by
+     * @param username Optional username for RBAC filtering
+     * @param backendRoles Optional backend roles for RBAC filtering
      * @return Configured BoolQueryBuilder
      */
     private static BoolQueryBuilder buildTopNQuery(
         final ZonedDateTime start,
         final ZonedDateTime end,
         final String id,
-        final MetricType metricType
+        final MetricType metricType,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles
     ) {
         // Build range query for timestamp
         RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery(TIMESTAMP)
@@ -185,6 +226,14 @@ public final class QueryInsightsQueryBuilder {
             query.must(QueryBuilders.termQuery(ID, id));
         } else {
             query.must(QueryBuilders.termQuery(TOP_N_QUERY + "." + metricType, true));
+        }
+
+        // Add RBAC filter clauses (using filter context — no scoring needed)
+        if (username != null) {
+            query.filter(QueryBuilders.termQuery(USERNAME, username));
+        }
+        if (backendRoles != null && !backendRoles.isEmpty()) {
+            query.filter(QueryBuilders.termsQuery(BACKEND_ROLES, backendRoles));
         }
 
         return query;

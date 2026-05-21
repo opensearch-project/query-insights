@@ -41,8 +41,10 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
@@ -73,6 +75,7 @@ public class TopQueriesService {
      * These shared components are uniquely identified by TOP_QUERIES_EXPORTER_ID and TOP_QUERIES_READER_ID
      */
     public static final String TOP_QUERIES_EXPORTER_ID = "top_queries_exporter";
+    public static final String TOP_QUERIES_REMOTE_EXPORTER_ID = "top_queries_remote_exporter";
     public static final String TOP_QUERIES_READER_ID = "top_queries_reader";
     /**
      * Tag value used to identify local index mappings that are specifically created
@@ -195,26 +198,6 @@ public class TopQueriesService {
     }
 
     /**
-     * Validate the top N size based on the internal constrains
-     *
-     * @param size the wanted top N size
-     */
-    public void validateTopNSize(final int size) {
-        if (size < 1 || size > QueryInsightsSettings.MAX_N_SIZE) {
-            throw new IllegalArgumentException(
-                "Top N size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be between 1 and "
-                    + QueryInsightsSettings.MAX_N_SIZE
-                    + ", was ("
-                    + size
-                    + ")"
-            );
-        }
-    }
-
-    /**
      * Set enable flag for the service
      *
      * @param enabled boolean
@@ -249,42 +232,6 @@ public class TopQueriesService {
         boolean changed = queryGrouper.setMaxGroups(maxGroups);
         if (changed) {
             drain();
-        }
-    }
-
-    /**
-     * Validate if the window size is valid, based on internal constrains.
-     *
-     * @param windowSize the window size to validate
-     */
-    public void validateWindowSize(final TimeValue windowSize) {
-        if (windowSize.compareTo(QueryInsightsSettings.MAX_WINDOW_SIZE) > 0
-            || windowSize.compareTo(QueryInsightsSettings.MIN_WINDOW_SIZE) < 0) {
-            throw new IllegalArgumentException(
-                "Window size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be between ["
-                    + QueryInsightsSettings.MIN_WINDOW_SIZE
-                    + ","
-                    + QueryInsightsSettings.MAX_WINDOW_SIZE
-                    + "]"
-                    + "was ("
-                    + windowSize
-                    + ")"
-            );
-        }
-        if (!(QueryInsightsSettings.VALID_WINDOW_SIZES_IN_MINUTES.contains(windowSize) || windowSize.getMinutes() % 60 == 0)) {
-            throw new IllegalArgumentException(
-                "Window size setting for ["
-                    + metricType
-                    + "]"
-                    + " should be multiple of 1 hour, or one of "
-                    + QueryInsightsSettings.VALID_WINDOW_SIZES_IN_MINUTES
-                    + ", was ("
-                    + windowSize
-                    + ")"
-            );
         }
     }
 
@@ -372,6 +319,30 @@ public class TopQueriesService {
         final Boolean verbose,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
+        getTopQueriesRecordsFromIndex(from, to, id, verbose, null, null, listener);
+    }
+
+    /**
+     * Get all historical top queries records from local index with optional RBAC filtering
+     * pushed into the search query.
+     *
+     * @param from start timestamp
+     * @param to   end timestamp
+     * @param id search query record id
+     * @param verbose whether to return full output
+     * @param username optional username for RBAC filtering
+     * @param backendRoles optional backend roles for RBAC filtering
+     * @param listener listener to be called when records are fetched
+     */
+    public void getTopQueriesRecordsFromIndex(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @Nullable final String username,
+        @Nullable final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
         final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
         if (reader == null) {
             listener.onResponse(new ArrayList<>());
@@ -379,7 +350,7 @@ public class TopQueriesService {
         }
 
         try {
-            reader.read(from, to, id, verbose, metricType, new ActionListener<List<SearchQueryRecord>>() {
+            reader.read(from, to, id, verbose, metricType, username, backendRoles, new ActionListener<List<SearchQueryRecord>>() {
                 @Override
                 public void onResponse(List<SearchQueryRecord> records) {
                     try {
@@ -477,17 +448,20 @@ public class TopQueriesService {
         }
     }
 
-    // Add Username and User Roles attributes to record
+    // Add Username, User Roles, and Backend Roles attributes to record
     public static void setUserInfo(final SearchQueryRecord record) {
         UserPrincipalContext userPrincipalContext = record.getUserPrincipalContext();
         if (userPrincipalContext != null) {
-            UserPrincipalContext.UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+            UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
             if (userInfo != null) {
                 if (userInfo.getUserName() != null) {
                     record.addAttribute(Attribute.USERNAME, userInfo.getUserName());
                 }
                 if (userInfo.getRoles() != null && !userInfo.getRoles().isEmpty()) {
                     record.addAttribute(Attribute.USER_ROLES, userInfo.getRoles().toArray(new String[0]));
+                }
+                if (userInfo.getBackendRoles() != null && !userInfo.getBackendRoles().isEmpty()) {
+                    record.addAttribute(Attribute.BACKEND_ROLES, userInfo.getBackendRoles().toArray(new String[0]));
                 }
             }
         }
@@ -524,6 +498,13 @@ public class TopQueriesService {
             QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
             if (exporter != null) {
                 threadPool.executor(QUERY_INSIGHTS_EXECUTOR).execute(() -> exporter.export(history));
+            }
+
+            // export to remote repository independently if enabled
+            QueryInsightsExporter remoteRepositoryExporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_REMOTE_EXPORTER_ID);
+            if (remoteRepositoryExporter != null && ((RemoteRepositoryExporter) remoteRepositoryExporter).isEnabled()) {
+                threadPool.executor(QUERY_INSIGHTS_EXECUTOR)
+                    .execute(() -> ((RemoteRepositoryExporter) remoteRepositoryExporter).export(history, metricType));
             }
         }
     }

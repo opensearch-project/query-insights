@@ -21,6 +21,7 @@ import org.opensearch.ExceptionsHelper;
 import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexRequest;
 import org.opensearch.action.admin.indices.create.CreateIndexResponse;
+import org.opensearch.action.bulk.BulkItemResponse;
 import org.opensearch.action.bulk.BulkRequestBuilder;
 import org.opensearch.action.bulk.BulkResponse;
 import org.opensearch.action.index.IndexRequest;
@@ -31,7 +32,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.index.mapper.MapperException;
+import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
@@ -212,12 +213,12 @@ public class LocalIndexExporter implements QueryInsightsExporter {
         }
         bulkRequestBuilder.execute(new ActionListener<BulkResponse>() {
             @Override
-            public void onResponse(BulkResponse bulkItemResponses) {}
-
-            @Override
-            public void onFailure(Exception e) {
-                if (!useObjectSource && isMapperException(e)) {
-                    logger.debug("Bulk failed with mapper exception, retrying with object source");
+            public void onResponse(BulkResponse bulkResponse) {
+                if (!bulkResponse.hasFailures()) {
+                    return;
+                }
+                if (!useObjectSource && hasMapperParsingException(bulkResponse)) {
+                    logger.debug("Bulk failed with mapper parsing exception, retrying with object source");
                     try {
                         bulk(indexName, records, true);
                     } catch (IOException ioe) {
@@ -226,15 +227,25 @@ public class LocalIndexExporter implements QueryInsightsExporter {
                     }
                 } else {
                     OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
-                    logger.error("Failed to execute bulk operation: ", e);
+                    logger.error("Failed to execute bulk operation: {}", bulkResponse.buildFailureMessage());
                 }
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_EXPORTER_BULK_FAILURES);
+                logger.error("Failed to execute bulk operation: ", e);
             }
         });
     }
 
-    private boolean isMapperException(Exception e) {
-        Throwable cause = ExceptionsHelper.unwrapCause(e);
-        return cause instanceof MapperException;
+    private boolean hasMapperParsingException(BulkResponse bulkResponse) {
+        for (BulkItemResponse item : bulkResponse) {
+            if (item.isFailed() && item.getFailure().getCause() instanceof MapperParsingException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

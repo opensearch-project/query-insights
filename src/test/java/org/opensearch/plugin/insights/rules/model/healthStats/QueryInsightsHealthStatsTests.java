@@ -99,12 +99,12 @@ public class QueryInsightsHealthStatsTests extends OpenSearchTestCase {
             topQueriesHealthStats,
             fieldTypeCacheStats
         );
-        XContentBuilder builder = XContentFactory.jsonBuilder();
+        XContentBuilder builder = XContentFactory.jsonBuilder().prettyPrint();
         builder.startObject();
 
         healthStats.toXContent(builder, ToXContent.EMPTY_PARAMS);
         builder.endObject();
-        String jsonOutput = builder.prettyPrint().toString();
+        String jsonOutput = builder.toString();
         // Expected JSON output
         String expectedJson = "{\n"
             + "    \"ThreadPoolInfo\": {\n"

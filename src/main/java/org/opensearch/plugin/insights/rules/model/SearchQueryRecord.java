@@ -34,6 +34,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.tasks.Task;
 import reactor.util.annotation.NonNull;
@@ -48,8 +49,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
     private final String id;
-    private final SearchSourceBuilder searchSourceBuilder;
+    private SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
+    private boolean streaming;
 
     /**
      * Timestamp
@@ -128,6 +130,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String USER_ROLES = "user_roles";
     /**
+     * The backend roles of the user who initiated the search query
+     */
+    public static final String BACKEND_ROLES = "backend_roles";
+    /**
      * Indicates if the source was truncated due to length limits
      */
     public static final String SOURCE_TRUNCATED = "source_truncated";
@@ -142,6 +148,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Query Group hashcode
      */
     public static final String QUERY_GROUP_HASHCODE = "query_group_hashcode";
+    /**
+     * Indicates if the search request failed during execution
+     */
+    public static final String FAILED = "failed";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -330,6 +340,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case IS_CANCELLED:
                         attributes.put(Attribute.IS_CANCELLED, parser.booleanValue());
                         break;
+                    case FAILED:
+                        attributes.put(Attribute.FAILED, parser.booleanValue());
+                        break;
                     case WLM_GROUP_ID:
                         attributes.put(Attribute.WLM_GROUP_ID, parser.text());
                         break;
@@ -344,6 +357,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             userRoles.add(parser.text());
                         }
                         attributes.put(Attribute.USER_ROLES, userRoles.toArray(new String[0]));
+                        break;
+                    case BACKEND_ROLES:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
+                        List<String> backendRoles = new ArrayList<>();
+                        while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
+                            backendRoles.add(parser.text());
+                        }
+                        attributes.put(Attribute.BACKEND_ROLES, backendRoles.toArray(new String[0]));
                         break;
                     case TASK_RESOURCE_USAGES:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
@@ -498,6 +519,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     }
 
     /**
+     * Sets the SearchSourceBuilder, used to late-bind a reconstructed SSB
+     * on transported or historical records where the in-memory SSB was lost during serialization.
+     *
+     * @param searchSourceBuilder the reconstructed SearchSourceBuilder
+     */
+    public void setSearchSourceBuilder(SearchSourceBuilder searchSourceBuilder) {
+        this.searchSourceBuilder = searchSourceBuilder;
+    }
+
+    /**
      * Returns the UserPrincipalContext for user info extraction.
      * This is not serialized or exported.
      *
@@ -550,23 +581,56 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     @Override
     public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
+        toXContentInner(builder, params);
+        return builder.endObject();
+    }
+
+    /**
+     * Serializes this object into an {@link XContentBuilder} with recommendations appended.
+     *
+     * @param builder The {@link XContentBuilder} to serialize into.
+     * @param params  Optional serialization parameters.
+     * @param recommendations The list of recommendations to include.
+     * @return The updated {@link XContentBuilder} with this object's content and recommendations.
+     * @throws IOException if an I/O error occurs during serialization.
+     */
+    public XContentBuilder toXContentWithRecommendations(
+        final XContentBuilder builder,
+        final Params params,
+        final List<Recommendation> recommendations
+    ) throws IOException {
+        toXContentInner(builder, params);
+        if (recommendations != null) {
+            builder.startArray("recommendations");
+            for (Recommendation recommendation : recommendations) {
+                recommendation.toXContent(builder, params);
+            }
+            builder.endArray();
+        }
+        return builder.endObject();
+    }
+
+    /**
+     * Shared serialization of core fields (timestamp, id, attributes, measurements).
+     * Caller is responsible for calling {@code builder.endObject()} after adding any extra fields.
+     */
+    private XContentBuilder toXContentInner(final XContentBuilder builder, final Params params) throws IOException {
         builder.startObject();
         builder.field("timestamp", timestamp);
         builder.field("id", id);
-
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
-            if (entry.getKey() == Attribute.TOP_N_QUERY) { // Always skip TOP_N_QUERY attribute
+            if (entry.getKey() == Attribute.TOP_N_QUERY) {
                 continue;
             }
             builder.field(entry.getKey().toString(), entry.getValue());
         }
         builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
-            builder.field(entry.getKey().toString());  // MetricType as field name
-            entry.getValue().toXContent(builder, params);  // Serialize Measurement object
+            builder.field(entry.getKey().toString());
+            entry.getValue().toXContent(builder, params);
         }
         builder.endObject();
-        return builder.endObject();
+        return builder;
     }
 
     /**
@@ -695,6 +759,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public String getGroupingId() {
         return this.groupingId;
+    }
+
+    public boolean isStreaming() {
+        return streaming;
+    }
+
+    public void setStreaming(boolean streaming) {
+        this.streaming = streaming;
     }
 
     public boolean isCancelled() {

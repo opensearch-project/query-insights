@@ -34,6 +34,10 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
     void createLocalIndices() throws IOException, ParseException, InterruptedException {
+        // Explicitly enable local_index exporter to ensure the reader is initialized,
+        // regardless of the default exporter type (which may be NONE in some builds).
+        defaultExporterSettings();
+
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
         List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");

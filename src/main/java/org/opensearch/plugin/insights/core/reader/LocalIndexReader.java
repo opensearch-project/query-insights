@@ -105,6 +105,20 @@ public final class LocalIndexReader implements QueryInsightsReader {
         @NonNull final MetricType metricType,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
+        read(from, to, id, verbose, metricType, null, null, listener);
+    }
+
+    @Override
+    public void read(
+        final String from,
+        final String to,
+        final String id,
+        final Boolean verbose,
+        @NonNull final MetricType metricType,
+        final String username,
+        final List<String> backendRoles,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
         // Validate input parameters
         if (from == null || to == null) {
             listener.onResponse(new ArrayList<>());
@@ -130,7 +144,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
                 }
 
                 // Build and execute search request
-                executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, listener);
+                executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, username, backendRoles, listener);
             }
 
             @Override
@@ -150,9 +164,20 @@ public final class LocalIndexReader implements QueryInsightsReader {
         final String id,
         final Boolean verbose,
         final MetricType metricType,
+        final String username,
+        final List<String> backendRoles,
         final ActionListener<List<SearchQueryRecord>> listener
     ) {
-        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType);
+        SearchRequest searchRequest = QueryInsightsQueryBuilder.buildTopNSearchRequest(
+            indexNames,
+            start,
+            end,
+            id,
+            verbose,
+            metricType,
+            username,
+            backendRoles
+        );
 
         client.search(searchRequest, new ActionListener<SearchResponse>() {
             @Override
