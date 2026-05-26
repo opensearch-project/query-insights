@@ -33,6 +33,7 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private QueryInsightsReaderFactory queryInsightsReaderFactory;
     private MetricsRegistry metricsRegistry;
+    private final int DELETE_AFTER = 7;
 
     @Before
     public void setup() {
@@ -45,7 +46,7 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
     }
 
     public void testCreateAndCloseReader() {
-        QueryInsightsReader reader1 = queryInsightsReaderFactory.createLocalIndexReader("id", format, namedXContentRegistry);
+        QueryInsightsReader reader1 = queryInsightsReaderFactory.createLocalIndexReader("id", format, namedXContentRegistry, DELETE_AFTER);
         assertTrue(reader1 instanceof LocalIndexReader);
         try {
             queryInsightsReaderFactory.closeReader(reader1);
@@ -60,7 +61,8 @@ public class QueryInsightsReaderFactoryTests extends OpenSearchTestCase {
             client,
             DateTimeFormatter.ofPattern(format, Locale.ROOT),
             namedXContentRegistry,
-            "id"
+            "id",
+            7
         );
         queryInsightsReaderFactory.updateReader(reader, "yyyy-MM-dd-HH");
         assertEquals(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH", Locale.ROOT).toString(), reader.getIndexPattern().toString());

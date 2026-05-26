@@ -61,10 +61,11 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
     private final Client client = mock(Client.class);
     private final NamedXContentRegistry namedXContentRegistry = mock(NamedXContentRegistry.class);
     private LocalIndexReader localIndexReader;
+    private final int DELETE_AFTER = 7;
 
     @Before
     public void setup() {
-        localIndexReader = new LocalIndexReader(client, format, namedXContentRegistry, "id");
+        localIndexReader = new LocalIndexReader(client, format, namedXContentRegistry, "id", DELETE_AFTER);
     }
 
     @SuppressWarnings("unchecked")

@@ -42,16 +42,25 @@ public class QueryInsightsReaderFactory {
     /**
      * Create a Local Index Reader based on provided parameters
      *
+     * @param id reader id
      * @param indexPattern the index pattern if creating an index Reader
      * @param namedXContentRegistry for parsing purposes
+     * @param deleteAfterDays initial value of the
+     *                        search.insights.top_queries.exporter.delete_after_days setting
      * @return QueryInsightsReader the created Reader
      */
-    public QueryInsightsReader createLocalIndexReader(String id, String indexPattern, NamedXContentRegistry namedXContentRegistry) {
+    public QueryInsightsReader createLocalIndexReader(
+        String id,
+        String indexPattern,
+        NamedXContentRegistry namedXContentRegistry,
+        int deleteAfterDays
+    ) {
         QueryInsightsReader reader = new LocalIndexReader(
             client,
             DateTimeFormatter.ofPattern(indexPattern, Locale.ROOT),
             namedXContentRegistry,
-            id
+            id,
+            deleteAfterDays
         );
         this.readers.put(id, reader);
         return reader;

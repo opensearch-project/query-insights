@@ -42,6 +42,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
     private DateTimeFormatter indexPattern;
     private final NamedXContentRegistry namedXContentRegistry;
     private final String id;
+    private int deleteAfterDays;
 
     /**
      * Constructor of LocalIndexReader
@@ -49,17 +50,21 @@ public final class LocalIndexReader implements QueryInsightsReader {
      * @param client OS client
      * @param indexPattern the pattern of index to read from
      * @param namedXContentRegistry for parsing purposes
+     * @param id reader id
+     * @param deleteAfterDays value of the delete-after retention setting
      */
     public LocalIndexReader(
         final Client client,
         final DateTimeFormatter indexPattern,
         final NamedXContentRegistry namedXContentRegistry,
-        final String id
+        final String id,
+        final int deleteAfterDays
     ) {
         this.indexPattern = indexPattern;
         this.client = client;
         this.id = id;
         this.namedXContentRegistry = namedXContentRegistry;
+        this.deleteAfterDays = deleteAfterDays;
     }
 
     @Override
@@ -134,24 +139,22 @@ public final class LocalIndexReader implements QueryInsightsReader {
         }
         final ZonedDateTime finalEnd = end;
 
-        // Discover indices in the date range
-        IndexDiscoveryHelper.discoverIndicesInDateRange(client, indexPattern, start, finalEnd, new ActionListener<List<String>>() {
-            @Override
-            public void onResponse(List<String> indexNames) {
-                if (indexNames.isEmpty()) {
-                    listener.onResponse(Collections.emptyList());
-                    return;
-                }
+        final ZonedDateTime retentionTime = now.minusDays(this.deleteAfterDays);
+        final ZonedDateTime effectiveStart = start.isBefore(retentionTime) ? retentionTime : start;
 
-                // Build and execute search request
-                executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, username, backendRoles, listener);
-            }
+        if (effectiveStart.isAfter(finalEnd)) {
+            listener.onResponse(Collections.emptyList());
+            return;
+        }
 
-            @Override
-            public void onFailure(Exception e) {
-                listener.onFailure(e);
-            }
-        });
+        final List<String> indexNames = IndexDiscoveryHelper.buildIndexNamesInDateRange(indexPattern, effectiveStart, finalEnd);
+
+        if (indexNames.isEmpty()) {
+            listener.onResponse(Collections.emptyList());
+            return;
+        }
+
+        executeSearchRequest(indexNames, start, finalEnd, id, verbose, metricType, username, backendRoles, listener);
     }
 
     /**

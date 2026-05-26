@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -537,7 +538,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         verify(queryInsightsReaderFactory, times(2)).createLocalIndexReader(
             eq(TopQueriesService.TOP_QUERIES_READER_ID),
             anyString(),
-            eq(namedXContentRegistry)
+            eq(namedXContentRegistry),
+            anyInt()
         );
         // Verify local indices are not deleted
         verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());
@@ -583,7 +585,8 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         verify(queryInsightsReaderFactory, times(2)).createLocalIndexReader(
             eq(TopQueriesService.TOP_QUERIES_READER_ID),
             anyString(),
-            eq(namedXContentRegistry)
+            eq(namedXContentRegistry),
+            anyInt()
         );
         // Verify local indices are not deleted
         verify(mockLocalIndexLifecycleManagerSpy, times(0)).deleteSingleIndex(any(), any());

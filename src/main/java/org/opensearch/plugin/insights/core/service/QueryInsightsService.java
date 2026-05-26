@@ -475,7 +475,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             queryInsightsReaderFactory.createLocalIndexReader(
                 TOP_QUERIES_READER_ID,
                 DEFAULT_TOP_N_QUERIES_INDEX_PATTERN,
-                namedXContentRegistry
+                namedXContentRegistry,
+                clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER)
             );
         }
         // Set sink type to debug exporter

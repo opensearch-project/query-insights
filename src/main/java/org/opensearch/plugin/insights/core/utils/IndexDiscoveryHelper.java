@@ -15,16 +15,8 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
-import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
 import org.opensearch.action.support.IndicesOptions;
-import org.opensearch.core.action.ActionListener;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
-import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.transport.client.Client;
 
 /**
  * Utility class for discovering and managing indices for Query Insights operations.
@@ -33,59 +25,36 @@ import org.opensearch.transport.client.Client;
  */
 public final class IndexDiscoveryHelper {
 
-    private static final Logger logger = LogManager.getLogger(IndexDiscoveryHelper.class);
-
     private IndexDiscoveryHelper() {}
 
     /**
-     * Discovers existing indices within the specified date range and executes a callback
-     * with the list of found indices.
+     * Generates the expected Query Insights local index name for every day in
+     * interval start-end inclusive, without getting the cluster state.
      *
-     * @param client OpenSearch client for cluster operations
+     * Names that do not correspond to an actual index are skipped
+     * by the search request itself.
+     *
      * @param indexPattern DateTimeFormatter pattern for index naming
      * @param start Start date for the search range
      * @param end End date for the search range
-     * @param callback Callback to execute with the discovered indices
+     * @return List of index names, one per day, in ascending date order
      */
-    public static void discoverIndicesInDateRange(
-        final Client client,
+    public static List<String> buildIndexNamesInDateRange(
         final DateTimeFormatter indexPattern,
         final ZonedDateTime start,
-        final ZonedDateTime end,
-        final ActionListener<List<String>> callback
+        final ZonedDateTime end
     ) {
-        ClusterStateRequest clusterStateRequest = createClusterStateRequest();
+        final List<String> indexNames = new ArrayList<>();
 
-        client.admin().cluster().state(clusterStateRequest, new ActionListener<ClusterStateResponse>() {
-            @Override
-            public void onResponse(ClusterStateResponse clusterStateResponse) {
-                try {
-                    Set<String> existingIndices = clusterStateResponse.getState().metadata().indices().keySet();
-                    List<String> indexNames = findIndicesInDateRange(existingIndices, indexPattern, start, end);
-                    callback.onResponse(indexNames);
-                } catch (Exception e) {
-                    logger.error("Error processing cluster state response for index discovery: ", e);
-                    OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
-                    callback.onFailure(e);
-                }
-            }
+        ZonedDateTime currentDay = start.toLocalDate().atStartOfDay(start.getZone());
+        final ZonedDateTime endDay = end.toLocalDate().atStartOfDay(end.getZone());
 
-            @Override
-            public void onFailure(Exception e) {
-                OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.LOCAL_INDEX_READER_SEARCH_EXCEPTIONS);
-                logger.error("Failed to get cluster state for indices matching {}: ", TOP_QUERIES_INDEX_PATTERN_GLOB, e);
-                callback.onFailure(e);
-            }
-        });
-    }
+        while (!currentDay.isAfter(endDay)) {
+            indexNames.add(buildLocalIndexName(indexPattern, currentDay));
+            currentDay = currentDay.plusDays(1);
+        }
 
-    /**
-     * Creates a cluster state request configured for index discovery.
-     *
-     * @return Configured ClusterStateRequest
-     */
-    private static ClusterStateRequest createClusterStateRequest() {
-        return createClusterStateRequest(IndicesOptions.lenientExpandOpen());
+        return indexNames;
     }
 
     /**
@@ -100,39 +69,6 @@ public final class IndexDiscoveryHelper {
             .metadata(true)
             .local(true)
             .indicesOptions(indicesOptions);
-    }
-
-    /**
-     * Finds existing indices within the specified date range.
-     *
-     * @param existingIndices Set of all existing indices from cluster state
-     * @param indexPattern DateTimeFormatter pattern for index naming
-     * @param start Start date for the search range
-     * @param end End date for the search range
-     * @return List of index names that exist within the date range
-     */
-    static List<String> findIndicesInDateRange(
-        final Set<String> existingIndices,
-        final DateTimeFormatter indexPattern,
-        final ZonedDateTime start,
-        final ZonedDateTime end
-    ) {
-        List<String> indexNames = new ArrayList<>();
-
-        // Normalize dates to start of day to ensure proper day-by-day iteration
-        ZonedDateTime currentDay = start.toLocalDate().atStartOfDay(start.getZone());
-        ZonedDateTime endDay = end.toLocalDate().atStartOfDay(end.getZone());
-
-        // Iterate through each day in the range [start, end] and add only existing indices
-        while (!currentDay.isAfter(endDay)) {
-            String potentialIndexName = buildLocalIndexName(indexPattern, currentDay);
-            if (existingIndices.contains(potentialIndexName)) {
-                indexNames.add(potentialIndexName);
-            }
-            currentDay = currentDay.plusDays(1);
-        }
-
-        return indexNames;
     }
 
     /**
