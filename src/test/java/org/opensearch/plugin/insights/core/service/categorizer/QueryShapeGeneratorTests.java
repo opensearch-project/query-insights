@@ -446,7 +446,6 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
         assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
     }
 
-    // Nested query not working as expected
     public void testNestedQueryType() throws IOException {
         setUpMockMappings(
             index1,
@@ -475,7 +474,12 @@ public final class QueryShapeGeneratorTests extends OpenSearchTestCase {
 
         String shapeShowFieldsTrue = queryShapeGenerator.buildShape(sourceBuilder, true, true, successfulSearchShardIndices);
 
-        String expectedShowFieldsTrue = "nested []\n" + "  must:\n" + "    bool []\n";
+        String expectedShowFieldsTrue = "nested []\n"
+            + "  must:\n"
+            + "    bool []\n"
+            + "      should:\n"
+            + "        term [patients.smoker, boolean]\n"
+            + "        range [patients.age, integer]\n";
 
         assertEquals(expectedShowFieldsTrue, shapeShowFieldsTrue);
     }
