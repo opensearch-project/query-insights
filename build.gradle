@@ -60,7 +60,7 @@ configurations.all {
     eachDependency { DependencyResolveDetails details ->
       if (details.requested.group == 'org.apache.httpcomponents.client5' &&
         details.requested.name == 'httpclient5') {
-        details.useVersion '5.4.4'
+        details.useVersion '5.6.1'
       }
       if (details.requested.group == 'org.apache.httpcomponents.core5' &&
         details.requested.name == 'httpcore5-h2') {
