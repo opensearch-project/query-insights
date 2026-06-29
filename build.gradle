@@ -176,6 +176,8 @@ loggerUsageCheck.enabled = false
 
 // No need to validate pom, as we do not upload to maven/sonatype
 validateNebulaPom.enabled = false
+// validatePluginZipPom pulls in a plexus-utils version compiled for a newer JDK and fails on JDK 11; skip it as we do not upload to maven/sonatype
+validatePluginZipPom.enabled = false
 
 allprojects {
   group 'org.opensearch'
