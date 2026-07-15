@@ -346,6 +346,35 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
             attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
             attributes.put(Attribute.FAILED, failed);
+
+            // Build unified latency breakdown map: phase timings + gap breakdown in one place
+            // Keeps PHASE_LATENCY_MAP for backward compatibility
+            // Uses Map<String, Object> to support both numeric values and string metadata (e.g., _overlaps)
+            Map<String, Object> unifiedBreakdown = new HashMap<>();
+            Map<String, Long> phaseTookMap = searchRequestContext.phaseTookMap();
+            if (phaseTookMap != null) {
+                unifiedBreakdown.putAll(phaseTookMap);
+            }
+            Map<String, Object> breakdownMap = searchRequestContext.getLatencyBreakdownMap();
+            if (breakdownMap != null) {
+                unifiedBreakdown.putAll(breakdownMap);
+            }
+            // Include timed breakdown (with start_offset + duration for Gantt chart)
+            Map<String, Map<String, Long>> timedBreakdown = searchRequestContext.getTimedLatencyBreakdownMap();
+            if (timedBreakdown != null && !timedBreakdown.isEmpty()) {
+                unifiedBreakdown.put("_has_timed_breakdown", 1L); // flag for frontend
+                // Flatten timed data into the map as name.start and name.duration
+                for (Map.Entry<String, Map<String, Long>> entry : timedBreakdown.entrySet()) {
+                    Map<String, Long> timing = entry.getValue();
+                    Long startOffset = timing.get("start_offset_micros");
+                    Long duration = timing.get("duration_micros");
+                    if (startOffset != null) unifiedBreakdown.put(entry.getKey() + ".start_offset_micros", startOffset);
+                    if (duration != null) unifiedBreakdown.put(entry.getKey() + ".duration_micros", duration);
+                }
+            }
+            if (!unifiedBreakdown.isEmpty()) {
+                attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, unifiedBreakdown);
+            }
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(
