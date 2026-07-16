@@ -324,19 +324,18 @@ public class QueryInsightsClusterIT extends QueryInsightsRestTestCase {
     /**
      * Test cluster health impact of query insights
      */
-    public void testClusterHealthImpactOfQueryInsights() throws IOException, InterruptedException {
+    public void testClusterHealthImpactOfQueryInsights() throws Exception {
         // Monitor cluster health before enabling query insights
         verifyClusterHealth();
 
         // Clear any existing queries
         updateClusterSettings(this::disableTopQueriesSettings);
+        waitForSettingsDisabled("latency");
         waitForEmptyTopQueriesResponse();
 
         // Enable query insights
         updateClusterSettings(this::defaultTopQueriesSettings);
-
-        // Allow settings to propagate
-        Thread.sleep(1000);
+        waitForSettingsPropagation("latency");
 
         // Perform searches
         doSearch(15);

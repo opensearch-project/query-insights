@@ -7,20 +7,19 @@
  */
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import java.io.IOException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
     /**
      * Grouping by none should not group queries
-     * @throws IOException
-     * @throws InterruptedException
+     * @throws Exception
      */
-    public void testNoneToSimilarityGroupingTransition() throws IOException, InterruptedException {
+    public void testNoneToSimilarityGroupingTransition() throws Exception {
 
         waitForEmptyTopQueriesResponse();
 
         updateClusterSettings(this::defaultTopQueriesSettings);
+        waitForSettingsPropagation("latency");
 
         // Search
         doSearch("range", 1);
@@ -43,11 +42,12 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         assertTopQueriesCount(3, "latency");
     }
 
-    public void testSimilarityToNoneGroupingTransition() throws IOException, InterruptedException {
+    public void testSimilarityToNoneGroupingTransition() throws Exception {
 
         waitForEmptyTopQueriesResponse();
 
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+        waitForSettingsPropagation("latency");
 
         // Search
         doSearch("range", 1);
@@ -69,11 +69,12 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         assertTopQueriesCount(6, "latency");
     }
 
-    public void testSimilarityMaxGroupsChanged() throws IOException, InterruptedException {
+    public void testSimilarityMaxGroupsChanged() throws Exception {
 
         waitForEmptyTopQueriesResponse();
 
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+        waitForSettingsPropagation("latency");
 
         // Search
         doSearch("range", 1);

@@ -7,7 +7,6 @@
  */
 package org.opensearch.plugin.insights.core.service.grouper;
 
-import java.io.IOException;
 import org.opensearch.plugin.insights.QueryInsightsRestTestCase;
 
 /**
@@ -17,13 +16,15 @@ public class MinMaxQueryGrouperByNoneIT extends QueryInsightsRestTestCase {
 
     /**
      * Grouping by none should not group queries
-     * @throws IOException
-     * @throws InterruptedException
+     * @throws Exception
      */
-    public void testGroupingByNone() throws IOException, InterruptedException {
+    public void testGroupingByNone() throws Exception {
 
         updateClusterSettings(this::disableTopQueriesSettings);
+        waitForSettingsDisabled("latency");
+
         updateClusterSettings(this::groupByNoneSettings);
+        waitForSettingsPropagation("latency");
 
         waitForEmptyTopQueriesResponse();
 
