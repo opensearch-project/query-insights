@@ -58,7 +58,10 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
                 randomLongBetween(10, 1000),
                 randomLongBetween(1024, 10240),
                 new TaskDetails(coordinator, "running"),
-                new ArrayList<>()
+                new ArrayList<>(),
+                null,
+                List.of(),
+                List.of()
             );
         }).collect(Collectors.toList());
     }
@@ -126,7 +129,10 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             20L,
             30L,
             new TaskDetails(coordinator1, "running"),
-            new ArrayList<>()
+            new ArrayList<>(),
+            null,
+            List.of(),
+            List.of()
         );
         LiveQueryRecord rec2 = new LiveQueryRecord(
             "id2",
@@ -137,7 +143,10 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             20L,
             30L,
             new TaskDetails(coordinator2, "running"),
-            new ArrayList<>()
+            new ArrayList<>(),
+            null,
+            List.of(),
+            List.of()
         );
         LiveQueryRecord rec3 = new LiveQueryRecord(
             "id3",
@@ -148,7 +157,10 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             20L,
             30L,
             new TaskDetails(coordinator3, "running"),
-            new ArrayList<>()
+            new ArrayList<>(),
+            null,
+            List.of(),
+            List.of()
         );
         List<LiveQueryRecord> records = List.of(rec2, rec1, rec3);
         LiveQueriesResponse response = new LiveQueriesResponse(records);
@@ -234,7 +246,10 @@ public class LiveQueriesResponseTests extends OpenSearchTestCase {
             totalCpu,
             totalMem,
             new TaskDetails(coordinator, "running"),
-            List.of(new TaskDetails(shard1, "running"), new TaskDetails(shard2, "running"))
+            List.of(new TaskDetails(shard1, "running"), new TaskDetails(shard2, "running")),
+            null,
+            List.of(),
+            List.of()
         );
 
         assertEquals(1800L, record.getTotalCpu());

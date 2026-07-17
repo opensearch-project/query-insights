@@ -46,6 +46,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Before;
 import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
@@ -65,6 +66,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.exporter.DebugExporter;
 import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
@@ -860,5 +862,55 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         } catch (NullPointerException e) {
             fail("Should not throw NPE when exporter is null");
         }
+    }
+
+    public void testLiveQueryUserInfoPutGetRemove() {
+        String key = QueryInsightsService.buildLiveQueryTaskKey("nodeA", 1);
+        UserPrincipalInfo info = new UserPrincipalInfo("alice", List.of("backend1"), List.of("role1"));
+
+        assertNull(queryInsightsService.getLiveQueryUserInfo(key));
+
+        queryInsightsService.putLiveQueryUserInfo(key, info);
+        UserPrincipalInfo retrieved = queryInsightsService.getLiveQueryUserInfo(key);
+        assertNotNull(retrieved);
+        assertEquals("alice", retrieved.getUserName());
+        assertEquals(List.of("role1"), retrieved.getRoles());
+        assertEquals(List.of("backend1"), retrieved.getBackendRoles());
+
+        queryInsightsService.removeLiveQueryUserInfo(key);
+        assertNull(queryInsightsService.getLiveQueryUserInfo(key));
+    }
+
+    public void testLiveQueryUserInfoTtlExpiry() {
+        AtomicLong now = new AtomicLong(0L);
+        queryInsightsService.setLiveQueryUserInfoClock(now::get);
+
+        String key = QueryInsightsService.buildLiveQueryTaskKey("nodeA", 2);
+        queryInsightsService.putLiveQueryUserInfo(key, new UserPrincipalInfo("bob", List.of(), List.of()));
+
+        // Within TTL — still present
+        now.set(29 * 60 * 1000L);
+        assertNotNull(queryInsightsService.getLiveQueryUserInfo(key));
+
+        // Past the 30-minute TTL — expired and lazily removed
+        now.set(31 * 60 * 1000L);
+        assertNull(queryInsightsService.getLiveQueryUserInfo(key));
+        assertEquals(0, queryInsightsService.getLiveQueryUserInfoMapSize());
+    }
+
+    public void testLiveQueryUserInfoForKeysResolvesOnlyPresentKeys() {
+        String present = QueryInsightsService.buildLiveQueryTaskKey("nodeA", 3);
+        String absent = QueryInsightsService.buildLiveQueryTaskKey("nodeB", 4);
+        queryInsightsService.putLiveQueryUserInfo(present, new UserPrincipalInfo("carol", List.of(), List.of("r")));
+
+        Map<String, UserPrincipalInfo> resolved = queryInsightsService.getLiveQueryUserInfoForKeys(List.of(present, absent));
+        assertEquals(1, resolved.size());
+        assertTrue(resolved.containsKey(present));
+        assertFalse(resolved.containsKey(absent));
+        assertEquals("carol", resolved.get(present).getUserName());
+    }
+
+    public void testLiveQueryUserInfoForKeysWithNullReturnsEmpty() {
+        assertTrue(queryInsightsService.getLiveQueryUserInfoForKeys(null).isEmpty());
     }
 }

@@ -113,6 +113,27 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         when(queryInsightsService.getFinishedQueriesCache()).thenReturn(mockCache);
         when(mockCache.getFinishedQueries()).thenReturn(List.of());
 
+        // Default stub for the live query user info fan-out: return an empty (no identities) response
+        // so tests that don't care about user info aren't left hanging on the async callback.
+        doAnswer(inv -> {
+            ActionListener<org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse> listener = inv.getArgument(
+                2
+            );
+            listener.onResponse(
+                new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse(
+                    new ClusterName("test-cluster"),
+                    emptyList(),
+                    emptyList()
+                )
+            );
+            return null;
+        }).when(client)
+            .execute(
+                org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction.INSTANCE),
+                any(),
+                any()
+            );
+
         transportLiveQueriesAction = new TransportLiveQueriesAction(transportService, client, actionFilters, queryInsightsService);
     }
 

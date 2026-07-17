@@ -47,6 +47,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.service.TopQueriesService;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -223,7 +224,25 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     @Override
-    public void onPhaseStart(SearchPhaseContext context) {}
+    public void onPhaseStart(SearchPhaseContext context) {
+        // Capture user identity at search phase start for live queries
+        try {
+            if (context.getTask() != null) {
+                String taskId = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), context.getTask().getId());
+                // Only capture once per task
+                if (queryInsightsService.getLiveQueryUserInfo(taskId) == null) {
+                    UserPrincipalContext ctx = new UserPrincipalContext(threadPool);
+                    UserPrincipalContext.UserPrincipalInfo userInfo = ctx.extractUserInfo();
+                    if (userInfo != null) {
+                        log.debug("Captured user for task {}: {}", taskId, userInfo.getUserName());
+                        queryInsightsService.putLiveQueryUserInfo(taskId, userInfo);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to capture user info in onPhaseStart", e);
+        }
+    }
 
     @Override
     public void onPhaseEnd(SearchPhaseContext context, SearchRequestContext searchRequestContext) {}
@@ -250,8 +269,30 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
         try {
+            UserPrincipalContext.UserPrincipalInfo cachedUser = null;
+            // Clean up live query user map and retrieve cached user info
+            if (context.getTask() != null) {
+                String taskKey = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), context.getTask().getId());
+                cachedUser = queryInsightsService.getLiveQueryUserInfo(taskKey);
+                queryInsightsService.removeLiveQueryUserInfo(taskKey);
+            }
+            // Populate user info on record (prefer cached identity captured at phase start)
+            if (cachedUser != null && record != null) {
+                if (cachedUser.getUserName() != null) {
+                    record.addAttribute(Attribute.USERNAME, cachedUser.getUserName());
+                }
+                if (cachedUser.getRoles() != null && !cachedUser.getRoles().isEmpty()) {
+                    record.addAttribute(Attribute.USER_ROLES, cachedUser.getRoles().toArray(new String[0]));
+                }
+                if (cachedUser.getBackendRoles() != null && !cachedUser.getBackendRoles().isEmpty()) {
+                    record.addAttribute(Attribute.BACKEND_ROLES, cachedUser.getBackendRoles().toArray(new String[0]));
+                }
+            } else {
+                // Fallback: extract from thread context (may be stale on failure paths)
+                TopQueriesService.setUserInfo(record);
+            }
             FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
-            if (cache == null || record == null) return;
+            if (cache == null || record == null || context.getTask() == null) return;
             cache.capture(record, context.getTask().getId());
         } catch (Exception e) {
             log.debug("Failed to capture finished query into cache", e);

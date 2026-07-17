@@ -29,7 +29,20 @@ import org.opensearch.test.OpenSearchTestCase;
 public class LiveQueriesResponseFinishedTests extends OpenSearchTestCase {
 
     private LiveQueryRecord createLiveRecord(String id, long latency) {
-        return new LiveQueryRecord(id, "running", System.currentTimeMillis(), null, latency, 200L, 300L, null, new ArrayList<>());
+        return new LiveQueryRecord(
+            id,
+            "running",
+            System.currentTimeMillis(),
+            null,
+            latency,
+            200L,
+            300L,
+            null,
+            new ArrayList<>(),
+            null,
+            List.of(),
+            List.of()
+        );
     }
 
     private FinishedQueryRecord createFinishedRecord(String id, long latency) {

@@ -11,6 +11,7 @@ package org.opensearch.plugin.insights.rules.model;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -31,6 +32,9 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
     private final long totalMemory;
     private final TaskDetails coordinatorTask;
     private final List<TaskDetails> shardTasks;
+    private final String username;
+    private final List<String> userRoles;
+    private final List<String> backendRoles;
 
     public LiveQueryRecord(
         String liveQueryRecordId,
@@ -41,7 +45,10 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         long totalCpu,
         long totalMemory,
         TaskDetails coordinatorTask,
-        List<TaskDetails> shardTasks
+        List<TaskDetails> shardTasks,
+        String username,
+        List<String> userRoles,
+        List<String> backendRoles
     ) {
         this.liveQueryRecordId = liveQueryRecordId;
         this.status = status;
@@ -52,6 +59,9 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.totalMemory = totalMemory;
         this.coordinatorTask = coordinatorTask;
         this.shardTasks = shardTasks != null ? shardTasks : new ArrayList<>();
+        this.username = username;
+        this.userRoles = userRoles != null ? userRoles : List.of();
+        this.backendRoles = backendRoles != null ? backendRoles : List.of();
     }
 
     public LiveQueryRecord(StreamInput in) throws IOException {
@@ -64,6 +74,18 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.totalMemory = in.readLong();
         this.coordinatorTask = in.readOptionalWriteable(TaskDetails::new);
         this.shardTasks = in.readList(TaskDetails::new);
+        if (in.getVersion().onOrAfter(Version.V_3_8_0)) {
+            this.username = in.readOptionalString();
+            List<String> readRoles = in.readOptionalStringList();
+            this.userRoles = readRoles != null ? readRoles : List.of();
+            List<String> readBackendRoles = in.readOptionalStringList();
+            this.backendRoles = readBackendRoles != null ? readBackendRoles : List.of();
+        } else {
+            this.username = null;
+            this.userRoles = List.of();
+            this.backendRoles = List.of();
+        }
+
     }
 
     @Override
@@ -77,6 +99,12 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         out.writeLong(totalMemory);
         out.writeOptionalWriteable(coordinatorTask);
         out.writeList(shardTasks);
+        if (out.getVersion().onOrAfter(Version.V_3_8_0)) {
+            out.writeOptionalString(username);
+            out.writeOptionalStringCollection(userRoles.isEmpty() ? null : userRoles);
+            out.writeOptionalStringCollection(backendRoles.isEmpty() ? null : backendRoles);
+        }
+
     }
 
     @Override
@@ -100,6 +128,15 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             task.toXContent(builder, params);
         }
         builder.endArray();
+        if (username != null) {
+            builder.field("username", username);
+        }
+        if (!userRoles.isEmpty()) {
+            builder.array("user_roles", userRoles.toArray(new String[0]));
+        }
+        if (!backendRoles.isEmpty()) {
+            builder.array("backend_roles", backendRoles.toArray(new String[0]));
+        }
         builder.endObject();
         return builder;
     }
@@ -138,5 +175,17 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
 
     public List<TaskDetails> getShardTasks() {
         return shardTasks;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public List<String> getUserRoles() {
+        return userRoles;
+    }
+
+    public List<String> getBackendRoles() {
+        return backendRoles;
     }
 }

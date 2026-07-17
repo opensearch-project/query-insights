@@ -29,6 +29,9 @@ import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesR
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -89,7 +92,13 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             continue;
                         }
 
-                        String queryId = coordinatorInfo.getTaskId().toString();
+                        // Build the query id with the shared key helper so it matches the key the
+                        // listener stores user info under (nodeId:taskId) and can't drift from
+                        // TaskId.toString()'s internal format.
+                        String queryId = QueryInsightsService.buildLiveQueryTaskKey(
+                            coordinatorInfo.getTaskId().getNodeId(),
+                            coordinatorInfo.getTaskId().getId()
+                        );
 
                         // Get WLM group ID
                         String wlmGroupId = null;
@@ -141,6 +150,8 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         // Determine status based on coordinator cancellation
                         String queryStatus = coordinatorInfo.isCancelled() ? "cancelled" : "running";
 
+                        // User info is resolved after the fan-out below; build the record with the
+                        // task key so it can be enriched once per-node identity comes back.
                         LiveQueryRecord record = new LiveQueryRecord(
                             queryId,
                             queryStatus,
@@ -150,13 +161,16 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             totalCpu,
                             totalMem,
                             new TaskDetails(coordinatorInfo, queryStatus),
-                            shardTasks
+                            shardTasks,
+                            null,
+                            List.of(),
+                            List.of()
                         );
 
                         allRecords.add(record);
                     }
 
-                    List<LiveQueryRecord> finalRecords = allRecords.stream().sorted((a, b) -> {
+                    List<LiveQueryRecord> sortedRecords = allRecords.stream().sorted((a, b) -> {
                         switch (request.getSortBy()) {
                             case CPU:
                                 return Long.compare(b.getTotalCpu(), a.getTotalCpu());
@@ -167,32 +181,9 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         }
                     }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
 
-                    if (request.isUseFinishedCache()) {
-                        // Touch the local cache on the coordinating node to schedule the idle-check
-                        // timer and update lastAccessTime. Fan-out nodes use getFinishedQueriesIfActive()
-                        // to avoid activating caches cluster-wide.
-                        queryInsightsService.getFinishedQueriesCache().getFinishedQueries();
-
-                        client.execute(
-                            FinishedQueriesAction.INSTANCE,
-                            new FinishedQueriesRequest(request.nodesIds()),
-                            ActionListener.wrap(
-                                finishedResponse -> listener.onResponse(
-                                    new LiveQueriesResponse(
-                                        finalRecords,
-                                        sortAndLimit(finishedResponse.getAllFinishedQueries(), request),
-                                        true
-                                    )
-                                ),
-                                ex -> {
-                                    logger.error("Failed to retrieve finished queries from nodes", ex);
-                                    listener.onFailure(ex);
-                                }
-                            )
-                        );
-                    } else {
-                        listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
-                    }
+                    // Fan out to all nodes to resolve user identity captured on the coordinating node of
+                    // each search, then continue with finished-queries handling (if requested).
+                    resolveUserInfoAndRespond(sortedRecords, request, listener);
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -205,6 +196,109 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 listener.onFailure(e);
             }
         });
+    }
+
+    /**
+     * Fans out to all nodes to resolve user identity for the given live query records (each record's
+     * id is the {@code nodeId:taskId} key used by the listener), enriches the records, and then
+     * completes the response — appending finished queries if the request asked for them.
+     */
+    private void resolveUserInfoAndRespond(
+        final List<LiveQueryRecord> records,
+        final LiveQueriesRequest request,
+        final ActionListener<LiveQueriesResponse> listener
+    ) {
+        // No live queries — skip the cluster-wide user info fan-out entirely.
+        if (records.isEmpty()) {
+            respondWithFinishedQueries(records, request, listener);
+            return;
+        }
+
+        List<String> taskKeys = records.stream().map(LiveQueryRecord::getQueryId).toList();
+
+        // A task key is "nodeId:taskId"; user info for a task lives only on the node that
+        // coordinated it. Target the fan-out at just those owning nodes instead of the whole
+        // cluster (the identity was captured there, so other nodes have nothing to contribute).
+        String[] targetNodeIds = taskKeys.stream().map(key -> {
+            int sep = key.lastIndexOf(':');
+            return sep > 0 ? key.substring(0, sep) : key;
+        }).distinct().toArray(String[]::new);
+
+        client.execute(
+            LiveQueriesUserInfoAction.INSTANCE,
+            new LiveQueriesUserInfoRequest(taskKeys, targetNodeIds),
+            ActionListener.wrap(userInfoResponse -> {
+                List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(records, userInfoResponse.getAllUserInfo());
+                respondWithFinishedQueries(enrichedRecords, request, listener);
+            }, ex -> {
+                // User info is best-effort — on failure, fall back to records without identity
+                logger.error("Failed to resolve live query user info from nodes", ex);
+                respondWithFinishedQueries(records, request, listener);
+            })
+        );
+    }
+
+    private List<LiveQueryRecord> enrichWithUserInfo(
+        final List<LiveQueryRecord> records,
+        final Map<String, LiveQueryUserInfoDTO> userInfoByTaskKey
+    ) {
+        if (userInfoByTaskKey.isEmpty()) {
+            return records;
+        }
+        List<LiveQueryRecord> enriched = new ArrayList<>(records.size());
+        for (LiveQueryRecord record : records) {
+            LiveQueryUserInfoDTO userInfo = userInfoByTaskKey.get(record.getQueryId());
+            if (userInfo == null) {
+                enriched.add(record);
+                continue;
+            }
+            enriched.add(
+                new LiveQueryRecord(
+                    record.getQueryId(),
+                    record.getStatus(),
+                    record.getStartTime(),
+                    record.getWlmGroupId(),
+                    record.getTotalLatency(),
+                    record.getTotalCpu(),
+                    record.getTotalMemory(),
+                    record.getCoordinatorTask(),
+                    record.getShardTasks(),
+                    userInfo.getUsername(),
+                    userInfo.getRoles(),
+                    userInfo.getBackendRoles()
+                )
+            );
+        }
+        return enriched;
+    }
+
+    private void respondWithFinishedQueries(
+        final List<LiveQueryRecord> finalRecords,
+        final LiveQueriesRequest request,
+        final ActionListener<LiveQueriesResponse> listener
+    ) {
+        if (request.isUseFinishedCache()) {
+            // Touch the local cache on the coordinating node to schedule the idle-check
+            // timer and update lastAccessTime. Fan-out nodes use getFinishedQueriesIfActive()
+            // to avoid activating caches cluster-wide.
+            queryInsightsService.getFinishedQueriesCache().getFinishedQueries();
+
+            client.execute(
+                FinishedQueriesAction.INSTANCE,
+                new FinishedQueriesRequest(request.nodesIds()),
+                ActionListener.wrap(
+                    finishedResponse -> listener.onResponse(
+                        new LiveQueriesResponse(finalRecords, sortAndLimit(finishedResponse.getAllFinishedQueries(), request), true)
+                    ),
+                    ex -> {
+                        logger.error("Failed to retrieve finished queries from nodes", ex);
+                        listener.onFailure(ex);
+                    }
+                )
+            );
+        } else {
+            listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
+        }
     }
 
     private void collectChildTasks(TaskGroup group, List<TaskDetails> result) {

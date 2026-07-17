@@ -35,6 +35,7 @@ import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -46,6 +47,7 @@ import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueri
 import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportFinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.top_queries.TransportTopQueriesAction;
@@ -145,6 +147,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new ActionPlugin.ActionHandler<>(HealthStatsAction.INSTANCE, TransportHealthStatsAction.class),
             new ActionPlugin.ActionHandler<>(LiveQueriesAction.INSTANCE, TransportLiveQueriesAction.class),
             new ActionPlugin.ActionHandler<>(FinishedQueriesAction.INSTANCE, TransportFinishedQueriesAction.class),
+            new ActionPlugin.ActionHandler<>(LiveQueriesUserInfoAction.INSTANCE, TransportLiveQueriesUserInfoAction.class),
             new ActionPlugin.ActionHandler<>(GetQueryInsightsSettingsAction.INSTANCE, TransportGetQueryInsightsSettingsAction.class),
             new ActionPlugin.ActionHandler<>(UpdateQueryInsightsSettingsAction.INSTANCE, TransportUpdateQueryInsightsSettingsAction.class)
         );
