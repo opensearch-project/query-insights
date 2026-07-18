@@ -264,27 +264,25 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
             searchRequestCaptured.set(invocation.getArgument(0));
             ActionListener<SearchResponse> listener = invocation.getArgument(1);
             SearchResponse mockResponse = mock(SearchResponse.class);
-            when(mockResponse.getHits()).thenReturn(
-                new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f)
-            );
+            when(mockResponse.getHits()).thenReturn(new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f));
             listener.onResponse(mockResponse);
             return null;
         }).when(client).search(any(SearchRequest.class), any(ActionListener.class));
 
-        localIndexReader.read(from, to, null, true, MetricType.LATENCY, ActionListener.wrap(
-            records -> latch.countDown(),
-            e -> fail("No exception expected but got: " + e.getMessage())
-        ));
+        localIndexReader.read(
+            from,
+            to,
+            null,
+            true,
+            MetricType.LATENCY,
+            ActionListener.wrap(records -> latch.countDown(), e -> fail("No exception expected but got: " + e.getMessage()))
+        );
 
         assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
         SearchRequest req = searchRequestCaptured.get();
         assertNotNull(req);
 
-        assertEquals(
-            "Expected 8 indices (today + 7-day retention), got " + req.indices().length,
-            DELETE_AFTER + 1,
-            req.indices().length
-        );
+        assertEquals("Expected 8 indices (today + 7-day retention), got " + req.indices().length, DELETE_AFTER + 1, req.indices().length);
     }
 
     /**
@@ -313,10 +311,7 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
         assertNotNull(recordsRef.get());
         assertTrue("Expected empty result when range is entirely before retention", recordsRef.get().isEmpty());
-        assertFalse(
-            "client.search() must not be called when the effective range is empty",
-            searchCalled.get()
-        );
+        assertFalse("client.search() must not be called when the effective range is empty", searchCalled.get());
     }
 
     /**
@@ -338,25 +333,23 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
             captured.set(invocation.getArgument(0));
             ActionListener<SearchResponse> listener = invocation.getArgument(1);
             SearchResponse mockResponse = mock(SearchResponse.class);
-            when(mockResponse.getHits()).thenReturn(
-                new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f)
-            );
+            when(mockResponse.getHits()).thenReturn(new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f));
             listener.onResponse(mockResponse);
             return null;
         }).when(client).search(any(SearchRequest.class), any(ActionListener.class));
 
-        localIndexReader.read(from, to, null, true, MetricType.LATENCY, ActionListener.wrap(
-            records -> latch.countDown(),
-            e -> fail("No exception expected, got: " + e.getMessage())
-        ));
+        localIndexReader.read(
+            from,
+            to,
+            null,
+            true,
+            MetricType.LATENCY,
+            ActionListener.wrap(records -> latch.countDown(), e -> fail("No exception expected, got: " + e.getMessage()))
+        );
 
         assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
         SearchRequest req = captured.get();
         assertNotNull(req);
-        assertEquals(
-            "Only today index should be targeted when deleteAfterDays=0 but got " + req.indices().length,
-            1,
-            req.indices().length
-        );
+        assertEquals("Only today index should be targeted when deleteAfterDays=0 but got " + req.indices().length, 1, req.indices().length);
     }
 }

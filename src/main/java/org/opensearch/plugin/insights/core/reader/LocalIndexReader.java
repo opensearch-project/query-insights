@@ -92,7 +92,6 @@ public final class LocalIndexReader implements QueryInsightsReader {
         return this;
     }
 
-
     public void setDeleteAfterDays(final int deleteAfterDays) {
         this.deleteAfterDays = deleteAfterDays;
     }
