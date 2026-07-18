@@ -33,20 +33,24 @@ import org.opensearch.plugin.insights.core.utils.IndexDiscoveryHelper;
 public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     private static final DateTimeFormatter indexPattern = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
 
+    private static ZonedDateTime getDaysAgo(int daysAgo) {
+        return ZonedDateTime.now(ZoneOffset.UTC).toLocalDate().atStartOfDay(ZoneOffset.UTC).minusDays(daysAgo);
+    }
+
     void createLocalIndices() throws IOException, ParseException, InterruptedException {
         // Explicitly enable local_index exporter to ensure the reader is initialized,
         // regardless of the default exporter type (which may be NONE in some builds).
         defaultExporterSettings();
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(INDEX_DATE_FORMAT_PATTERN, Locale.ROOT);
+        // Use dates within the default retention window (delete_after_days = 7) so
+        // LocalIndexReader's retention clamp does not exclude them. Five indices are
+        // created on today-5 … today-1; the tests below query today-4 forward so that
+        // the today-5 index is the "one outside the range" and 4 records are returned.
+        List<ZonedDateTime> dates = List.of(getDaysAgo(5), getDaysAgo(4), getDaysAgo(3), getDaysAgo(2), getDaysAgo(1));
 
-        List<String> inputDates = List.of("2022.06.21", "2020.10.04", "2023.02.15", "2021.12.29", "2024.03.08");
-
-        for (String dateStr : inputDates) {
-            LocalDate localDate = LocalDate.parse(dateStr, formatter);
-            ZonedDateTime zdt = localDate.atStartOfDay(ZoneOffset.UTC);
-            long timestamp = zdt.toInstant().toEpochMilli();
-            String indexName = buildLocalIndexName(zdt);
+        for (ZonedDateTime date : dates) {
+            long timestamp = date.toInstant().toEpochMilli();
+            String indexName = buildLocalIndexName(date);
             createTopQueriesIndex(indexName, timestamp);
         }
 
@@ -56,7 +60,10 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     public void testMultiIndexDateRangeRetrieval() throws IOException, ParseException, InterruptedException {
         createLocalIndices();
 
-        Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z");
+        // Query range [today-4, today]: excludes the today-5 index to 4 of the 5 records match.
+        String from = getDaysAgo(4).format(DateTimeFormatter.ISO_INSTANT);
+        String to = getDaysAgo(0).format(DateTimeFormatter.ISO_INSTANT);
+        Request request = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to);
 
         Response response = client().performRequest(request);
         String responseBody = EntityUtils.toString(response.getEntity());
@@ -84,8 +91,12 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
     public void testReaderTopNLabels() throws IOException, ParseException, InterruptedException {
         createLocalIndices();
 
+        // Query range [today-4, today] so 4 of the 5 records match.
+        String from = getDaysAgo(4).format(DateTimeFormatter.ISO_INSTANT);
+        String to = getDaysAgo(0).format(DateTimeFormatter.ISO_INSTANT);
+
         // type=cpu, 4 top queries
-        Request request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z&type=cpu");
+        Request request = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to + "&type=cpu");
 
         Response response = client().performRequest(request);
         String responseBody = EntityUtils.toString(response.getEntity());
@@ -109,7 +120,7 @@ public class MultiIndexDateRangeIT extends QueryInsightsRestTestCase {
         }
 
         // type=memory, 0 top queries
-        request = new Request("GET", "/_insights/top_queries?from=2021-04-01T00:00:00Z&to=2025-04-02T00:00:00Z&type=memory");
+        request = new Request("GET", "/_insights/top_queries?from=" + from + "&to=" + to + "&type=memory");
 
         response = client().performRequest(request);
         responseBody = EntityUtils.toString(response.getEntity());
