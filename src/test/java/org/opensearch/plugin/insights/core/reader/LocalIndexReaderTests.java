@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.TotalHits;
 import org.junit.Before;
@@ -243,5 +244,119 @@ public class LocalIndexReaderTests extends OpenSearchTestCase {
         final DateTimeFormatter newFormatter = DateTimeFormatter.ofPattern("YYYY-MM-dd", Locale.ROOT);
         localIndexReader.setIndexPattern(newFormatter);
         assert (localIndexReader.getIndexPattern() == newFormatter);
+    }
+
+    /**
+     * Request a 30-day-back window while the retention setting is 7 days.
+     * The SearchRequest should target 8 index names (today + 7 back)
+     */
+    @SuppressWarnings("unchecked")
+    public void testReadClipsStartToRetentionWindow() throws InterruptedException {
+        final int daysRequested = 30;
+        final ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        final String from = now.minusDays(daysRequested).format(DateTimeFormatter.ISO_DATE_TIME);
+        final String to = now.format(DateTimeFormatter.ISO_DATE_TIME);
+
+        final AtomicReference<SearchRequest> searchRequestCaptured = new AtomicReference<>();
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        doAnswer(invocation -> {
+            searchRequestCaptured.set(invocation.getArgument(0));
+            ActionListener<SearchResponse> listener = invocation.getArgument(1);
+            SearchResponse mockResponse = mock(SearchResponse.class);
+            when(mockResponse.getHits()).thenReturn(
+                new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f)
+            );
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(client).search(any(SearchRequest.class), any(ActionListener.class));
+
+        localIndexReader.read(from, to, null, true, MetricType.LATENCY, ActionListener.wrap(
+            records -> latch.countDown(),
+            e -> fail("No exception expected but got: " + e.getMessage())
+        ));
+
+        assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
+        SearchRequest req = searchRequestCaptured.get();
+        assertNotNull(req);
+
+        assertEquals(
+            "Expected 8 indices (today + 7-day retention), got " + req.indices().length,
+            DELETE_AFTER + 1,
+            req.indices().length
+        );
+    }
+
+    /**
+     * When the requested [from, to] range is entirely before the retention period,
+     * the reader must return empty list without calling search.
+     */
+    @SuppressWarnings("unchecked")
+    public void testReadReturnsEmptyWhenRangeEntirelyBeforeRetention() throws InterruptedException {
+        final ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        final String from = now.minusDays(30).format(DateTimeFormatter.ISO_DATE_TIME);
+        final String to = now.minusDays(20).format(DateTimeFormatter.ISO_DATE_TIME);
+
+        final AtomicBoolean searchCalled = new AtomicBoolean(false);
+        doAnswer(invocation -> {
+            searchCalled.set(true);
+            return null;
+        }).when(client).search(any(SearchRequest.class), any(ActionListener.class));
+
+        final AtomicReference<List<SearchQueryRecord>> recordsRef = new AtomicReference<>();
+        final CountDownLatch latch = new CountDownLatch(1);
+        localIndexReader.read(from, to, null, true, MetricType.LATENCY, ActionListener.wrap(records -> {
+            recordsRef.set(records);
+            latch.countDown();
+        }, e -> fail("No exception expected but got: " + e.getMessage())));
+
+        assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
+        assertNotNull(recordsRef.get());
+        assertTrue("Expected empty result when range is entirely before retention", recordsRef.get().isEmpty());
+        assertFalse(
+            "client.search() must not be called when the effective range is empty",
+            searchCalled.get()
+        );
+    }
+
+    /**
+     * With deleteAfterDays = 0 the retention floor becomes `now`, so any window
+     * that reaches back into the past should be tripped down to today index
+     */
+    @SuppressWarnings("unchecked")
+    public void testReadWithDeleteAfterZeroTargetsOnlyTodayIndex() throws InterruptedException {
+        localIndexReader.setDeleteAfterDays(0);
+
+        final ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        final String from = now.minusDays(1).format(DateTimeFormatter.ISO_DATE_TIME);
+        final String to = now.plusMinutes(1).format(DateTimeFormatter.ISO_DATE_TIME);
+
+        final AtomicReference<SearchRequest> captured = new AtomicReference<>();
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        doAnswer(invocation -> {
+            captured.set(invocation.getArgument(0));
+            ActionListener<SearchResponse> listener = invocation.getArgument(1);
+            SearchResponse mockResponse = mock(SearchResponse.class);
+            when(mockResponse.getHits()).thenReturn(
+                new SearchHits(new SearchHit[0], new TotalHits(0, TotalHits.Relation.EQUAL_TO), 0f)
+            );
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(client).search(any(SearchRequest.class), any(ActionListener.class));
+
+        localIndexReader.read(from, to, null, true, MetricType.LATENCY, ActionListener.wrap(
+            records -> latch.countDown(),
+            e -> fail("No exception expected, got: " + e.getMessage())
+        ));
+
+        assertTrue("Listener timed out", latch.await(1, TimeUnit.SECONDS));
+        SearchRequest req = captured.get();
+        assertNotNull(req);
+        assertEquals(
+            "Only today index should be targeted when deleteAfterDays=0 but got " + req.indices().length,
+            1,
+            req.indices().length
+        );
     }
 }

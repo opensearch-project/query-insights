@@ -42,7 +42,7 @@ public final class LocalIndexReader implements QueryInsightsReader {
     private DateTimeFormatter indexPattern;
     private final NamedXContentRegistry namedXContentRegistry;
     private final String id;
-    private int deleteAfterDays;
+    private volatile int deleteAfterDays;
 
     /**
      * Constructor of LocalIndexReader
@@ -90,6 +90,11 @@ public final class LocalIndexReader implements QueryInsightsReader {
     public LocalIndexReader setIndexPattern(DateTimeFormatter indexPattern) {
         this.indexPattern = indexPattern;
         return this;
+    }
+
+
+    public void setDeleteAfterDays(final int deleteAfterDays) {
+        this.deleteAfterDays = deleteAfterDays;
     }
 
     /**

@@ -50,6 +50,7 @@ import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
+import org.opensearch.plugin.insights.core.reader.LocalIndexReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
@@ -194,14 +195,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             client,
             clusterService.getClusterSettings().get(TOP_N_EXPORTER_DELETE_AFTER)
         );
-        clusterService.getClusterSettings()
-            .addSettingsUpdateConsumer(TOP_N_EXPORTER_DELETE_AFTER, (localIndexLifecycleManager::setDeleteAfterAndDelete));
         queryInsightsExporterFactory.createRemoteRepositoryExporter(
             TOP_QUERIES_REMOTE_EXPORTER_ID,
             clusterService.getClusterSettings().get(REMOTE_EXPORTER_REPOSITORY),
             clusterService.getClusterSettings().get(REMOTE_EXPORTER_PATH),
             clusterService.getClusterSettings().get(REMOTE_EXPORTER_ENABLED)
         );
+        clusterService.getClusterSettings().addSettingsUpdateConsumer(TOP_N_EXPORTER_DELETE_AFTER, this::onDeleteAfterDaysUpdated);
 
         // Listen for remote repository exporter setting changes - update individual settings
         clusterService.getClusterSettings().addSettingsUpdateConsumer(REMOTE_EXPORTER_ENABLED, this::updateRemoteExporterEnabled);
@@ -485,6 +485,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         this.sinkType = sinkType;
+    }
+
+    private void onDeleteAfterDaysUpdated(final int deleteAfterDays) {
+        localIndexLifecycleManager.setDeleteAfterAndDelete(deleteAfterDays);
+
+        final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
+        if (reader instanceof LocalIndexReader) {
+            ((LocalIndexReader) reader).setDeleteAfterDays(deleteAfterDays);
+        }
     }
 
     /**
