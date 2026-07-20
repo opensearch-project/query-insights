@@ -23,22 +23,33 @@ final class SearchQueryCategorizingVisitor implements QueryBuilderVisitor {
     private final int level;
     private final SearchQueryCounters searchQueryCounters;
     private final Map<MetricType, Measurement> measurements;
+    private final String[] indices;
 
-    public SearchQueryCategorizingVisitor(SearchQueryCounters searchQueryCounters, Map<MetricType, Measurement> measurements) {
-        this(searchQueryCounters, 0, measurements);
+    public SearchQueryCategorizingVisitor(
+        SearchQueryCounters searchQueryCounters,
+        Map<MetricType, Measurement> measurements,
+        String[] indices
+    ) {
+        this(searchQueryCounters, 0, measurements, indices);
     }
 
-    private SearchQueryCategorizingVisitor(SearchQueryCounters counters, int level, Map<MetricType, Measurement> measurements) {
+    private SearchQueryCategorizingVisitor(
+        SearchQueryCounters counters,
+        int level,
+        Map<MetricType, Measurement> measurements,
+        String[] indices
+    ) {
         this.searchQueryCounters = counters;
         this.level = level;
         this.measurements = measurements;
+        this.indices = indices;
     }
 
     public void accept(QueryBuilder qb) {
-        searchQueryCounters.incrementCounter(qb, level, measurements);
+        searchQueryCounters.incrementCounter(qb, level, measurements, indices);
     }
 
     public QueryBuilderVisitor getChildVisitor(BooleanClause.Occur occur) {
-        return new SearchQueryCategorizingVisitor(searchQueryCounters, level + 1, measurements);
+        return new SearchQueryCategorizingVisitor(searchQueryCounters, level + 1, measurements, indices);
     }
 }
