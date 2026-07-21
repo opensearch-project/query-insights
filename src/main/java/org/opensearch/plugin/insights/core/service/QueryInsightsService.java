@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -147,22 +148,22 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private final FinishedQueriesCache finishedQueriesCache;
     private final ConcurrentHashMap<String, TimestampedUserInfo> liveQueryUserMap = new ConcurrentHashMap<>();
+    private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
 
-    private static final long USER_INFO_TTL_MS = 30 * 60 * 1000; // 30 minutes (covers long-running queries)
-    private static final int USER_INFO_MAX_SIZE = 10000;
+    private static final int USER_INFO_MAX_SIZE = 1000;
 
     /**
      * Time source for live query user info TTL/eviction. Overridable in tests to advance time deterministically.
      */
     private LongSupplier clock = System::currentTimeMillis;
 
-    private class TimestampedUserInfo {
+    private static class TimestampedUserInfo {
         final UserPrincipalContext.UserPrincipalInfo info;
         final long timestamp;
 
-        TimestampedUserInfo(UserPrincipalContext.UserPrincipalInfo info) {
+        TimestampedUserInfo(UserPrincipalContext.UserPrincipalInfo info, long timestamp) {
             this.info = info;
-            this.timestamp = clock.getAsLong();
+            this.timestamp = timestamp;
         }
     }
 
@@ -696,23 +697,40 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     public void putLiveQueryUserInfo(String taskId, UserPrincipalContext.UserPrincipalInfo userInfo) {
-        // Evict stale entries if map is too large
-        if (liveQueryUserMap.size() > USER_INFO_MAX_SIZE) {
-            long now = clock.getAsLong();
-            liveQueryUserMap.entrySet().removeIf(e -> now - e.getValue().timestamp > USER_INFO_TTL_MS);
+        if (userInfo == null) {
+            return;
         }
-        // Fallback: if still over capacity, batch-remove oldest entries in a single sorted pass (O(n log n))
-        int overflow = liveQueryUserMap.size() - USER_INFO_MAX_SIZE;
-        if (overflow > 0) {
-            liveQueryUserMap.entrySet()
-                .stream()
-                .sorted(Comparator.comparingLong(e -> e.getValue().timestamp))
-                .limit(overflow)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList())
-                .forEach(liveQueryUserMap::remove);
+        if (liveQueryUserMap.size() >= USER_INFO_MAX_SIZE && evictionInProgress.compareAndSet(false, true)) {
+            try {
+                // Remove entries whose tasks are no longer running (orphaned entries).
+                // Keys are "nodeId:taskId" — we rely on remove-on-finish for normal cleanup,
+                // but orphans may remain if onRequestEnd was never called (e.g., node disconnect).
+                // Since TaskManager is not available here, remove oldest entries as fallback.
+                int overflow = liveQueryUserMap.size() - USER_INFO_MAX_SIZE + 1;
+                if (overflow > 0) {
+                    liveQueryUserMap.entrySet()
+                        .stream()
+                        .sorted(Comparator.comparingLong(e -> e.getValue().timestamp))
+                        .limit(overflow)
+                        .map(Map.Entry::getKey)
+                        .collect(Collectors.toList())
+                        .forEach(liveQueryUserMap::remove);
+                }
+            } finally {
+                evictionInProgress.set(false);
+            }
         }
-        liveQueryUserMap.put(taskId, new TimestampedUserInfo(userInfo));
+        // If still at capacity after eviction, skip this insert rather than evicting a live entry
+        if (liveQueryUserMap.size() >= USER_INFO_MAX_SIZE) {
+            logger.warn(
+                "Live query user info map at capacity ({}). Skipping capture for task [{}]. "
+                    + "Consider increasing concurrency capacity if this persists.",
+                USER_INFO_MAX_SIZE,
+                taskId
+            );
+            return;
+        }
+        liveQueryUserMap.put(taskId, new TimestampedUserInfo(userInfo, clock.getAsLong()));
     }
 
     /**
@@ -739,11 +757,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     public UserPrincipalContext.UserPrincipalInfo getLiveQueryUserInfo(String taskId) {
         TimestampedUserInfo entry = liveQueryUserMap.get(taskId);
         if (entry == null) return null;
-        // Check TTL
-        if (clock.getAsLong() - entry.timestamp > USER_INFO_TTL_MS) {
-            liveQueryUserMap.remove(taskId);
-            return null;
-        }
         return entry.info;
     }
 

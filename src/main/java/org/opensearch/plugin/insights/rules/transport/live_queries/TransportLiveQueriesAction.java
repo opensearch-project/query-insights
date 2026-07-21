@@ -219,8 +219,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         // A task key is "nodeId:taskId"; user info for a task lives only on the node that
         // coordinated it. Target the fan-out at just those owning nodes instead of the whole
         // cluster (the identity was captured there, so other nodes have nothing to contribute).
+        // Issue 3: Use indexOf(':') since taskId is always numeric (the first ':' separates
+        // nodeId from taskId), matching the format produced by buildLiveQueryTaskKey().
         String[] targetNodeIds = taskKeys.stream().map(key -> {
-            int sep = key.lastIndexOf(':');
+            int sep = key.indexOf(':');
             return sep > 0 ? key.substring(0, sep) : key;
         }).distinct().toArray(String[]::new);
 

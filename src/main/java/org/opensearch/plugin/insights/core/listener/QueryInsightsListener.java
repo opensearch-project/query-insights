@@ -225,11 +225,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     @Override
     public void onPhaseStart(SearchPhaseContext context) {
+        // Issue 6: Skip user capture when listener is disabled
+        if (!isEnabled()) {
+            return;
+        }
         // Capture user identity at search phase start for live queries
         try {
             if (context.getTask() != null) {
                 String taskId = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), context.getTask().getId());
-                // Only capture once per task
+                // Issue 4: Only capture once per request — skip if already captured for this task
                 if (queryInsightsService.getLiveQueryUserInfo(taskId) == null) {
                     UserPrincipalContext ctx = new UserPrincipalContext(threadPool);
                     UserPrincipalContext.UserPrincipalInfo userInfo = ctx.extractUserInfo();
@@ -268,6 +272,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
     }
 
     private void addToFinishedCache(SearchPhaseContext context, SearchQueryRecord record) {
+        // Issue 5: Guard null record early before any other work
+        if (record == null) {
+            // Still clean up the live query user info entry even when record is null
+            if (context.getTask() != null) {
+                String taskKey = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), context.getTask().getId());
+                queryInsightsService.removeLiveQueryUserInfo(taskKey);
+            }
+            return;
+        }
         try {
             UserPrincipalContext.UserPrincipalInfo cachedUser = null;
             // Clean up live query user map and retrieve cached user info
@@ -277,7 +290,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 queryInsightsService.removeLiveQueryUserInfo(taskKey);
             }
             // Populate user info on record (prefer cached identity captured at phase start)
-            if (cachedUser != null && record != null) {
+            if (cachedUser != null) {
                 if (cachedUser.getUserName() != null) {
                     record.addAttribute(Attribute.USERNAME, cachedUser.getUserName());
                 }
@@ -292,7 +305,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 TopQueriesService.setUserInfo(record);
             }
             FinishedQueriesCache cache = queryInsightsService.getFinishedQueriesCache();
-            if (cache == null || record == null || context.getTask() == null) return;
+            if (cache == null || context.getTask() == null) return;
             cache.capture(record, context.getTask().getId());
         } catch (Exception e) {
             log.debug("Failed to capture finished query into cache", e);

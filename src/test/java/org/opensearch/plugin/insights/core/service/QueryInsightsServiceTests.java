@@ -881,19 +881,19 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertNull(queryInsightsService.getLiveQueryUserInfo(key));
     }
 
-    public void testLiveQueryUserInfoTtlExpiry() {
+    public void testLiveQueryUserInfoPersistsUntilExplicitRemoval() {
         AtomicLong now = new AtomicLong(0L);
         queryInsightsService.setLiveQueryUserInfoClock(now::get);
 
         String key = QueryInsightsService.buildLiveQueryTaskKey("nodeA", 2);
         queryInsightsService.putLiveQueryUserInfo(key, new UserPrincipalInfo("bob", List.of(), List.of()));
 
-        // Within TTL — still present
-        now.set(29 * 60 * 1000L);
+        // Entry persists regardless of time elapsed (no TTL-on-read)
+        now.set(60 * 60 * 1000L); // 1 hour later
         assertNotNull(queryInsightsService.getLiveQueryUserInfo(key));
 
-        // Past the 30-minute TTL — expired and lazily removed
-        now.set(31 * 60 * 1000L);
+        // Only removed by explicit call (simulates onRequestEnd cleanup)
+        queryInsightsService.removeLiveQueryUserInfo(key);
         assertNull(queryInsightsService.getLiveQueryUserInfo(key));
         assertEquals(0, queryInsightsService.getLiveQueryUserInfoMapSize());
     }
