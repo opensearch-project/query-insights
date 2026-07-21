@@ -9,9 +9,13 @@
 package org.opensearch.plugin.insights.rules.transport.live_queries;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
@@ -23,6 +27,9 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceUsage;
+import org.opensearch.plugin.insights.core.auth.TopQueriesRbacFilter;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesRequest;
@@ -32,6 +39,7 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRespo
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -65,6 +73,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         this.transportService = transportService;
         this.client = client;
         this.queryInsightsService = queryInsightsService;
+        queryInsightsService.setTaskManager(transportService.getTaskManager());
     }
 
     @Override
@@ -231,11 +240,13 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             new LiveQueriesUserInfoRequest(taskKeys, targetNodeIds),
             ActionListener.wrap(userInfoResponse -> {
                 List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(records, userInfoResponse.getAllUserInfo());
-                respondWithFinishedQueries(enrichedRecords, request, listener);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(enrichedRecords);
+                respondWithFinishedQueries(filteredRecords, request, listener);
             }, ex -> {
                 // User info is best-effort — on failure, fall back to records without identity
                 logger.error("Failed to resolve live query user info from nodes", ex);
-                respondWithFinishedQueries(records, request, listener);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(records);
+                respondWithFinishedQueries(filteredRecords, request, listener);
             })
         );
     }
@@ -320,5 +331,50 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             if (mb == null) return -1;
             return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
         }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
+    }
+
+    /**
+     * Applies RBAC filtering to live query records based on the configured filter_by_mode,
+     * mirroring the same access control that top queries enforces.
+     */
+    private List<LiveQueryRecord> filterLiveRecordsByMode(List<LiveQueryRecord> records) {
+        FilterByMode mode = queryInsightsService.getFilterByMode();
+        if (mode == null || mode == FilterByMode.NONE) {
+            return records;
+        }
+
+        UserPrincipalInfo requestingUser;
+        try {
+            requestingUser = new UserPrincipalContext(transportService.getThreadPool()).extractUserInfo();
+        } catch (Exception e) {
+            logger.warn("Failed to extract user info for live queries RBAC filtering", e);
+            return Collections.emptyList();
+        }
+
+        if (requestingUser == null) {
+            return Collections.emptyList();
+        }
+
+        if (TopQueriesRbacFilter.isAdmin(requestingUser)) {
+            return records;
+        }
+
+        switch (mode) {
+            case USERNAME:
+                if (requestingUser.getUserName() == null) {
+                    return Collections.emptyList();
+                }
+                return records.stream().filter(r -> requestingUser.getUserName().equals(r.getUsername())).collect(Collectors.toList());
+            case BACKEND_ROLES:
+                if (requestingUser.getBackendRoles() == null || requestingUser.getBackendRoles().isEmpty()) {
+                    return Collections.emptyList();
+                }
+                Set<String> myRoles = new HashSet<>(requestingUser.getBackendRoles());
+                return records.stream()
+                    .filter(r -> r.getBackendRoles() != null && !Collections.disjoint(myRoles, new HashSet<>(r.getBackendRoles())))
+                    .collect(Collectors.toList());
+            default:
+                return records;
+        }
     }
 }

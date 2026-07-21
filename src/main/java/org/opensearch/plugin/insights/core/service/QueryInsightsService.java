@@ -66,6 +66,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.tasks.TaskManager;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
 import org.opensearch.threadpool.ThreadPool;
@@ -149,6 +150,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private final FinishedQueriesCache finishedQueriesCache;
     private final ConcurrentHashMap<String, TimestampedUserInfo> liveQueryUserMap = new ConcurrentHashMap<>();
     private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
+    private volatile TaskManager taskManager;
 
     private static final int USER_INFO_MAX_SIZE = 1000;
 
@@ -696,6 +698,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         return finishedQueriesCache;
     }
 
+    /**
+     * Sets the TaskManager used for liveness checks during eviction of orphaned entries
+     * from the live query user info map.
+     *
+     * @param taskManager the cluster TaskManager
+     */
+    public void setTaskManager(TaskManager taskManager) {
+        this.taskManager = taskManager;
+    }
+
     public void putLiveQueryUserInfo(String taskId, UserPrincipalContext.UserPrincipalInfo userInfo) {
         if (userInfo == null) {
             return;
@@ -705,16 +717,31 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
                 // Remove entries whose tasks are no longer running (orphaned entries).
                 // Keys are "nodeId:taskId" — we rely on remove-on-finish for normal cleanup,
                 // but orphans may remain if onRequestEnd was never called (e.g., node disconnect).
-                // Since TaskManager is not available here, remove oldest entries as fallback.
-                int overflow = liveQueryUserMap.size() - USER_INFO_MAX_SIZE + 1;
-                if (overflow > 0) {
-                    liveQueryUserMap.entrySet()
-                        .stream()
-                        .sorted(Comparator.comparingLong(e -> e.getValue().timestamp))
-                        .limit(overflow)
-                        .map(Map.Entry::getKey)
-                        .collect(Collectors.toList())
-                        .forEach(liveQueryUserMap::remove);
+                TaskManager tm = this.taskManager;
+                if (tm != null) {
+                    // Liveness sweep: drop keys where the task is gone
+                    liveQueryUserMap.keySet().removeIf(key -> {
+                        int sep = key.indexOf(':');
+                        if (sep <= 0) return false;
+                        try {
+                            long parsedTaskId = Long.parseLong(key.substring(sep + 1));
+                            return tm.getTask(parsedTaskId) == null;
+                        } catch (NumberFormatException e) {
+                            return false;
+                        }
+                    });
+                } else {
+                    // Fallback: TaskManager not yet available, remove oldest entries
+                    int overflow = liveQueryUserMap.size() - USER_INFO_MAX_SIZE + 1;
+                    if (overflow > 0) {
+                        liveQueryUserMap.entrySet()
+                            .stream()
+                            .sorted(Comparator.comparingLong(e -> e.getValue().timestamp))
+                            .limit(overflow)
+                            .map(Map.Entry::getKey)
+                            .collect(Collectors.toList())
+                            .forEach(liveQueryUserMap::remove);
+                    }
                 }
             } finally {
                 evictionInProgress.set(false);
@@ -724,7 +751,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         if (liveQueryUserMap.size() >= USER_INFO_MAX_SIZE) {
             logger.warn(
                 "Live query user info map at capacity ({}). Skipping capture for task [{}]. "
-                    + "Consider increasing concurrency capacity if this persists.",
+                    + "Consider increasing USER_INFO_MAX_SIZE if this persists.",
                 USER_INFO_MAX_SIZE,
                 taskId
             );
