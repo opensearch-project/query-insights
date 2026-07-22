@@ -2,9 +2,6 @@
 
 Compatible with OpenSearch and OpenSearch Dashboards version 3.8.0
 
-### Features
-
-
 ### Enhancements
 
 * Derive reader index names from date range instead of cluster state, avoiding cluster state calls ([#614](https://github.com/opensearch-project/query-insights/pull/614))
