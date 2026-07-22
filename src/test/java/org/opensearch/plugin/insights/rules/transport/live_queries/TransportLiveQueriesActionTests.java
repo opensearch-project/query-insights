@@ -44,6 +44,7 @@ import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -1051,6 +1052,328 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
             any(),
             any()
         );
+    }
+
+    // =====================================================================
+    // RBAC / filter_by_mode / enrichment tests
+    // =====================================================================
+
+    /**
+     * Helper: set up the thread-context so that UserPrincipalContext (used by filterLiveRecordsByMode)
+     * sees the given user string. Format: "username|backendRoles|roles" (pipe-separated).
+     */
+    private void setRequestingUser(String userInfoString) {
+        org.opensearch.common.util.concurrent.ThreadContext threadContext = new org.opensearch.common.util.concurrent.ThreadContext(
+            Settings.EMPTY
+        );
+        threadContext.putTransient("_opendistro_security_user_info", userInfoString);
+        when(threadPool.getThreadContext()).thenReturn(threadContext);
+        when(transportService.getThreadPool()).thenReturn(threadPool);
+    }
+
+    /**
+     * Helper: stub the LiveQueriesUserInfoAction fan-out to return a populated map of task-key -> identity.
+     */
+    private void stubUserInfoFanOut(Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap) {
+        doAnswer(inv -> {
+            ActionListener<org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse> listener = inv.getArgument(
+                2
+            );
+            org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse nodeResp =
+                new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse(node1, infoMap);
+            listener.onResponse(
+                new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse(
+                    new ClusterName("test-cluster"),
+                    List.of(nodeResp),
+                    emptyList()
+                )
+            );
+            return null;
+        }).when(client)
+            .execute(
+                org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction.INSTANCE),
+                any(),
+                any()
+            );
+    }
+
+    /**
+     * Helper: stub the listTasks to return a single search task on node1 with the given TaskId.
+     * Returns the TaskInfo so callers can reference its taskId.
+     */
+    private TaskInfo stubSingleSearchTask() throws IOException {
+        TaskInfo task = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "test-desc", 100L, 200L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(task, emptyList())));
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+        return task;
+    }
+
+    /**
+     * Test: Enrichment - stub LiveQueriesUserInfoAction to return a populated identity for a known
+     * task key; assert the resulting LiveQueryRecord carries the expected username, roles, and backend roles.
+     */
+    public void testEnrichmentPopulatesUserIdentity() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.NONE);
+        // Set requesting user (not relevant for filtering since mode=NONE, but needed for the context)
+        setRequestingUser("admin|admin_role|all_access");
+
+        TaskInfo task = stubSingleSearchTask();
+        String taskKey = task.getTaskId().toString();
+
+        // Stub the user info fan-out to return identity for this task key
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            taskKey,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO("bob", List.of("role_a"), List.of("be_role_x"))
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        assertEquals(1, response.getLiveQueries().size());
+        LiveQueryRecord record = response.getLiveQueries().get(0);
+        assertEquals("bob", record.getUsername());
+        assertEquals(List.of("role_a"), record.getUserRoles());
+        assertEquals(List.of("be_role_x"), record.getBackendRoles());
+    }
+
+    /**
+     * Test: filter_by_mode=USERNAME - non-admin caller sees only records whose username matches theirs.
+     */
+    public void testFilterByModeUsername_NonAdminSeesOwnRecords() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("alice|backend1|user_role");
+
+        // Create two search tasks
+        TaskInfo task1 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "t1", 100L, 200L);
+        TaskInfo task2 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000000L, "t2", 300L, 400L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(task1, emptyList()), new TaskGroup(task2, emptyList())));
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        // Enrich task1 with username "alice" and task2 with "bob"
+        String key1 = task1.getTaskId().toString();
+        String key2 = task2.getTaskId().toString();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            key1,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "alice",
+                List.of("user_role"),
+                List.of("backend1")
+            )
+        );
+        infoMap.put(
+            key2,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "bob",
+                List.of("user_role"),
+                List.of("backend2")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // Alice should only see her own record
+        assertEquals(1, response.getLiveQueries().size());
+        assertEquals("alice", response.getLiveQueries().get(0).getUsername());
+        assertEquals(key1, response.getLiveQueries().get(0).getQueryId());
+    }
+
+    /**
+     * Test: filter_by_mode=USERNAME - admin (all_access role) sees all records.
+     */
+    public void testFilterByModeUsername_AdminSeesAll() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("superadmin|admin_backend|all_access");
+
+        // Create two search tasks from different users
+        TaskInfo task1 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "t1", 100L, 200L);
+        TaskInfo task2 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000000L, "t2", 300L, 400L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(List.of(new TaskGroup(task1, emptyList()), new TaskGroup(task2, emptyList())));
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        String key1 = task1.getTaskId().toString();
+        String key2 = task2.getTaskId().toString();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            key1,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "alice",
+                List.of("user_role"),
+                List.of("backend1")
+            )
+        );
+        infoMap.put(
+            key2,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "bob",
+                List.of("user_role"),
+                List.of("backend2")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // Admin sees all records
+        assertEquals(2, response.getLiveQueries().size());
+    }
+
+    /**
+     * Test: filter_by_mode=USERNAME - when user extraction fails (no thread context), returns empty list.
+     */
+    public void testFilterByModeUsername_MissingUserExtractionYieldsEmpty() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        // Do NOT set requestingUser - threadPool.getThreadContext() returns null
+        when(transportService.getThreadPool()).thenReturn(threadPool);
+        when(threadPool.getThreadContext()).thenReturn(null);
+
+        TaskInfo task = stubSingleSearchTask();
+        String taskKey = task.getTaskId().toString();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            taskKey,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "bob",
+                List.of("user_role"),
+                List.of("backend1")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // Missing user extraction yields empty list
+        assertEquals(0, response.getLiveQueries().size());
+    }
+
+    /**
+     * Test: filter_by_mode=BACKEND_ROLES - caller sees only records sharing at least one backend role.
+     */
+    public void testFilterByModeBackendRoles_SharedRoleVisible() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.BACKEND_ROLES);
+        setRequestingUser("carol|engineering,data_team|user_role");
+
+        TaskInfo task1 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 1000000L, "t1", 100L, 200L);
+        TaskInfo task2 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 2000000L, "t2", 300L, 400L);
+        TaskInfo task3 = createTaskInfo(node1, "indices:data/read/search", System.currentTimeMillis(), 3000000L, "t3", 500L, 600L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(
+            List.of(new TaskGroup(task1, emptyList()), new TaskGroup(task2, emptyList()), new TaskGroup(task3, emptyList()))
+        );
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        String key1 = task1.getTaskId().toString();
+        String key2 = task2.getTaskId().toString();
+        String key3 = task3.getTaskId().toString();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        // task1: shares "engineering" with carol
+        infoMap.put(
+            key1,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "alice",
+                List.of("user_role"),
+                List.of("engineering", "marketing")
+            )
+        );
+        // task2: no shared roles with carol
+        infoMap.put(
+            key2,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "bob",
+                List.of("user_role"),
+                List.of("finance")
+            )
+        );
+        // task3: shares "data_team" with carol
+        infoMap.put(
+            key3,
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "dave",
+                List.of("user_role"),
+                List.of("data_team", "ops")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // Carol should see task1 (shares engineering) and task3 (shares data_team), but not task2
+        assertEquals(2, response.getLiveQueries().size());
+        List<String> visibleIds = response.getLiveQueries().stream().map(LiveQueryRecord::getQueryId).toList();
+        assertTrue(visibleIds.contains(key1));
+        assertTrue(visibleIds.contains(key3));
+        assertFalse(visibleIds.contains(key2));
+    }
+
+    /**
+     * Test: Fail-open guard - when the user info fan-out fails, the filter is still applied before responding.
+     * With a non-NONE filter mode and a valid requesting user, the fail-open branch enriches records
+     * without identity (username=null), so the filter removes them.
+     */
+    public void testFailOpenGuardStillAppliesFilter() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("alice|backend1|user_role");
+
+        TaskInfo task = stubSingleSearchTask();
+
+        // Override the user-info fan-out to FAIL
+        doAnswer(inv -> {
+            ActionListener<org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse> listener = inv.getArgument(
+                2
+            );
+            listener.onFailure(new RuntimeException("Simulated user-info fan-out failure"));
+            return null;
+        }).when(client)
+            .execute(
+                org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction.INSTANCE),
+                any(),
+                any()
+            );
+
+        LiveQueriesRequest request = new LiveQueriesRequest(true);
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        LiveQueriesResponse response = future.actionGet();
+
+        // Records have no enriched username (because fan-out failed), so the USERNAME filter
+        // removes them (username on records is null, does not match "alice").
+        assertEquals(0, response.getLiveQueries().size());
     }
 
     public void testCoordinatorAndShardResourceAggregation() throws Exception {

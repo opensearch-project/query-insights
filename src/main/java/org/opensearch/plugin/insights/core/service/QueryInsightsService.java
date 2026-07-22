@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -597,6 +598,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         finishedQueriesCache.stop();
+        liveQueryUserMap.clear();
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);
     }
@@ -767,7 +769,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param taskKeys the task keys to resolve
      * @return a map of task key to its captured user info
      */
-    public Map<String, UserPrincipalContext.UserPrincipalInfo> getLiveQueryUserInfoForKeys(java.util.Collection<String> taskKeys) {
+    public Map<String, UserPrincipalContext.UserPrincipalInfo> getLiveQueryUserInfoForKeys(Collection<String> taskKeys) {
         Map<String, UserPrincipalContext.UserPrincipalInfo> resolved = new HashMap<>();
         if (taskKeys == null) {
             return resolved;
