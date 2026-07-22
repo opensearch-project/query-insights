@@ -43,6 +43,7 @@ import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.TaskDetails;
 import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskInfo;
@@ -299,15 +300,14 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             client.execute(
                 FinishedQueriesAction.INSTANCE,
                 new FinishedQueriesRequest(request.nodesIds()),
-                ActionListener.wrap(
-                    finishedResponse -> listener.onResponse(
-                        new LiveQueriesResponse(finalRecords, sortAndLimit(finishedResponse.getAllFinishedQueries(), request), true)
-                    ),
-                    ex -> {
-                        logger.error("Failed to retrieve finished queries from nodes", ex);
-                        listener.onFailure(ex);
-                    }
-                )
+                ActionListener.wrap(finishedResponse -> {
+                    List<FinishedQueryRecord> finishedRecords = sortAndLimit(finishedResponse.getAllFinishedQueries(), request);
+                    finishedRecords = filterFinishedRecordsByMode(finishedRecords);
+                    listener.onResponse(new LiveQueriesResponse(finalRecords, finishedRecords, true));
+                }, ex -> {
+                    logger.error("Failed to retrieve finished queries from nodes", ex);
+                    listener.onFailure(ex);
+                })
             );
         } else {
             listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
@@ -331,6 +331,37 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             if (mb == null) return -1;
             return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
         }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
+    }
+
+    /**
+     * Applies RBAC filtering to finished query records based on filter_by_mode.
+     * Finished records carry username/roles (stamped in addToFinishedCache), so the same
+     * access control must apply as for live records.
+     */
+    @SuppressWarnings("unchecked")
+    private List<FinishedQueryRecord> filterFinishedRecordsByMode(List<FinishedQueryRecord> records) {
+        FilterByMode mode = queryInsightsService.getFilterByMode();
+        if (mode == null || mode == FilterByMode.NONE) {
+            return records;
+        }
+        UserPrincipalInfo requestingUser;
+        try {
+            requestingUser = new UserPrincipalContext(transportService.getThreadPool()).extractUserInfo();
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+        if (requestingUser == null) {
+            return Collections.emptyList();
+        }
+        if (TopQueriesRbacFilter.isAdmin(requestingUser)) {
+            return records;
+        }
+        List<SearchQueryRecord> filtered = TopQueriesRbacFilter.filterRecords(
+            (List<SearchQueryRecord>) (List<?>) records,
+            mode,
+            requestingUser
+        );
+        return (List<FinishedQueryRecord>) (List<?>) filtered;
     }
 
     /**
