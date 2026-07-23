@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -83,7 +84,11 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.totalMemory = in.readLong();
         this.coordinatorTask = in.readOptionalWriteable(TaskDetails::new);
         this.shardTasks = in.readList(TaskDetails::new);
-        this.labels = in.readMap(StreamInput::readString, StreamInput::readString);
+        if (in.getVersion().onOrAfter(Version.V_3_8_0)) {
+            this.labels = in.readMap(StreamInput::readString, StreamInput::readString);
+        } else {
+            this.labels = new HashMap<>();
+        }
     }
 
     @Override
@@ -97,7 +102,9 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         out.writeLong(totalMemory);
         out.writeOptionalWriteable(coordinatorTask);
         out.writeList(shardTasks);
-        out.writeMap(labels, StreamOutput::writeString, StreamOutput::writeString);
+        if (out.getVersion().onOrAfter(Version.V_3_8_0)) {
+            out.writeMap(labels, StreamOutput::writeString, StreamOutput::writeString);
+        }
     }
 
     @Override
