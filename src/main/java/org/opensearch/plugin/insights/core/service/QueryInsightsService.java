@@ -29,9 +29,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -372,7 +374,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         // Collect all unique indices across sub-queries
-        java.util.Set<String> allIndices = new java.util.LinkedHashSet<>();
+        Set<String> allIndices = new LinkedHashSet<>();
         for (SearchQueryRecord r : group) {
             Object idx = r.getAttributes().get(Attribute.INDICES);
             if (idx instanceof String[] arr) {

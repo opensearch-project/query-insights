@@ -36,7 +36,6 @@ import org.opensearch.core.xcontent.XContentParserUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
 import org.opensearch.search.builder.SearchSourceBuilder;
-import org.opensearch.tasks.Task;
 import reactor.util.annotation.NonNull;
 
 /**
