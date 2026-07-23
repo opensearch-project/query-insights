@@ -227,6 +227,14 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
             // Add failed attribute
             attributes.put(Attribute.FAILED, random().nextBoolean());
+            // Add latency_breakdown_map attribute
+            Map<String, Long> latencyBreakdownMap = new LinkedHashMap<>();
+            latencyBreakdownMap.put("query_rewrite", randomLongBetween(0, 100));
+            latencyBreakdownMap.put("shard_routing", randomLongBetween(0, 50));
+            latencyBreakdownMap.put("pre_phase_overhead", randomLongBetween(0, 200));
+            latencyBreakdownMap.put("coordinator_queue_wait", randomLongBetween(0, 100));
+            latencyBreakdownMap.put("post_phase_overhead", randomLongBetween(0, 50));
+            attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, latencyBreakdownMap);
 
             SearchQueryRecord record = new SearchQueryRecord(
                 timestamp,
@@ -338,6 +346,20 @@ final public class QueryInsightsTestUtils {
         attributes.put(Attribute.USER_ROLES, new String[] { "admin", "user" });
         attributes.put(Attribute.FAILED, false);
         attributes.put(Attribute.BACKEND_ROLES, new String[] { "role1", "role2" });
+
+        // Add latency_breakdown_map for fixed test data
+        Map<String, Long> latencyBreakdownMap = new LinkedHashMap<>();
+        latencyBreakdownMap.put("pre_phase_overhead", 18L);
+        latencyBreakdownMap.put("query_rewrite", 8L);
+        latencyBreakdownMap.put("shard_routing", 3L);
+        latencyBreakdownMap.put("coordinator_queue_wait", 35L);
+        latencyBreakdownMap.put("query", 40L);
+        latencyBreakdownMap.put("fetch", 15L);
+        latencyBreakdownMap.put("post_phase_overhead", 4L);
+        latencyBreakdownMap.put("_has_timed_breakdown", 1L);
+        latencyBreakdownMap.put("query_rewrite.start_offset_micros", 120L);
+        latencyBreakdownMap.put("query_rewrite.duration_micros", 8000L);
+        attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, latencyBreakdownMap);
 
         return new SearchQueryRecord(
             timestamp,

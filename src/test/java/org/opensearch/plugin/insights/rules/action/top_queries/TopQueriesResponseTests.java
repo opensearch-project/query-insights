@@ -88,6 +88,18 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
             + "\"username\":\"testuser\","
             + "\"user_roles\":[\"admin\",\"user\"],"
             + "\"backend_roles\":[\"role1\",\"role2\"],"
+            + "\"latency_breakdown_map\":{"
+            + "\"pre_phase_overhead\":18,"
+            + "\"query_rewrite\":8,"
+            + "\"shard_routing\":3,"
+            + "\"coordinator_queue_wait\":35,"
+            + "\"query\":40,"
+            + "\"fetch\":15,"
+            + "\"post_phase_overhead\":4,"
+            + "\"_has_timed_breakdown\":1,"
+            + "\"query_rewrite.start_offset_micros\":120,"
+            + "\"query_rewrite.duration_micros\":8000"
+            + "},"
             + "\"measurements\":{"
             + "\"latency\":{"
             + "\"number\":1,"
@@ -330,5 +342,44 @@ public class TopQueriesResponseTests extends OpenSearchTestCase {
                 return new TopQueriesResponse(in);
             }
         }
+    }
+
+    /**
+     * Verify that latency_breakdown_map appears alongside phase_latency_map in the top_queries response,
+     * maintaining backward compatibility and matching the design API contract.
+     */
+    public void testLatencyBreakdownMapInResponse() throws IOException {
+        String id = "breakdown_test_id";
+        TopQueries topQueries = QueryInsightsTestUtils.createFixedTopQueries(id);
+        ClusterName clusterName = new ClusterName("test-cluster");
+        TopQueriesResponse response = new TopQueriesResponse(clusterName, List.of(topQueries), new ArrayList<>(), MetricType.LATENCY);
+
+        XContentBuilder builder = MediaTypeRegistry.contentBuilder(MediaTypeRegistry.JSON);
+        String json = BytesReference.bytes(response.toXContent(builder, ToXContent.EMPTY_PARAMS)).utf8ToString();
+
+        // Verify phase_latency_map is still present and unchanged (backward compatibility)
+        assertTrue("phase_latency_map should be present", json.contains("\"phase_latency_map\":{"));
+        assertTrue("phase_latency_map should contain expand", json.contains("\"expand\":1"));
+        assertTrue("phase_latency_map should contain query", json.contains("\"query\":10"));
+        assertTrue("phase_latency_map should contain fetch:1", json.contains("\"fetch\":1"));
+
+        // Verify latency_breakdown_map appears as a new field alongside phase_latency_map
+        assertTrue("latency_breakdown_map should be present", json.contains("\"latency_breakdown_map\":{"));
+
+        // Verify latency_breakdown_map has flat key-value structure with Long values
+        assertTrue("Should contain pre_phase_overhead", json.contains("\"pre_phase_overhead\":18"));
+        assertTrue("Should contain query_rewrite", json.contains("\"query_rewrite\":8"));
+        assertTrue("Should contain shard_routing", json.contains("\"shard_routing\":3"));
+        assertTrue("Should contain coordinator_queue_wait", json.contains("\"coordinator_queue_wait\":35"));
+        assertTrue("Should contain query duration", json.contains("\"query\":40"));
+        assertTrue("Should contain fetch duration", json.contains("\"fetch\":15"));
+        assertTrue("Should contain post_phase_overhead", json.contains("\"post_phase_overhead\":4"));
+
+        // Verify _has_timed_breakdown flag is present
+        assertTrue("Should contain _has_timed_breakdown flag", json.contains("\"_has_timed_breakdown\":1"));
+
+        // Verify timed breakdown entries (start_offset_micros and duration_micros)
+        assertTrue("Should contain start_offset_micros", json.contains("\"query_rewrite.start_offset_micros\":120"));
+        assertTrue("Should contain duration_micros", json.contains("\"query_rewrite.duration_micros\":8000"));
     }
 }
