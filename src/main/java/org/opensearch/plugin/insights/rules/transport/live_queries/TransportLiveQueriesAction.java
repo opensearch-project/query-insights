@@ -141,6 +141,18 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         // Determine status based on coordinator cancellation
                         String queryStatus = coordinatorInfo.isCancelled() ? "cancelled" : "running";
 
+                        // Extract SQL/PPL labels from task headers
+                        Map<String, String> queryLabels = new java.util.HashMap<>();
+                        Map<String, String> taskHeaders = coordinatorInfo.getHeaders();
+                        if (taskHeaders != null) {
+                            String querySource = taskHeaders.get("x-query-source");
+                            if (querySource != null) queryLabels.put("x-query-source", querySource);
+                            String originalQuery = taskHeaders.get("x-original-query");
+                            if (originalQuery != null) queryLabels.put("x-original-query", originalQuery);
+                            String executionId = taskHeaders.get("x-query-execution-id");
+                            if (executionId != null) queryLabels.put("x-query-execution-id", executionId);
+                        }
+
                         LiveQueryRecord record = new LiveQueryRecord(
                             queryId,
                             queryStatus,
@@ -150,7 +162,8 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             totalCpu,
                             totalMem,
                             new TaskDetails(coordinatorInfo, queryStatus),
-                            shardTasks
+                            shardTasks,
+                            queryLabels
                         );
 
                         allRecords.add(record);
