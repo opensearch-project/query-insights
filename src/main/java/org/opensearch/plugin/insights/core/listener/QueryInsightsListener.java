@@ -68,7 +68,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     static final String QUERY_SOURCE_HEADER = "x-query-source";
     static final String ORIGINAL_QUERY_HEADER = "x-original-query";
-    static final String QUERY_EXECUTION_ID_HEADER = "x-query-execution-id";
+    static final String QUERY_EXECUTION_ID_HEADER = QueryInsightsService.QUERY_EXECUTION_ID_HEADER;
     static final String QUERY_PHASES_HEADER = "x-query-phases";
 
     private final QueryInsightsService queryInsightsService;

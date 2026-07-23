@@ -62,6 +62,7 @@ import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -262,7 +263,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
     }
 
-    private static final String QUERY_EXECUTION_ID_HEADER = "x-query-execution-id";
+    public static final String QUERY_EXECUTION_ID_HEADER = "x-query-execution-id";
 
     /**
      * Drain the queryRecordsQueue into internal stores and services
@@ -402,11 +403,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
         mergedAttributes.put(Attribute.SUB_QUERIES, subQueries);
 
+        // Set SOURCE to the original SQL/PPL text instead of a DSL sub-query.
+        // This prevents TopQueriesService.setSourceAndTruncation() from calling
+        // getSearchSourceBuilder().toString() on a null builder.
+        String originalQuery = (String) labels.get("x-original-query");
+        if (originalQuery != null) {
+            mergedAttributes.put(Attribute.SOURCE, new SourceString(originalQuery));
+        } else {
+            mergedAttributes.put(Attribute.SOURCE, new SourceString(""));
+        }
+
         SearchQueryRecord merged = new SearchQueryRecord(
             primary.getTimestamp(),
             summedMeasurements,
             mergedAttributes,
-            primary.getSearchSourceBuilder(),
+            null,
             null,
             primary.getId()
         );
@@ -418,24 +429,29 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * Format: "phase1:time1|metric1:val1|metric2:val2,phase2:time2|metric1:val1"
      *
      * @param phasesStr the raw phases string from labels
-     * @return map of phase name to phase metrics (time and any additional metrics)
+     * @return map of phase name to phase metrics (time and any additional metrics), empty map on parse failure
      */
     private Map<String, Map<String, Long>> parsePhasesString(String phasesStr) {
         Map<String, Map<String, Long>> phasesMap = new HashMap<>();
-        for (String part : phasesStr.split(",")) {
-            String[] segments = part.split("\\|");
-            String[] kv = segments[0].split(":", 2);
-            if (kv.length == 2) {
-                Map<String, Long> phaseMetrics = new HashMap<>();
-                phaseMetrics.put("time", Long.parseLong(kv[1]));
-                for (int i = 1; i < segments.length; i++) {
-                    String[] metric = segments[i].split(":", 2);
-                    if (metric.length == 2) {
-                        phaseMetrics.put(metric[0], Long.parseLong(metric[1]));
+        try {
+            for (String part : phasesStr.split(",")) {
+                String[] segments = part.split("\\|");
+                String[] kv = segments[0].split(":", 2);
+                if (kv.length == 2) {
+                    Map<String, Long> phaseMetrics = new HashMap<>();
+                    phaseMetrics.put("time", Long.parseLong(kv[1]));
+                    for (int i = 1; i < segments.length; i++) {
+                        String[] metric = segments[i].split(":", 2);
+                        if (metric.length == 2) {
+                            phaseMetrics.put(metric[0], Long.parseLong(metric[1]));
+                        }
                     }
+                    phasesMap.put(kv[0], phaseMetrics);
                 }
-                phasesMap.put(kv[0], phaseMetrics);
             }
+        } catch (NumberFormatException e) {
+            logger.debug("Failed to parse x-query-phases header: {}", phasesStr, e);
+            return new HashMap<>();
         }
         return phasesMap;
     }
