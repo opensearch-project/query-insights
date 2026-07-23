@@ -189,7 +189,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                             default:
                                 return Long.compare(b.getTotalLatency(), a.getTotalLatency());
                         }
-                    }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
+                    }).toList();
 
                     // Fan out to all nodes to resolve user identity captured on the coordinating node of
                     // each search, then continue with finished-queries handling (if requested).
@@ -242,12 +242,14 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             ActionListener.wrap(userInfoResponse -> {
                 List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(records, userInfoResponse.getAllUserInfo());
                 List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(enrichedRecords);
-                respondWithFinishedQueries(filteredRecords, request, listener);
+                List<LiveQueryRecord> limitedRecords = applyLimit(filteredRecords, request);
+                respondWithFinishedQueries(limitedRecords, request, listener);
             }, ex -> {
                 // User info is best-effort — on failure, fall back to records without identity
                 logger.error("Failed to resolve live query user info from nodes", ex);
                 List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(records);
-                respondWithFinishedQueries(filteredRecords, request, listener);
+                List<LiveQueryRecord> limitedRecords = applyLimit(filteredRecords, request);
+                respondWithFinishedQueries(limitedRecords, request, listener);
             })
         );
     }
@@ -301,8 +303,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                 FinishedQueriesAction.INSTANCE,
                 new FinishedQueriesRequest(request.nodesIds()),
                 ActionListener.wrap(finishedResponse -> {
-                    List<FinishedQueryRecord> finishedRecords = sortAndLimit(finishedResponse.getAllFinishedQueries(), request);
-                    finishedRecords = filterFinishedRecordsByMode(finishedRecords);
+                    List<FinishedQueryRecord> finishedRecords = filterFinishedRecordsByMode(
+                        sortFinishedRecords(finishedResponse.getAllFinishedQueries(), request)
+                    );
+                    finishedRecords = limitFinishedRecords(finishedRecords, request);
                     listener.onResponse(new LiveQueriesResponse(finalRecords, finishedRecords, true));
                 }, ex -> {
                     logger.error("Failed to retrieve finished queries from nodes", ex);
@@ -322,7 +326,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         }
     }
 
-    private List<FinishedQueryRecord> sortAndLimit(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
+    private List<LiveQueryRecord> applyLimit(List<LiveQueryRecord> records, LiveQueriesRequest request) {
+        if (request.getSize() < 0) return records;
+        return records.stream().limit(request.getSize()).toList();
+    }
+
+    private List<FinishedQueryRecord> sortFinishedRecords(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
         return records.stream().sorted((a, b) -> {
             Measurement ma = a.getMeasurements().get(request.getSortBy());
             Measurement mb = b.getMeasurements().get(request.getSortBy());
@@ -330,7 +339,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             if (ma == null) return 1;
             if (mb == null) return -1;
             return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
-        }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
+        }).toList();
+    }
+
+    private List<FinishedQueryRecord> limitFinishedRecords(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
+        if (request.getSize() < 0) return records;
+        return records.stream().limit(request.getSize()).toList();
     }
 
     /**
