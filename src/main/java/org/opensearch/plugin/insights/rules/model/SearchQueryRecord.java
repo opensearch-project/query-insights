@@ -408,8 +408,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                         Map<String, Object> labels = new HashMap<>();
                         while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String labelKey = parser.currentName();
                             parser.nextToken();
-                            labels.put(Task.X_OPAQUE_ID, parser.text());
+                            labels.put(labelKey, parser.text());
                         }
                         attributes.put(Attribute.LABELS, labels);
                         break;

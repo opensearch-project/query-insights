@@ -63,8 +63,12 @@ import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCatego
 import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -285,6 +289,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
     }
 
+    public static final String QUERY_EXECUTION_ID_HEADER = "x-query-execution-id";
+
     /**
      * Drain the queryRecordsQueue into internal stores and services
      */
@@ -293,21 +299,187 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         queryRecordsQueue.drainTo(records);
         records.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
 
+        final List<SearchQueryRecord> aggregatedRecords = aggregateByExecutionId(records);
+
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
-                // ingest the records into topQueriesService
-                topQueriesServices.get(metricType).consumeRecords(records);
+                topQueriesServices.get(metricType).consumeRecords(aggregatedRecords);
             }
         }
 
         if (searchQueryMetricsEnabled) {
             try {
-                searchQueryCategorizer.consumeRecords(records);
+                searchQueryCategorizer.consumeRecords(aggregatedRecords);
             } catch (Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.QUERY_CATEGORIZE_EXCEPTIONS);
                 logger.error("Error while trying to categorize the queries.", e);
             }
         }
+    }
+
+    /**
+     * Keep all individual DSL records AND create a synthetic parent SQL/PPL record
+     * for each execution ID group. Both are added to the result so top N can rank them
+     * independently. They reference each other via execution ID and sub_queries[].id.
+     */
+    @SuppressWarnings("unchecked")
+    List<SearchQueryRecord> aggregateByExecutionId(List<SearchQueryRecord> records) {
+        List<SearchQueryRecord> result = new ArrayList<>();
+        Map<String, List<SearchQueryRecord>> groupedByExecId = new HashMap<>();
+
+        for (SearchQueryRecord record : records) {
+            Map<String, Object> labels = (Map<String, Object>) record.getAttributes().get(Attribute.LABELS);
+            String execId = labels != null ? (String) labels.get(QUERY_EXECUTION_ID_HEADER) : null;
+            if (execId == null) {
+                result.add(record);
+            } else {
+                groupedByExecId.computeIfAbsent(execId, k -> new ArrayList<>()).add(record);
+            }
+        }
+
+        for (Map.Entry<String, List<SearchQueryRecord>> entry : groupedByExecId.entrySet()) {
+            List<SearchQueryRecord> group = entry.getValue();
+            // Keep all individual DSL records
+            result.addAll(group);
+            if (group.size() == 1) {
+                // Parse phases for single-query SQL records too
+                SearchQueryRecord single = group.get(0);
+                Map<String, Object> singleLabels = (Map<String, Object>) single.getAttributes().get(Attribute.LABELS);
+                String phasesStr = singleLabels != null ? (String) singleLabels.get("x-query-phases") : null;
+                if (phasesStr != null) {
+                    Map<String, Map<String, Long>> phasesMap = parsePhasesString(phasesStr);
+                    single.getAttributes().put(Attribute.SQL_PHASES, phasesMap);
+                }
+            }
+            // Also create a parent SQL record if there are multiple sub-queries
+            if (group.size() > 1) {
+                result.add(mergeRecords(group));
+            }
+        }
+
+        result.sort(Comparator.comparingLong(SearchQueryRecord::getTimestamp));
+        return result;
+    }
+
+    /**
+     * Merge multiple search query records (from the same SQL/PPL execution) into one.
+     * Sums metrics, keeps the first record's labels/attributes, and stores sub-queries.
+     */
+    @SuppressWarnings("unchecked")
+    private SearchQueryRecord mergeRecords(List<SearchQueryRecord> group) {
+        SearchQueryRecord primary = group.get(0);
+
+        Map<MetricType, Measurement> summedMeasurements = new HashMap<>();
+        for (MetricType type : MetricType.allMetricTypes()) {
+            long total = 0;
+            for (SearchQueryRecord r : group) {
+                Measurement m = r.getMeasurements().get(type);
+                if (m != null && m.getMeasurement() != null) {
+                    total += m.getMeasurement().longValue();
+                }
+            }
+            summedMeasurements.put(type, new Measurement(total));
+        }
+
+        Map<Attribute, Object> mergedAttributes = new HashMap<>(primary.getAttributes());
+
+        // Store sub-query count and parse phase timings into structured form
+        Map<String, Object> labels = new HashMap<>(
+            (Map<String, Object>) mergedAttributes.getOrDefault(Attribute.LABELS, new HashMap<>())
+        );
+        labels.put("sub_query_count", String.valueOf(group.size()));
+        mergedAttributes.put(Attribute.LABELS, labels);
+
+        // Parse x-query-phases into structured phase_latency_map for the SQL/PPL record
+        String phasesStr = (String) labels.get("x-query-phases");
+        if (phasesStr != null) {
+            Map<String, Map<String, Long>> phasesMap = parsePhasesString(phasesStr);
+            mergedAttributes.put(Attribute.SQL_PHASES, phasesMap);
+        }
+
+        // Collect all unique indices across sub-queries
+        java.util.Set<String> allIndices = new java.util.LinkedHashSet<>();
+        for (SearchQueryRecord r : group) {
+            Object idx = r.getAttributes().get(Attribute.INDICES);
+            if (idx instanceof String[] arr) {
+                for (String s : arr) allIndices.add(s);
+            }
+        }
+        if (!allIndices.isEmpty()) {
+            mergedAttributes.put(Attribute.INDICES, allIndices.toArray(new String[0]));
+        }
+
+        // Store sub-queries with id, source, indices, and measurements
+        List<Map<String, Object>> subQueries = new ArrayList<>();
+        for (SearchQueryRecord r : group) {
+            Map<String, Object> sub = new HashMap<>();
+            sub.put("id", r.getId());
+            SearchSourceBuilder ssb = r.getSearchSourceBuilder();
+            sub.put("source", ssb != null ? ssb.toString() : null);
+            sub.put("indices", r.getAttributes().get(Attribute.INDICES));
+            Map<String, Object> subMeasurements = new HashMap<>();
+            for (Map.Entry<MetricType, Measurement> me : r.getMeasurements().entrySet()) {
+                if (me.getValue() != null && me.getValue().getMeasurement() != null) {
+                    subMeasurements.put(me.getKey().toString(), me.getValue().getMeasurement());
+                }
+            }
+            sub.put("measurements", subMeasurements);
+            sub.put("timestamp", r.getTimestamp());
+            subQueries.add(sub);
+        }
+        mergedAttributes.put(Attribute.SUB_QUERIES, subQueries);
+
+        // Set SOURCE to the original SQL/PPL text instead of a DSL sub-query.
+        // This prevents TopQueriesService.setSourceAndTruncation() from calling
+        // getSearchSourceBuilder().toString() on a null builder.
+        String originalQuery = (String) labels.get("x-original-query");
+        if (originalQuery != null) {
+            mergedAttributes.put(Attribute.SOURCE, new SourceString(originalQuery));
+        } else {
+            mergedAttributes.put(Attribute.SOURCE, new SourceString(""));
+        }
+
+        SearchQueryRecord merged = new SearchQueryRecord(
+            primary.getTimestamp(),
+            summedMeasurements,
+            mergedAttributes,
+            null,
+            null,
+            primary.getId()
+        );
+        return merged;
+    }
+
+    /**
+     * Parse a phases string (from x-query-phases label) into a structured map.
+     * Format: "phase1:time1|metric1:val1|metric2:val2,phase2:time2|metric1:val1"
+     *
+     * @param phasesStr the raw phases string from labels
+     * @return map of phase name to phase metrics (time and any additional metrics), empty map on parse failure
+     */
+    private Map<String, Map<String, Long>> parsePhasesString(String phasesStr) {
+        Map<String, Map<String, Long>> phasesMap = new HashMap<>();
+        try {
+            for (String part : phasesStr.split(",")) {
+                String[] segments = part.split("\\|");
+                String[] kv = segments[0].split(":", 2);
+                if (kv.length == 2) {
+                    Map<String, Long> phaseMetrics = new HashMap<>();
+                    phaseMetrics.put("time", Long.parseLong(kv[1]));
+                    for (int i = 1; i < segments.length; i++) {
+                        String[] metric = segments[i].split(":", 2);
+                        if (metric.length == 2) {
+                            phaseMetrics.put(metric[0], Long.parseLong(metric[1]));
+                        }
+                    }
+                    phasesMap.put(kv[0], phaseMetrics);
+                }
+            }
+        } catch (NumberFormatException e) {
+            logger.debug("Failed to parse x-query-phases header: {}", phasesStr, e);
+            return new HashMap<>();
+        }
+        return phasesMap;
     }
 
     /**

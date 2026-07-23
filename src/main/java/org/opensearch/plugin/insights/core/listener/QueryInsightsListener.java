@@ -67,6 +67,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
 
+    static final String QUERY_SOURCE_HEADER = "x-query-source";
+    static final String ORIGINAL_QUERY_HEADER = "x-original-query";
+    static final String QUERY_EXECUTION_ID_HEADER = QueryInsightsService.QUERY_EXECUTION_ID_HEADER;
+    static final String QUERY_PHASES_HEADER = "x-query-phases";
+
     private final QueryInsightsService queryInsightsService;
     private final ClusterService clusterService;
     private boolean groupingFieldNameEnabled;
@@ -400,6 +405,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(DEFAULT_TOP_N_QUERY_MAP));
             attributes.put(Attribute.WLM_GROUP_ID, searchTask.getWorkloadGroupId());
             attributes.put(Attribute.FAILED, failed);
+
             if (queryInsightsService.isGroupingEnabled() || log.isTraceEnabled()) {
                 // Generate the query shape only if grouping is enabled or trace logging is enabled
                 final String queryShape = queryShapeGenerator.buildShape(
@@ -426,6 +432,23 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             String userProvidedLabel = context.getTask().getHeader(Task.X_OPAQUE_ID);
             if (userProvidedLabel != null) {
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
+            }
+            // Retrieve query source metadata (SQL/PPL) if present
+            String querySource = context.getTask().getHeader(QUERY_SOURCE_HEADER);
+            if (querySource != null) {
+                labels.put(QUERY_SOURCE_HEADER, querySource);
+            }
+            String originalQuery = context.getTask().getHeader(ORIGINAL_QUERY_HEADER);
+            if (originalQuery != null) {
+                labels.put(ORIGINAL_QUERY_HEADER, originalQuery);
+            }
+            String executionId = context.getTask().getHeader(QUERY_EXECUTION_ID_HEADER);
+            if (executionId != null) {
+                labels.put(QUERY_EXECUTION_ID_HEADER, executionId);
+            }
+            String queryPhases = context.getTask().getHeader(QUERY_PHASES_HEADER);
+            if (queryPhases != null) {
+                labels.put(QUERY_PHASES_HEADER, queryPhases);
             }
             attributes.put(Attribute.LABELS, labels);
 

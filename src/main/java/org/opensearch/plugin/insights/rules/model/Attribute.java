@@ -109,7 +109,17 @@ public enum Attribute {
     /**
      * Indicates if the search request failed during execution.
      */
-    FAILED;
+    FAILED,
+
+    /**
+     * Sub-queries list for aggregated SQL/PPL records that generated multiple DSL queries.
+     */
+    SUB_QUERIES,
+
+    /**
+     * SQL/PPL phase breakdown (parse, analyze, plan) with time/cpu/memory per phase.
+     */
+    SQL_PHASES;
 
     /**
      * Read an Attribute from a StreamInput
@@ -142,7 +152,9 @@ public enum Attribute {
      */
     @SuppressWarnings("unchecked")
     public static void writeValueTo(StreamOutput out, Object attributeValue) throws IOException {
-        if (attributeValue instanceof List) {
+        if (attributeValue instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map) {
+            out.writeGenericValue(attributeValue);
+        } else if (attributeValue instanceof List) {
             out.writeList((List<? extends Writeable>) attributeValue);
         } else if (attributeValue instanceof SourceString) {
             if (out.getVersion().onOrAfter(Version.V_3_5_0)) {
