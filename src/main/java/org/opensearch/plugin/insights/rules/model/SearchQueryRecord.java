@@ -290,6 +290,19 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         MetricType metric = MetricType.fromString(fieldName);
                         measurements.put(metric, Measurement.fromXContent(parser));
                         break;
+                    case MEASUREMENTS:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String metricName = parser.currentName();
+                            parser.nextToken();
+                            MetricType nestedMetric = MetricType.fromString(metricName);
+                            if (nestedMetric != null) {
+                                measurements.put(nestedMetric, Measurement.fromXContent(parser));
+                            } else {
+                                parser.skipChildren();
+                            }
+                        }
+                        break;
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());
                         break;
@@ -413,6 +426,70 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         }
                         attributes.put(Attribute.LABELS, labels);
                         break;
+                    case "sql_phases":
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        Map<String, Map<String, Long>> sqlPhases = new HashMap<>();
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String phaseName = parser.currentName();
+                            parser.nextToken();
+                            Map<String, Long> phaseMetrics = new HashMap<>();
+                            XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                            while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                                String metricKey = parser.currentName();
+                                parser.nextToken();
+                                phaseMetrics.put(metricKey, parser.longValue());
+                            }
+                            sqlPhases.put(phaseName, phaseMetrics);
+                        }
+                        attributes.put(Attribute.SQL_PHASES, sqlPhases);
+                        break;
+                    case "sub_queries":
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_ARRAY, parser.currentToken(), parser);
+                        List<Map<String, Object>> subQueries = new ArrayList<>();
+                        while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
+                            Map<String, Object> subQuery = new HashMap<>();
+                            XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                            while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                                String subField = parser.currentName();
+                                parser.nextToken();
+                                switch (subField) {
+                                    case "id":
+                                        subQuery.put("id", parser.text());
+                                        break;
+                                    case "source":
+                                        subQuery.put("source", parser.currentToken() == XContentParser.Token.VALUE_NULL ? null : parser.text());
+                                        break;
+                                    case "timestamp":
+                                        subQuery.put("timestamp", parser.longValue());
+                                        break;
+                                    case "indices":
+                                        if (parser.currentToken() == XContentParser.Token.START_ARRAY) {
+                                            List<String> subIndices = new ArrayList<>();
+                                            while (parser.nextToken() != XContentParser.Token.END_ARRAY) {
+                                                subIndices.add(parser.text());
+                                            }
+                                            subQuery.put("indices", subIndices.toArray(new String[0]));
+                                        }
+                                        break;
+                                    case "measurements":
+                                        Map<String, Object> subMeasurements = new HashMap<>();
+                                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                                            String mKey = parser.currentName();
+                                            parser.nextToken();
+                                            subMeasurements.put(mKey, parser.numberValue());
+                                        }
+                                        subQuery.put("measurements", subMeasurements);
+                                        break;
+                                    default:
+                                        parser.skipChildren();
+                                        break;
+                                }
+                            }
+                            subQueries.add(subQuery);
+                        }
+                        attributes.put(Attribute.SUB_QUERIES, subQueries);
+                        break;
                     case TOP_N_QUERY:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                         Map<String, Boolean> metricTypeMap = new HashMap<>();
@@ -424,6 +501,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.TOP_N_QUERY, metricTypeMap);
                         break;
                     default:
+                        parser.skipChildren();
                         break;
                 }
             } catch (Exception e) {
@@ -622,7 +700,21 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             if (entry.getKey() == Attribute.TOP_N_QUERY) {
                 continue;
             }
-            builder.field(entry.getKey().toString(), entry.getValue());
+            if (entry.getKey() == Attribute.SQL_PHASES && entry.getValue() instanceof Map) {
+                builder.startObject(entry.getKey().toString());
+                @SuppressWarnings("unchecked")
+                Map<String, Map<String, Long>> phases = (Map<String, Map<String, Long>>) entry.getValue();
+                for (Map.Entry<String, Map<String, Long>> phase : phases.entrySet()) {
+                    builder.startObject(phase.getKey());
+                    for (Map.Entry<String, Long> metric : phase.getValue().entrySet()) {
+                        builder.field(metric.getKey(), metric.getValue());
+                    }
+                    builder.endObject();
+                }
+                builder.endObject();
+            } else {
+                builder.field(entry.getKey().toString(), entry.getValue());
+            }
         }
         builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
@@ -670,6 +762,19 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.SOURCE && useObjectSource) {
                 builder.field(entry.getKey().toString(), searchSourceBuilder);
+            } else if (entry.getKey() == Attribute.SQL_PHASES && entry.getValue() instanceof Map) {
+                // Manually serialize nested Map for sql_phases
+                builder.startObject(entry.getKey().toString());
+                @SuppressWarnings("unchecked")
+                Map<String, Map<String, Long>> phases = (Map<String, Map<String, Long>>) entry.getValue();
+                for (Map.Entry<String, Map<String, Long>> phase : phases.entrySet()) {
+                    builder.startObject(phase.getKey());
+                    for (Map.Entry<String, Long> metric : phase.getValue().entrySet()) {
+                        builder.field(metric.getKey(), metric.getValue());
+                    }
+                    builder.endObject();
+                }
+                builder.endObject();
             } else {
                 builder.field(entry.getKey().toString(), entry.getValue());
             }

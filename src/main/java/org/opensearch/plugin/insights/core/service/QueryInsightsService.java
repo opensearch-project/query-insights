@@ -294,9 +294,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Keep all individual DSL records AND create a synthetic parent SQL/PPL record
-     * for each execution ID group. Both are added to the result so top N can rank them
-     * independently. They reference each other via execution ID and sub_queries[].id.
+     * Aggregate records by execution ID so that SQL/PPL queries appear as a single record
+     * with their derived DSL sub-queries nested inside the parent's sub_queries field.
+     * Direct DSL queries (without an execution ID) remain as individual top-level records.
      */
     @SuppressWarnings("unchecked")
     List<SearchQueryRecord> aggregateByExecutionId(List<SearchQueryRecord> records) {
@@ -315,21 +315,87 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         for (Map.Entry<String, List<SearchQueryRecord>> entry : groupedByExecId.entrySet()) {
             List<SearchQueryRecord> group = entry.getValue();
-            // Keep all individual DSL records
-            result.addAll(group);
+            String parentExecId = entry.getKey();
+
             if (group.size() == 1) {
-                // Parse phases for single-query SQL records too
+                // Single sub-query SQL/PPL execution — create parent and also keep the DSL sub-query
                 SearchQueryRecord single = group.get(0);
                 Map<String, Object> singleLabels = (Map<String, Object>) single.getAttributes().get(Attribute.LABELS);
                 String phasesStr = singleLabels != null ? (String) singleLabels.get("x-query-phases") : null;
+
+                // Create a copy of attributes for the parent record (before modifying sub-query)
+                Map<Attribute, Object> parentAttributes = new HashMap<>(single.getAttributes());
                 if (phasesStr != null) {
                     Map<String, Map<String, Long>> phasesMap = parsePhasesString(phasesStr);
-                    single.getAttributes().put(Attribute.SQL_PHASES, phasesMap);
+                    parentAttributes.put(Attribute.SQL_PHASES, phasesMap);
                 }
-            }
-            // Also create a parent SQL record if there are multiple sub-queries
-            if (group.size() > 1) {
+                // Copy measurements for parent (with SQL overhead added)
+                Map<MetricType, Measurement> parentMeasurements = new HashMap<>();
+                for (Map.Entry<MetricType, Measurement> me : single.getMeasurements().entrySet()) {
+                    parentMeasurements.put(me.getKey(), new Measurement(me.getValue().getMeasurement()));
+                }
+                if (phasesStr != null) {
+                    Map<String, Map<String, Long>> phasesMap = parsePhasesString(phasesStr);
+                    addSqlPhaseOverhead(parentMeasurements, phasesMap);
+                }
+                // Create parent record with execution ID — include sub_queries for detail page
+                List<Map<String, Object>> subQueriesList = new ArrayList<>();
+                Map<String, Object> subEntry = new HashMap<>();
+                subEntry.put("id", single.getId());
+                SearchSourceBuilder ssb = single.getSearchSourceBuilder();
+                subEntry.put("source", ssb != null ? ssb.toString() : null);
+                subEntry.put("indices", single.getAttributes().get(Attribute.INDICES));
+                Map<String, Object> subMeasurements = new HashMap<>();
+                for (Map.Entry<MetricType, Measurement> me : single.getMeasurements().entrySet()) {
+                    if (me.getValue() != null && me.getValue().getMeasurement() != null) {
+                        subMeasurements.put(me.getKey().toString(), me.getValue().getMeasurement());
+                    }
+                }
+                subEntry.put("measurements", subMeasurements);
+                subEntry.put("timestamp", single.getTimestamp());
+                subQueriesList.add(subEntry);
+                parentAttributes.put(Attribute.SUB_QUERIES, subQueriesList);
+
+                SearchQueryRecord parentRecord = new SearchQueryRecord(
+                    single.getTimestamp(),
+                    parentMeasurements,
+                    parentAttributes,
+                    single.getSearchSourceBuilder(),
+                    null,
+                    parentExecId
+                );
+                result.add(parentRecord);
+
+                // Also store the original DSL sub-query with parent_id link (separate labels copy)
+                Map<String, Object> subLabels = new HashMap<>(
+                    (Map<String, Object>) single.getAttributes().getOrDefault(Attribute.LABELS, new HashMap<>())
+                );
+                subLabels.put("parent_id", parentExecId);
+                Map<Attribute, Object> subAttributes = new HashMap<>(single.getAttributes());
+                subAttributes.put(Attribute.LABELS, subLabels);
+                SearchQueryRecord subRecord = new SearchQueryRecord(
+                    single.getTimestamp(),
+                    single.getMeasurements(),
+                    subAttributes,
+                    single.getSearchSourceBuilder(),
+                    null,
+                    single.getId()
+                );
+                result.add(subRecord);
+            } else {
+                // Multiple sub-queries — create merged parent AND keep individual sub-queries
+                // 1. Add merged parent record
                 result.add(mergeRecords(group));
+
+                // 2. Add individual sub-queries with parent_id link
+                for (SearchQueryRecord subQuery : group) {
+                    Map<String, Object> subLabels = new HashMap<>(
+                        (Map<String, Object>) subQuery.getAttributes().getOrDefault(Attribute.LABELS, new HashMap<>())
+                    );
+                    subLabels.put("parent_id", parentExecId);
+                    subQuery.getAttributes().put(Attribute.LABELS, subLabels);
+                    result.add(subQuery);
+                }
             }
         }
 
@@ -367,10 +433,31 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         mergedAttributes.put(Attribute.LABELS, labels);
 
         // Parse x-query-phases into structured phase_latency_map for the SQL/PPL record
+        // Search all records in the group for the phases string (not just the primary)
         String phasesStr = (String) labels.get("x-query-phases");
+        if (phasesStr == null) {
+            for (SearchQueryRecord r : group) {
+                Map<String, Object> rLabels = (Map<String, Object>) r.getAttributes().get(Attribute.LABELS);
+                if (rLabels != null && rLabels.get("x-query-phases") != null) {
+                    phasesStr = (String) rLabels.get("x-query-phases");
+                    labels.put("x-query-phases", phasesStr);
+                    break;
+                }
+            }
+        }
         if (phasesStr != null) {
             Map<String, Map<String, Long>> phasesMap = parsePhasesString(phasesStr);
             mergedAttributes.put(Attribute.SQL_PHASES, phasesMap);
+            // Add SQL phase overhead to total measurements
+            addSqlPhaseOverhead(summedMeasurements, phasesMap);
+        } else {
+            // No phase data available (e.g., JOIN queries) — create minimal phases
+            // to indicate SQL processing occurred even without detailed breakdown
+            Map<String, Map<String, Long>> minimalPhases = new HashMap<>();
+            Map<String, Long> totalEntry = new HashMap<>();
+            totalEntry.put("time", 0L);
+            minimalPhases.put("total", totalEntry);
+            mergedAttributes.put(Attribute.SQL_PHASES, minimalPhases);
         }
 
         // Collect all unique indices across sub-queries
@@ -415,15 +502,70 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             mergedAttributes.put(Attribute.SOURCE, new SourceString(""));
         }
 
+        // Use the SQL/PPL execution ID as the record ID (meaningful correlation ID)
+        // rather than the first sub-query's random UUID
+        String executionId = (String) labels.get(QUERY_EXECUTION_ID_HEADER);
+        String recordId = executionId != null ? executionId : primary.getId();
+
         SearchQueryRecord merged = new SearchQueryRecord(
             primary.getTimestamp(),
             summedMeasurements,
             mergedAttributes,
             null,
             null,
-            primary.getId()
+            recordId
         );
         return merged;
+    }
+
+    /**
+     * Add SQL/PPL phase overhead (parse, analyze, plan) to the total measurements.
+     * This makes the summary metrics reflect end-to-end latency/CPU/memory.
+     */
+    private void addSqlPhaseOverhead(Map<MetricType, Measurement> measurements, Map<String, Map<String, Long>> phasesMap) {
+        long extraLatencyNanos = 0;
+        long extraCpuNanos = 0;
+        long extraMemBytes = 0;
+
+        for (Map.Entry<String, Map<String, Long>> phase : phasesMap.entrySet()) {
+            if ("total".equals(phase.getKey())) {
+                // Use total time as the latency overhead (already includes parse+analyze+plan)
+                Long totalTime = phase.getValue().get("time");
+                if (totalTime != null) {
+                    extraLatencyNanos = totalTime;
+                }
+            } else {
+                // Sum CPU and memory from individual phases
+                Long cpu = phase.getValue().get("cpu");
+                if (cpu != null) {
+                    extraCpuNanos += cpu;
+                }
+                Long mem = phase.getValue().get("mem");
+                if (mem != null) {
+                    extraMemBytes += mem;
+                }
+            }
+        }
+
+        // Add SQL overhead to existing DSL execution measurements
+        // Latency: convert nanos to millis (measurements store millis for latency)
+        if (extraLatencyNanos > 0) {
+            Measurement latency = measurements.get(MetricType.LATENCY);
+            long existing = (latency != null && latency.getMeasurement() != null) ? latency.getMeasurement().longValue() : 0;
+            measurements.put(MetricType.LATENCY, new Measurement(existing + TimeUnit.NANOSECONDS.toMillis(extraLatencyNanos)));
+        }
+        // CPU: measurements store nanos for CPU
+        if (extraCpuNanos > 0) {
+            Measurement cpu = measurements.get(MetricType.CPU);
+            long existing = (cpu != null && cpu.getMeasurement() != null) ? cpu.getMeasurement().longValue() : 0;
+            measurements.put(MetricType.CPU, new Measurement(existing + extraCpuNanos));
+        }
+        // Memory: measurements store bytes
+        if (extraMemBytes > 0) {
+            Measurement mem = measurements.get(MetricType.MEMORY);
+            long existing = (mem != null && mem.getMeasurement() != null) ? mem.getMeasurement().longValue() : 0;
+            measurements.put(MetricType.MEMORY, new Measurement(existing + extraMemBytes));
+        }
     }
 
     /**
