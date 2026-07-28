@@ -619,8 +619,8 @@ public abstract class QueryInsightsRestTestCase extends OpenSearchRestTestCase {
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis());
         int topNArraySize = 0;
 
-        // run five times to make sure the records are drained to the top queries services
-        for (int i = 0; i < 5; i++) {
+        // Retry while under expected count (records still draining on a slow CI node)
+        for (int i = 0; i < 10; i++) {
             String responseBody = getTopQueries(type);
             if (subString != null) {
                 topNArraySize = countOccurrences(responseBody, subString);
