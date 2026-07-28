@@ -29,6 +29,8 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         assertTopQueriesCount(6, "latency");
 
         updateClusterSettings(this::defaultTopQueryGroupingSettings);
+        // Wait for the grouping change to propagate before searching so records aren't collected under NONE
+        waitForSettingsPropagation("latency");
 
         // Top queries should be drained due to grouping change from NONE -> SIMILARITY
         assertTopQueriesCount(0, "latency");
@@ -57,6 +59,8 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
         assertTopQueriesCount(3, "latency");
 
         updateClusterSettings(this::defaultTopQueriesSettings);
+        // Wait for the grouping change to propagate before searching so records aren't collected under SIMILARITY
+        waitForSettingsPropagation("latency");
 
         // Top queries should be drained due to grouping change from SIMILARITY -> NONE
         assertTopQueriesCount(0, "latency");
@@ -85,6 +89,8 @@ public class MinMaxQueryGrouperIT extends QueryInsightsRestTestCase {
 
         // Change max groups exluding topn setting
         updateClusterSettings(this::updateMaxGroupsExcludingTopNSetting);
+        // Wait for the max groups change to propagate before searching
+        waitForSettingsPropagation("latency");
 
         // Top queries should be drained due to max group change
         assertTopQueriesCount(0, "latency");
