@@ -416,13 +416,15 @@ run {
 testClusters.register('runWithSecurity') {
 }
 
-configureSecurityPlugin(testClusters.'runWithSecurity')
-
 tasks.register('runWithSecurity', RunTask) {
     dependsOn(project.tasks.bundlePlugin)
     useCluster testClusters.'runWithSecurity'
     description = 'Runs OpenSearch with security plugin in the foreground'
     group = 'Verification'
+}
+
+if (gradle.startParameter.taskNames.any { it.contains('runWithSecurity') }) {
+    configureSecurityPlugin(testClusters.'runWithSecurity')
 }
 
 jacocoTestReport {
@@ -442,8 +444,10 @@ task integTestWithSecurity(type: RestIntegTestTask) {
   systemProperty "cluster.names",
     getClusters().stream().map(cluster -> cluster.getName()).collect(Collectors.joining(","))
 
-  getClusters().forEach { cluster ->
-    configureSecurityPlugin(cluster)
+  if (gradle.startParameter.taskNames.any { it.contains('integTestWithSecurity') }) {
+    getClusters().forEach { cluster ->
+      configureSecurityPlugin(cluster)
+    }
   }
 
   dependsOn project.tasks.bundlePlugin
