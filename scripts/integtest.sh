@@ -25,7 +25,7 @@ function usage() {
     echo "--------------------------------------------------------------------------"
 }
 
-while getopts ":h:b:p:t:e:s:c:v:" arg; do
+while getopts ":h:b:p:t:e:s:c:v:n:" arg; do
     case $arg in
         h)
             usage
@@ -52,6 +52,9 @@ while getopts ":h:b:p:t:e:s:c:v:" arg; do
         v)
             OPENSEARCH_VERSION=$OPTARG
             ;;
+        n)
+            SNAPSHOT=$OPTARG
+            ;;
         :)
             echo "-${OPTARG} requires an argument"
             usage
@@ -68,6 +71,11 @@ done
 if [ -z "$SECURITY_ENABLED" ]
 then
   SECURITY_ENABLED="true"
+fi
+
+if [ -z "$SNAPSHOT" ]
+then
+  SNAPSHOT="false"
 fi
 
 OPENSEARCH_REQUIRED_VERSION="2.12.0"
@@ -107,5 +115,5 @@ cluster_node_num=`echo $ENDPOINT_LIST | jq -r '.[].data_nodes | length'`
 
 echo "cluster_name: $cluster_name, cluster_node1_endpoint: $cluster_node1_endpoint, cluster_node1_port: $cluster_node1_port, cluster_node_num: $cluster_node_num"
 
-echo "./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain"
-./gradlew --no-daemon integTestRemote -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain
+echo "./gradlew --no-daemon integTestRemote -Dopensearch.version=$OPENSEARCH_VERSION -Dbuild.snapshot=$SNAPSHOT -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain"
+./gradlew --no-daemon integTestRemote -Dopensearch.version=$OPENSEARCH_VERSION -Dbuild.snapshot=$SNAPSHOT -Dtests.rest.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.cluster=$cluster_node1_endpoint:$cluster_node1_port -Dtests.clustername=$cluster_name -Dhttps=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$cluster_node_num --console=plain
