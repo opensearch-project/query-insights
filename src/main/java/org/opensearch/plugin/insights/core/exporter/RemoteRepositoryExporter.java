@@ -35,6 +35,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.repositories.Repository;
 import org.opensearch.repositories.RepositoryMissingException;
@@ -294,10 +295,8 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
      * Set base path and validate it contains only allowed characters
      */
     public void setBasePath(String basePath) {
-        if (basePath != null && !basePath.matches("[a-zA-Z0-9/!\\-_.*()']*")) {
-            throw new IllegalArgumentException(
-                "Base path contains invalid characters. Only alphanumeric, /, !, -, _, ., *, ', (, ) are allowed."
-            );
+        if (basePath != null && !basePath.matches(QueryInsightsSettings.REMOTE_EXPORTER_PATH_ALLOWED_CHARS_REGEX)) {
+            throw new IllegalArgumentException(QueryInsightsSettings.REMOTE_EXPORTER_PATH_INVALID_CHARS_MESSAGE);
         }
         repositoryState.updateAndGet(current -> {
             if (current.repositoryName != null && !current.repositoryName.isEmpty()) {

@@ -867,6 +867,56 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         }
     }
 
+    public void testRemoteExporterPathInvalidCharsRejectedAtValidationTime() {
+        // An invalid base path must be rejected while validating the update, before it is
+        // committed to cluster state and applied. Otherwise the throw lands on the
+        // settings-apply path, which aborts cluster state application on the cluster-manager.
+        Settings invalid = Settings.builder().put("search.insights.top_queries.exporter.remote.path", "bad path#with@chars").build();
+
+        IllegalArgumentException e = assertThrows(
+            IllegalArgumentException.class,
+            () -> clusterService.getClusterSettings().validateUpdate(invalid)
+        );
+        // The validator's message is surfaced as the cause of the settings-level rejection.
+        assertTrue(e.getMessage().contains("illegal value can't update [search.insights.top_queries.exporter.remote.path]"));
+        assertNotNull(e.getCause());
+        assertTrue(e.getCause().getMessage().contains("Base path contains invalid characters"));
+
+        // The setting must not have been applied.
+        RemoteRepositoryExporter remoteExporter = (RemoteRepositoryExporter) queryInsightsExporterFactory.getExporter(
+            TOP_QUERIES_REMOTE_EXPORTER_ID
+        );
+        assertNotNull(remoteExporter);
+        verify(remoteExporter, times(0)).setBasePath("bad path#with@chars");
+    }
+
+    public void testRemoteExporterPathValidCharsPassValidation() {
+        Settings valid = Settings.builder()
+            .put("search.insights.top_queries.exporter.remote.path", "query-insights/path-with_special.chars*()!'")
+            .build();
+
+        // Should not throw.
+        clusterService.getClusterSettings().validateUpdate(valid);
+        clusterService.getClusterSettings().applySettings(valid);
+    }
+
+    public void testRemoteExporterPathValidatorDirectly() {
+        QueryInsightsSettings.RemoteExporterPathValidator validator = new QueryInsightsSettings.RemoteExporterPathValidator();
+
+        // Valid values, including the allowed punctuation set and the empty string.
+        validator.validate("query-insights");
+        validator.validate("a/b/c");
+        validator.validate("query-insights/path-with_special.chars*()!'");
+        validator.validate("");
+        validator.validate(null);
+
+        // Invalid values.
+        for (String invalid : List.of("has space", "has#hash", "has@at", "has\\backslash", "has%percent", "has\nnewline")) {
+            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> validator.validate(invalid));
+            assertTrue(e.getMessage().contains("Base path contains invalid characters"));
+        }
+    }
+
     public void testLiveQueryUserInfoPutGetRemove() {
         String key = QueryInsightsService.buildLiveQueryTaskKey("nodeA", 1);
         UserPrincipalInfo info = new UserPrincipalInfo("alice", List.of("backend1"), List.of("role1"));

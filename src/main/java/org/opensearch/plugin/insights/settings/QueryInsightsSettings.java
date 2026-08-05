@@ -348,9 +348,25 @@ public class QueryInsightsSettings {
         Setting.Property.Dynamic
     );
 
+    /**
+     * Characters allowed in the remote exporter base path.
+     * <p>
+     * Shared by {@link RemoteExporterPathValidator} (validation time) and
+     * {@link org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter#setBasePath(String)}
+     * (apply time) so the two cannot drift.
+     */
+    public static final String REMOTE_EXPORTER_PATH_ALLOWED_CHARS_REGEX = "[a-zA-Z0-9/!\\-_.*()']*";
+
+    /**
+     * Error message used when the remote exporter base path contains disallowed characters.
+     */
+    public static final String REMOTE_EXPORTER_PATH_INVALID_CHARS_MESSAGE =
+        "Base path contains invalid characters. Only alphanumeric, /, !, -, _, ., *, ', (, ) are allowed.";
+
     public static final Setting<String> REMOTE_EXPORTER_PATH = Setting.simpleString(
         TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.path",
         "query-insights",
+        new RemoteExporterPathValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -608,6 +624,21 @@ public class QueryInsightsSettings {
                 throw new IllegalArgumentException(
                     String.format(Locale.ROOT, "Invalid exporter type [%s], type should be one of %s", value, SinkType.allSinkTypes())
                 );
+            }
+        }
+    }
+
+    /**
+     * Validates the Query Insights remote exporter base path.
+     * <p>
+     * This runs at settings-validation time so an invalid path is rejected with a 400 on the
+     * update request, instead of throwing while cluster state is being applied.
+     */
+    public static final class RemoteExporterPathValidator implements Setting.Validator<String> {
+        @Override
+        public void validate(String value) {
+            if (value != null && !value.matches(REMOTE_EXPORTER_PATH_ALLOWED_CHARS_REGEX)) {
+                throw new IllegalArgumentException(REMOTE_EXPORTER_PATH_INVALID_CHARS_MESSAGE);
             }
         }
     }
