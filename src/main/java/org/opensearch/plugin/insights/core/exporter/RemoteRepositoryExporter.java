@@ -35,7 +35,6 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetric;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.repositories.Repository;
 import org.opensearch.repositories.RepositoryMissingException;
@@ -51,6 +50,26 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
     private static final Logger logger = LogManager.getLogger(RemoteRepositoryExporter.class);
     private static final int MAX_RETRIES = 3;
     private static final long INITIAL_BACKOFF_MS = 100;
+    /** Characters allowed in the exporter base path. */
+    private static final String ALLOWED_BASE_PATH_CHARS = "[a-zA-Z0-9/!\\-_.*()']*";
+
+    /**
+     * Validate that a base path contains only allowed characters.
+     * <p>
+     * Called both from the setting validator (so an invalid path is rejected with a 400 when the
+     * update is submitted, rather than throwing while cluster state is applied) and from
+     * {@link #setBasePath(String)}.
+     *
+     * @param basePath the base path to validate; {@code null} is permitted
+     * @throws IllegalArgumentException if the path contains disallowed characters
+     */
+    public static void validateBasePath(final String basePath) {
+        if (basePath != null && !basePath.matches(ALLOWED_BASE_PATH_CHARS)) {
+            throw new IllegalArgumentException(
+                "Base path contains invalid characters. Only alphanumeric, /, !, -, _, ., *, ', (, ) are allowed."
+            );
+        }
+    }
 
     private static class RepositoryState {
         final String repositoryName;
@@ -295,9 +314,7 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
      * Set base path and validate it contains only allowed characters
      */
     public void setBasePath(String basePath) {
-        if (basePath != null && !basePath.matches(QueryInsightsSettings.REMOTE_EXPORTER_PATH_ALLOWED_CHARS_REGEX)) {
-            throw new IllegalArgumentException(QueryInsightsSettings.REMOTE_EXPORTER_PATH_INVALID_CHARS_MESSAGE);
-        }
+        validateBasePath(basePath);
         repositoryState.updateAndGet(current -> {
             if (current.repositoryName != null && !current.repositoryName.isEmpty()) {
                 try {

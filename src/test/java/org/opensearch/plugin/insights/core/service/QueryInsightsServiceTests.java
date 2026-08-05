@@ -890,6 +890,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         verify(remoteExporter, times(0)).setBasePath("bad path#with@chars");
     }
 
+    public void testRemoteExporterPathInvalidCharsRejectedAtNodeScope() {
+        // A node-level (opensearch.yml) value is also validated on read, consistent with the
+        // plugin's other validated string settings such as grouping.group_by.
+        Settings bad = Settings.builder().put("search.insights.top_queries.exporter.remote.path", "bad path#with@chars").build();
+        ClusterSettings badClusterSettings = new ClusterSettings(bad, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        QueryInsightsTestUtils.registerAllQueryInsightsSettings(badClusterSettings);
+
+        IllegalArgumentException e = assertThrows(
+            IllegalArgumentException.class,
+            () -> badClusterSettings.get(QueryInsightsSettings.REMOTE_EXPORTER_PATH)
+        );
+        assertTrue(e.getMessage().contains("Base path contains invalid characters"));
+    }
+
     public void testRemoteExporterPathValidCharsPassValidation() {
         Settings valid = Settings.builder()
             .put("search.insights.top_queries.exporter.remote.path", "query-insights/path-with_special.chars*()!'")
@@ -900,19 +914,20 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         clusterService.getClusterSettings().applySettings(valid);
     }
 
-    public void testRemoteExporterPathValidatorDirectly() {
-        QueryInsightsSettings.RemoteExporterPathValidator validator = new QueryInsightsSettings.RemoteExporterPathValidator();
-
+    public void testValidateBasePathAcceptsAndRejects() {
         // Valid values, including the allowed punctuation set and the empty string.
-        validator.validate("query-insights");
-        validator.validate("a/b/c");
-        validator.validate("query-insights/path-with_special.chars*()!'");
-        validator.validate("");
-        validator.validate(null);
+        RemoteRepositoryExporter.validateBasePath("query-insights");
+        RemoteRepositoryExporter.validateBasePath("a/b/c");
+        RemoteRepositoryExporter.validateBasePath("query-insights/path-with_special.chars*()!'");
+        RemoteRepositoryExporter.validateBasePath("");
+        RemoteRepositoryExporter.validateBasePath(null);
 
         // Invalid values.
         for (String invalid : List.of("has space", "has#hash", "has@at", "has\\backslash", "has%percent", "has\nnewline")) {
-            IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> validator.validate(invalid));
+            IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> RemoteRepositoryExporter.validateBasePath(invalid)
+            );
             assertTrue(e.getMessage().contains("Base path contains invalid characters"));
         }
     }
