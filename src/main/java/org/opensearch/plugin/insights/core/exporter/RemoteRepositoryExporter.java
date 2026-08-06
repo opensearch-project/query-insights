@@ -56,9 +56,9 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
     /**
      * Validate that a base path contains only allowed characters.
      * <p>
-     * Called both from the setting validator (so an invalid path is rejected with a 400 when the
-     * update is submitted, rather than throwing while cluster state is applied) and from
-     * {@link #setBasePath(String)}.
+     * Called from the setting validator so an invalid path is rejected with a 400 when the update is submitted, rather
+     * than throwing while cluster state is applied. It is deliberately not called from {@link #setBasePath(String)},
+     * which runs at apply time.
      *
      * @param basePath the base path to validate; {@code null} is permitted
      * @throws IllegalArgumentException if the path contains disallowed characters
@@ -311,10 +311,15 @@ public class RemoteRepositoryExporter implements QueryInsightsExporter {
     }
 
     /**
-     * Set base path and validate it contains only allowed characters
+     * Set base path.
+     * <p>
+     * The allowed-characters check is intentionally NOT performed here. This runs as the {@code remote.path}
+     * settings-update consumer at apply time; an invalid value has already been rejected up front by
+     * {@link org.opensearch.plugin.insights.settings.QueryInsightsSettings.RemoteExporterPathValidator} at
+     * settings-validation time (and by {@link #validateBasePath(String)} on the setting's default at startup). Throwing
+     * here would instead fail while cluster state is applied, which can destabilize the cluster-manager.
      */
     public void setBasePath(String basePath) {
-        validateBasePath(basePath);
         repositoryState.updateAndGet(current -> {
             if (current.repositoryName != null && !current.repositoryName.isEmpty()) {
                 try {
