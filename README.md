@@ -44,6 +44,39 @@ You can use the Insights API endpoint to obtain top N queries:
 GET /_insights/top_queries
 ```
 
+When the Security plugin is enabled, the caller must have the following cluster permission:
+
+```
+cluster:admin/opensearch/insights/top_queries
+```
+
+For example, create a dedicated role:
+
+```
+PUT /_plugins/_security/api/roles/query_insights_read_access
+{
+  "cluster_permissions": [
+    "cluster:admin/opensearch/insights/top_queries"
+  ]
+}
+```
+
+Then map the role to the appropriate backend role:
+
+```
+PUT /_plugins/_security/api/rolesmapping/query_insights_read_access
+{
+  "backend_roles": [
+    "query_insights_readers"
+  ],
+  "users": []
+}
+```
+
+If you add the action to an existing role instead, preserve that role's existing cluster, index, and tenant permissions.
+
+Requests without this permission receive an HTTP `403` response with a `security_exception`.
+
 ### Export top N query data
 
 You can configure your desired exporter to export top N query data to different sinks, allowing for better monitoring and analysis of your OpenSearch queries.
