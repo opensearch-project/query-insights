@@ -44,13 +44,41 @@ You can use the Insights API endpoint to obtain top N queries:
 GET /_insights/top_queries
 ```
 
-When the Security plugin is enabled, the caller must have the following cluster permission:
+When the Security plugin is enabled, the caller's security role must grant the following cluster permission:
 
 ```
 cluster:admin/opensearch/insights/top_queries
 ```
 
-For example, create a dedicated role:
+The Security plugin provides the predefined `query_insights_full_access` role for access to Query Insights APIs and
+local exporter indexes. Because the role definition varies by Security plugin version, verify that the installed role
+includes either the exact permission above or `cluster:admin/opensearch/insights/*`:
+
+```
+GET /_plugins/_security/api/roles/query_insights_full_access
+```
+
+Map the caller's backend role to `query_insights_full_access`:
+
+```
+PUT /_plugins/_security/api/rolesmapping/query_insights_full_access
+{
+  "backend_roles": [
+    "query_insights_users"
+  ],
+  "hosts": [],
+  "users": []
+}
+```
+
+For IAM-authenticated callers, use the IAM role ARN reported as the caller's backend role. The role-mapping `PUT`
+request creates or replaces the complete mapping, so preserve any existing assignments when updating it.
+
+The predefined `all_access` role also authorizes the API, but it grants unrestricted cluster and index access and
+should not be assigned solely for Query Insights.
+
+If the predefined Query Insights role in the installed Security plugin does not include the required permission, or
+if the caller should access only the Top Queries API, create a dedicated least-privilege role:
 
 ```
 PUT /_plugins/_security/api/roles/query_insights_read_access
@@ -69,6 +97,7 @@ PUT /_plugins/_security/api/rolesmapping/query_insights_read_access
   "backend_roles": [
     "query_insights_readers"
   ],
+  "hosts": [],
   "users": []
 }
 ```
