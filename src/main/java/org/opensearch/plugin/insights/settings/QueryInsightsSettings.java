@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
@@ -351,6 +352,7 @@ public class QueryInsightsSettings {
     public static final Setting<String> REMOTE_EXPORTER_PATH = Setting.simpleString(
         TOP_N_QUERIES_EXPORTER_PREFIX + ".remote.path",
         "query-insights",
+        new RemoteExporterPathValidator(),
         Setting.Property.NodeScope,
         Setting.Property.Dynamic
     );
@@ -609,6 +611,19 @@ public class QueryInsightsSettings {
                     String.format(Locale.ROOT, "Invalid exporter type [%s], type should be one of %s", value, SinkType.allSinkTypes())
                 );
             }
+        }
+    }
+
+    /**
+     * Validates the Query Insights remote exporter base path.
+     * <p>
+     * This runs at settings-validation time so an invalid path is rejected with a 400 on the
+     * update request, instead of throwing while cluster state is being applied.
+     */
+    static final class RemoteExporterPathValidator implements Setting.Validator<String> {
+        @Override
+        public void validate(String value) {
+            RemoteRepositoryExporter.validateBasePath(value);
         }
     }
 

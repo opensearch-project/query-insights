@@ -199,8 +199,13 @@ public class RemoteRepositoryExporterTests extends OpenSearchTestCase {
         assertEquals("query-insights/path-with_special.chars*()", remoteRepositoryExporter.getBasePath());
     }
 
-    public void testSetBasePathWithInvalidCharacters() {
-        assertThrows(IllegalArgumentException.class, () -> { remoteRepositoryExporter.setBasePath("query-insights/invalid@path"); });
+    public void testSetBasePathWithInvalidCharactersDoesNotThrow() {
+        // setBasePath runs as the settings-update consumer at apply time and must not throw: an invalid path is rejected
+        // up front by RemoteExporterPathValidator at settings-validation time. Throwing here would fail while cluster
+        // state is applied and could destabilize the cluster-manager. The character check itself is covered by the
+        // validator/validateBasePath tests in QueryInsightsServiceTests.
+        remoteRepositoryExporter.setBasePath("query-insights/invalid@path");
+        assertEquals("query-insights/invalid@path", remoteRepositoryExporter.getBasePath());
     }
 
     public void testSetBasePathWithNull() {
