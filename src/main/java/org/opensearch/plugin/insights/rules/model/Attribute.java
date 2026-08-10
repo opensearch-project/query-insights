@@ -204,7 +204,37 @@ public enum Attribute {
         Map<Attribute, Object> map = new HashMap<>(size);
 
         for (int i = 0; i < size; i++) {
-            Attribute key = readFromStream(in);
+            final Attribute key;
+            try {
+                key = readFromStream(in);
+            } catch (IllegalArgumentException e) {
+                // The attribute name doesn't match any constant this node's Attribute enum
+                // knows about. This happens during a rolling upgrade: a node running a newer
+                // version can add new Attribute constants (e.g. USER_ROLES, BACKEND_ROLES) and
+                // send them to an older-version coordinator whose enum predates them, and
+                // Attribute.valueOf() throws IllegalArgumentException for the unknown name.
+                //
+                // We can't just let this exception propagate: readAttributeMap is reading a
+                // fixed-size sequence of key/value pairs, so any entry we fail to fully consume
+                // corrupts the byte alignment for every entry after it in this stream, not just
+                // this one. Every attribute defined today other than the handful with bespoke
+                // encodings (TASK_RESOURCE_USAGES, SOURCE, GROUP_BY -- all handled explicitly in
+                // readAttributeValue below) is written through the self-describing
+                // writeGenericValue()/readGenericValue() wire format, so we can read and discard
+                // the value here to stay aligned, without needing to know what the attribute
+                // means. This trades knowledge of the new attribute for correctness of everything
+                // else in the record, which matches the documented expected behavior: "Query
+                // insight should not fail, or at least give up on trying to collect this
+                // particular event." See https://github.com/opensearch-project/query-insights/issues/510
+                //
+                // Caveat: writeValueTo() also special-cases java.util.List through the
+                // Writeable-based out.writeList(), which is NOT self-describing. No attribute
+                // uses a List value today (USER_ROLES/BACKEND_ROLES are String[]), but a future
+                // attribute that does would need its own explicit case in readAttributeValue()
+                // AND readAttributeMap() -- this generic skip cannot safely consume it.
+                in.readGenericValue();
+                continue;
+            }
             Object value = readAttributeValue(in, key);
             map.put(key, value);
         }
