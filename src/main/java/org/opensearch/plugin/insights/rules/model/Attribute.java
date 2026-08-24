@@ -14,6 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.ArrayUtil;
 import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -111,15 +113,25 @@ public enum Attribute {
      */
     FAILED;
 
+    private static final Logger logger = LogManager.getLogger(Attribute.class);
+
     /**
-     * Read an Attribute from a StreamInput
+     * Read an Attribute from a StreamInput.
+     * Returns null for unrecognized attribute names to support forward compatibility
+     * during rolling upgrades where newer nodes may send attributes unknown to older nodes.
      *
      * @param in the StreamInput to read from
-     * @return Attribute
+     * @return Attribute, or null if the attribute name is not recognized
      * @throws IOException IOException
      */
     static Attribute readFromStream(final StreamInput in) throws IOException {
-        return Attribute.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        String name = in.readString().toUpperCase(Locale.ROOT);
+        try {
+            return Attribute.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            logger.debug("Ignoring unrecognized attribute [{}] from stream", name);
+            return null;
+        }
     }
 
     /**
@@ -205,6 +217,11 @@ public enum Attribute {
 
         for (int i = 0; i < size; i++) {
             Attribute key = readFromStream(in);
+            if (key == null) {
+                // Unknown attribute — consume the value to keep stream position correct, then discard
+                in.readGenericValue();
+                continue;
+            }
             Object value = readAttributeValue(in, key);
             map.put(key, value);
         }
