@@ -52,6 +52,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private SearchSourceBuilder searchSourceBuilder;
     private final UserPrincipalContext userPrincipalContext; // Private field for user extraction
     private boolean streaming;
+    private int hitsLength;
 
     /**
      * Timestamp
@@ -767,6 +768,14 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public void setStreaming(boolean streaming) {
         this.streaming = streaming;
+    }
+
+    public int getHitsLength() {
+        return hitsLength;
+    }
+
+    public void setHitsLength(int hitsLength) {
+        this.hitsLength = hitsLength;
     }
 
     public boolean isCancelled() {
