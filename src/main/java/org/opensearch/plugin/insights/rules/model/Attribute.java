@@ -109,7 +109,12 @@ public enum Attribute {
     /**
      * Indicates if the search request failed during execution.
      */
-    FAILED;
+    FAILED,
+
+    /**
+     * The unified latency breakdown map showing where time is spent across all 40 layers.
+     */
+    LATENCY_BREAKDOWN_MAP;
 
     /**
      * Read an Attribute from a StreamInput
