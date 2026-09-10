@@ -33,13 +33,18 @@ buildscript {
 
   dependencies {
     classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
+    // Spotless 8.10.x requires a Java 17+ runtime to resolve its plugin. Only put it on the
+    // buildscript classpath on Java 17+ so the Java 11 CI matrix doesn't fail resolving it.
+    // The plugin is applied (also gated to Java 17+) further below only when available.
+    if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+      classpath "com.diffplug.spotless:spotless-plugin-gradle:8.10.1"
+    }
   }
 }
 
 
 plugins {
   id "de.undercouch.download" version "5.3.0"
-  id 'com.diffplug.spotless' version '6.25.0'
   id 'checkstyle'
 }
 
@@ -149,6 +154,16 @@ checkstyle {
   configDirectory.set(rootProject.file("config/checkstyle/"))
 }
 
+// Only wire the Eclipse JDT step when a spotless task is actually being run, so non-spotless
+// Gradle invocations (test, assemble) don't provision the formatter at configuration time.
+// Spotless 8.10.x (the pinned Eclipse-JDT toolchain) requires a Java 17+ runtime to even
+// resolve/apply its Gradle plugin. Skip it on older JDKs (e.g. the Java 11 CI matrix) so
+// non-spotless builds don't fail at configuration time. Formatting still runs on Java 17+.
+if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+apply plugin: 'com.diffplug.spotless'
+
+def runningSpotlessTask = gradle.startParameter.taskNames.any { it.toLowerCase(Locale.ROOT).contains('spotless') }
+
 spotless {
   java {
     target fileTree('.') {
@@ -157,10 +172,17 @@ spotless {
     }
     removeUnusedImports()
     importOrder()
-    eclipse().withP2Mirrors(Map.of("https://download.eclipse.org/", "https://ci.opensearch.org/")).configFile rootProject.file('config/formatterConfig.xml')
+    // Pin 4.29 explicitly: spotless 8.10.0+ ships an embedded lockfile for it, so the
+    // formatter resolves from Maven Central through the mirror below instead of querying a
+    // P2 update site at configuration time. Keep withP2Mirrors so any non-lockfile fallback
+    // still hits the ci.opensearch.org mirror rather than the eclipse.org origin.
+    if (runningSpotlessTask) {
+      eclipse('4.29').withP2Mirrors(Map.of("https://download.eclipse.org/", "https://ci.opensearch.org/")).configFile rootProject.file('config/formatterConfig.xml')
+    }
     trimTrailingWhitespace()
     endWithNewline()
   }
+}
 }
 
 opensearchplugin {
@@ -343,7 +365,11 @@ run {
   useCluster testClusters.integTest
 }
 
-check.dependsOn spotlessCheck
+// spotless is only applied on Java 17+ (see the guarded block above), so only wire the
+// dependency when the task actually exists to avoid failing configuration on Java 11.
+if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+  check.dependsOn spotlessCheck
+}
 check.dependsOn jacocoTestReport
 
 task integTestWithSecurity(type: RestIntegTestTask) {
