@@ -74,6 +74,17 @@ configurations.all {
   }
 }
 
+configurations.matching { it.name.startsWith('yamlRestTest') }.configureEach {
+  resolutionStrategy {
+    eachDependency { DependencyResolveDetails details ->
+      if (details.requested.group == 'org.jspecify' &&
+        details.requested.name == 'jspecify') {
+        details.useVersion '1.0.1'
+      }
+    }
+  }
+}
+
 apply plugin: 'java'
 apply plugin: 'idea'
 apply plugin: 'eclipse'
