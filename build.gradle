@@ -82,6 +82,10 @@ configurations.all {
         details.requested.name == 'error_prone_annotations') {
         details.useVersion '2.45.0'
       }
+      if (details.requested.group == 'org.jspecify' &&
+        details.requested.name == 'jspecify') {
+        details.useVersion '1.0.1'
+      }
     }
   }
 }
