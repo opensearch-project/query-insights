@@ -441,6 +441,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
+            record.setHitsLength(searchRequestContext.getHitsLength());
             queryInsightsService.addRecord(record);
             return record;
         } catch (Exception e) {
