@@ -85,6 +85,25 @@ configurations.matching { it.name.startsWith('yamlRestTest') }.configureEach {
   }
 }
 
+configurations.matching { it.name == 'checkstyle' }.configureEach {
+  resolutionStrategy {
+    eachDependency { DependencyResolveDetails details ->
+      if (details.requested.group == 'org.apache.httpcomponents.client5' &&
+        details.requested.name == 'httpclient5') {
+        details.useVersion '5.6.4'
+      }
+      if (details.requested.group == 'org.apache.httpcomponents.core5' &&
+        details.requested.name == 'httpcore5-h2') {
+        details.useVersion '5.4.3'
+      }
+      if (details.requested.group == 'org.apache.httpcomponents.core5' &&
+        details.requested.name == 'httpcore5') {
+        details.useVersion '5.4.3'
+      }
+    }
+  }
+}
+
 apply plugin: 'java'
 apply plugin: 'idea'
 apply plugin: 'eclipse'
