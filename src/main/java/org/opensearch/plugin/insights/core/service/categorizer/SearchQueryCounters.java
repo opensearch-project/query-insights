@@ -104,18 +104,30 @@ public final class SearchQueryCounters {
         this.queryHandlers = new HashMap<>();
     }
 
+    private static final String INDEX_TAG = "index";
+
     /**
      * Increment counter
      * @param queryBuilder query builder
      * @param level level of query builder, 0 being highest level
      * @param measurements metrics measurements
+     * @param indices indices targeted by the query
      */
-    public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Measurement> measurements) {
+    public void incrementCounter(QueryBuilder queryBuilder, int level, Map<MetricType, Measurement> measurements, String[] indices) {
         String uniqueQueryCounterName = queryBuilder.getName();
 
         Counter counter = nameToQueryTypeCounters.computeIfAbsent(uniqueQueryCounterName, k -> createQueryCounter(k));
-        counter.add(1, Tags.create().addTag(LEVEL_TAG, level));
-        incrementAllHistograms(Tags.create().addTag(LEVEL_TAG, level).addTag(QUERY_TYPE_TAG, uniqueQueryCounterName), measurements);
+        if (indices != null && indices.length > 0) {
+            for (String index : indices) {
+                Tags tags = Tags.create().addTag(LEVEL_TAG, level).addTag(INDEX_TAG, index);
+                counter.add(1, tags);
+                incrementAllHistograms(tags.addTag(QUERY_TYPE_TAG, uniqueQueryCounterName), measurements);
+            }
+        } else {
+            Tags tags = Tags.create().addTag(LEVEL_TAG, level);
+            counter.add(1, tags);
+            incrementAllHistograms(tags.addTag(QUERY_TYPE_TAG, uniqueQueryCounterName), measurements);
+        }
     }
 
     /**
