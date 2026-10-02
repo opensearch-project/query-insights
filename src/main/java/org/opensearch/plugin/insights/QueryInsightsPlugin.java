@@ -27,11 +27,13 @@ import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
+import org.opensearch.identity.PluginSubject;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
+import org.opensearch.plugin.insights.core.utils.PluginClient;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
@@ -54,6 +56,7 @@ import org.opensearch.plugin.insights.rules.transport.top_queries.TransportTopQu
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
+import org.opensearch.plugins.IdentityAwarePlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.plugins.TelemetryAwarePlugin;
 import org.opensearch.repositories.RepositoriesService;
@@ -71,7 +74,10 @@ import org.opensearch.watcher.ResourceWatcherService;
 /**
  * Plugin class for Query Insights.
  */
-public class QueryInsightsPlugin extends Plugin implements ActionPlugin, TelemetryAwarePlugin {
+public class QueryInsightsPlugin extends Plugin implements ActionPlugin, TelemetryAwarePlugin, IdentityAwarePlugin {
+
+    private PluginClient pluginClient;
+
     /**
      * Default constructor
      */
@@ -95,6 +101,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
     ) {
         // initialize operational metrics counters
         OperationalMetricsCounter.initialize(clusterService.getClusterName().toString(), metricsRegistry);
+        this.pluginClient = new PluginClient(client);
         // create top n queries service
         final QueryInsightsService queryInsightsService = new QueryInsightsService(
             clusterService,
@@ -103,10 +110,17 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             metricsRegistry,
             xContentRegistry,
             new QueryInsightsExporterFactory(client, clusterService, threadPool, repositoriesServiceSupplier),
-            new QueryInsightsReaderFactory(client)
+            // Reads serve a user-facing API, so they run as the plugin's own subject rather than as
+            // the caller, who is not expected to hold privileges on the top queries indices.
+            new QueryInsightsReaderFactory(pluginClient)
         );
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
         return List.of(queryInsightsService, queryInsightsListener);
+    }
+
+    @Override
+    public void assignSubject(final PluginSubject pluginSubject) {
+        pluginClient.setSubject(pluginSubject);
     }
 
     @Override
