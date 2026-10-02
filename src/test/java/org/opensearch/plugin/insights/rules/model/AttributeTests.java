@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
+import java.util.Map;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -135,6 +136,86 @@ public class AttributeTests extends OpenSearchTestCase {
 
         assertTrue("Should handle invalid JSON gracefully", result instanceof SourceString);
         assertNotNull("Should not be null", result);
+    }
+
+    /**
+     * Test for https://github.com/opensearch-project/query-insights/issues/510
+     *
+     * Simulates a rolling upgrade: a newer node writes an attribute map containing a key this
+     * node's Attribute enum doesn't have yet (as would happen if a newer node sent USER_ROLES /
+     * BACKEND_ROLES / USERNAME to a coordinator whose build predates those attributes). Reading
+     * that map must not throw, and every attribute this node *does* recognize -- both before and
+     * after the unknown one in the map -- must still come through with the correct value,
+     * proving the stream stays byte-aligned across the skipped entry.
+     */
+    public void testReadAttributeMapSkipsUnknownAttributeFromNewerNode() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        // Manually write a 3-entry attribute map the way Attribute.writeTo/writeValueTo would,
+        // with an unrecognized key in the middle -- standing in for a newer-node-only attribute
+        // (e.g. "user_roles") that this test's Attribute enum build doesn't define.
+        out.writeVInt(3);
+
+        out.writeString("node_id");
+        Attribute.writeValueTo(out, "node-abc");
+
+        out.writeString("totally_unknown_future_attribute");
+        // USER_ROLES/BACKEND_ROLES are written as String[] (see QueryInsightsListener), not
+        // List -- Attribute#writeValueTo special-cases java.util.List through out.writeList(),
+        // which is Writeable-based, not the self-describing generic codec this fix relies on.
+        Attribute.writeValueTo(out, new String[] { "admin", "readall" });
+
+        out.writeString("total_shards");
+        Attribute.writeValueTo(out, 5);
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertEquals("Unknown attribute should be skipped, not counted", 2, result.size());
+        assertEquals("node-abc", result.get(Attribute.NODE_ID));
+        assertEquals(5, result.get(Attribute.TOTAL_SHARDS));
+        assertFalse(result.containsKey(null));
+    }
+
+    /**
+     * Same scenario as above but with the unknown attribute as the very last entry, to make sure
+     * there's no off-by-one in how the loop continues after a skip.
+     */
+    public void testReadAttributeMapSkipsUnknownAttributeAtEnd() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        out.writeVInt(2);
+        out.writeString("node_id");
+        Attribute.writeValueTo(out, "node-xyz");
+        out.writeString("another_unknown_future_attribute");
+        Attribute.writeValueTo(out, "some-value");
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertEquals(1, result.size());
+        assertEquals("node-xyz", result.get(Attribute.NODE_ID));
+    }
+
+    /**
+     * A map made up entirely of known attributes must round-trip exactly as before -- this fix
+     * must not change behavior for the common (no version skew) case.
+     */
+    public void testReadAttributeMapAllKnownAttributesUnaffected() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        out.writeVInt(2);
+        out.writeString("node_id");
+        Attribute.writeValueTo(out, "node-1");
+        out.writeString("total_shards");
+        Attribute.writeValueTo(out, 3);
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertEquals(2, result.size());
+        assertEquals("node-1", result.get(Attribute.NODE_ID));
+        assertEquals(3, result.get(Attribute.TOTAL_SHARDS));
     }
 
 }
