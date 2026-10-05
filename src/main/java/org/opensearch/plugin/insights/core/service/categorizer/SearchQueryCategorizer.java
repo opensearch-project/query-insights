@@ -86,6 +86,7 @@ public final class SearchQueryCategorizer {
         incrementQueryTypeCounters(source.query(), measurements);
         incrementQueryAggregationCounters(source.aggregations(), measurements, record.isStreaming());
         incrementQuerySortCounters(source.sorts(), measurements);
+        searchQueryCounters.recordSearchDocCount(record.getHitsLength());
     }
 
     private void incrementQuerySortCounters(List<SortBuilder<?>> sorts, Map<MetricType, Measurement> measurements) {
