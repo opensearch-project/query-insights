@@ -382,6 +382,176 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
     }
 
     /**
+     * Test that LATENCY_BREAKDOWN_MAP attribute round-trips correctly through serialization.
+     * Verifies the breakdown map is preserved after writeTo/readFrom cycle.
+     *
+     * Validates: Requirements 11.1, 11.6, 14.1, 14.3
+     */
+    @SuppressWarnings("unchecked")
+    public void testLatencyBreakdownMapSerialization() throws Exception {
+        // Create a record with a comprehensive latency_breakdown_map
+        Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(155L));
+
+        Map<String, Long> latencyBreakdownMap = new java.util.LinkedHashMap<>();
+        latencyBreakdownMap.put("pre_phase_overhead", 18L);
+        latencyBreakdownMap.put("pipeline_request_transform", 5L);
+        latencyBreakdownMap.put("query_rewrite", 8L);
+        latencyBreakdownMap.put("shard_routing", 3L);
+        latencyBreakdownMap.put("coordinator_queue_wait", 35L);
+        latencyBreakdownMap.put("can_match", 5L);
+        latencyBreakdownMap.put("query", 40L);
+        latencyBreakdownMap.put("query_to_fetch_gap", 12L);
+        latencyBreakdownMap.put("fetch", 15L);
+        latencyBreakdownMap.put("post_phase_overhead", 4L);
+        latencyBreakdownMap.put("_has_timed_breakdown", 1L);
+        latencyBreakdownMap.put("query_rewrite.start_offset_micros", 120L);
+        latencyBreakdownMap.put("query_rewrite.duration_micros", 8000L);
+        latencyBreakdownMap.put("shard_routing.start_offset_micros", 8200L);
+        latencyBreakdownMap.put("shard_routing.duration_micros", 3000L);
+
+        Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+        attributes.put(Attribute.NODE_ID, "test-node");
+        attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, latencyBreakdownMap);
+
+        SearchQueryRecord originalRecord = new SearchQueryRecord(
+            System.currentTimeMillis(),
+            measurements,
+            attributes,
+            "test-breakdown-id"
+        );
+
+        // Round-trip through stream serialization
+        SearchQueryRecord deserializedRecord = roundTripRecord(originalRecord);
+
+        // Verify LATENCY_BREAKDOWN_MAP survived serialization
+        assertNotNull(
+            "LATENCY_BREAKDOWN_MAP should be present after deserialization",
+            deserializedRecord.getAttributes().get(Attribute.LATENCY_BREAKDOWN_MAP)
+        );
+
+        Map<String, Long> deserializedBreakdown = (Map<String, Long>) deserializedRecord.getAttributes()
+            .get(Attribute.LATENCY_BREAKDOWN_MAP);
+
+        // Verify all entries are preserved
+        assertEquals("pre_phase_overhead should be preserved", Long.valueOf(18L), deserializedBreakdown.get("pre_phase_overhead"));
+        assertEquals(
+            "pipeline_request_transform should be preserved",
+            Long.valueOf(5L),
+            deserializedBreakdown.get("pipeline_request_transform")
+        );
+        assertEquals("query_rewrite should be preserved", Long.valueOf(8L), deserializedBreakdown.get("query_rewrite"));
+        assertEquals("shard_routing should be preserved", Long.valueOf(3L), deserializedBreakdown.get("shard_routing"));
+        assertEquals(
+            "coordinator_queue_wait should be preserved",
+            Long.valueOf(35L),
+            deserializedBreakdown.get("coordinator_queue_wait")
+        );
+        assertEquals("can_match should be preserved", Long.valueOf(5L), deserializedBreakdown.get("can_match"));
+        assertEquals("query should be preserved", Long.valueOf(40L), deserializedBreakdown.get("query"));
+        assertEquals("query_to_fetch_gap should be preserved", Long.valueOf(12L), deserializedBreakdown.get("query_to_fetch_gap"));
+        assertEquals("fetch should be preserved", Long.valueOf(15L), deserializedBreakdown.get("fetch"));
+        assertEquals("post_phase_overhead should be preserved", Long.valueOf(4L), deserializedBreakdown.get("post_phase_overhead"));
+        assertEquals("_has_timed_breakdown should be preserved", Long.valueOf(1L), deserializedBreakdown.get("_has_timed_breakdown"));
+        assertEquals(
+            "query_rewrite.start_offset_micros should be preserved",
+            Long.valueOf(120L),
+            deserializedBreakdown.get("query_rewrite.start_offset_micros")
+        );
+        assertEquals(
+            "query_rewrite.duration_micros should be preserved",
+            Long.valueOf(8000L),
+            deserializedBreakdown.get("query_rewrite.duration_micros")
+        );
+        assertEquals(
+            "shard_routing.start_offset_micros should be preserved",
+            Long.valueOf(8200L),
+            deserializedBreakdown.get("shard_routing.start_offset_micros")
+        );
+        assertEquals(
+            "shard_routing.duration_micros should be preserved",
+            Long.valueOf(3000L),
+            deserializedBreakdown.get("shard_routing.duration_micros")
+        );
+
+        // Verify the full map size matches
+        assertEquals("Breakdown map should have same number of entries", latencyBreakdownMap.size(), deserializedBreakdown.size());
+    }
+
+    /**
+     * Test that LATENCY_BREAKDOWN_MAP correctly serializes to and from XContent (JSON).
+     * This verifies the field appears in the JSON output and can be parsed back.
+     *
+     * Validates: Requirements 11.1, 11.2, 14.3
+     */
+    @SuppressWarnings("unchecked")
+    public void testLatencyBreakdownMapXContentRoundTrip() throws IOException {
+        Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(100L));
+
+        Map<String, Long> latencyBreakdownMap = new java.util.LinkedHashMap<>();
+        latencyBreakdownMap.put("query", 40L);
+        latencyBreakdownMap.put("fetch", 15L);
+        latencyBreakdownMap.put("pre_phase_overhead", 10L);
+        latencyBreakdownMap.put("_has_timed_breakdown", 1L);
+        latencyBreakdownMap.put("query.start_offset_micros", 5000L);
+        latencyBreakdownMap.put("query.duration_micros", 40000L);
+
+        Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.SEARCH_TYPE, "query_then_fetch");
+        attributes.put(Attribute.NODE_ID, "test-node");
+        attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, latencyBreakdownMap);
+
+        SearchQueryRecord record = new SearchQueryRecord(
+            1706574180000L,
+            measurements,
+            attributes,
+            "xcontent-breakdown-id"
+        );
+
+        // Serialize to XContent
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContent(builder, null);
+        builder.flush();
+        String json = builder.toString();
+
+        // Verify the JSON output contains latency_breakdown_map
+        assertTrue("JSON should contain latency_breakdown_map field", json.contains("\"latency_breakdown_map\""));
+        assertTrue("JSON should contain query entry", json.contains("\"query\":40"));
+        assertTrue("JSON should contain fetch entry", json.contains("\"fetch\":15"));
+        assertTrue("JSON should contain _has_timed_breakdown flag", json.contains("\"_has_timed_breakdown\":1"));
+        assertTrue("JSON should contain start_offset_micros", json.contains("\"query.start_offset_micros\":5000"));
+        assertTrue("JSON should contain duration_micros", json.contains("\"query.duration_micros\":40000"));
+
+        // Parse back from XContent
+        XContentParser parser = JsonXContent.jsonXContent.createParser(
+            NamedXContentRegistry.EMPTY,
+            DeprecationHandler.IGNORE_DEPRECATIONS,
+            json
+        );
+        SearchQueryRecord parsedRecord = SearchQueryRecord.fromXContent(parser);
+
+        // Verify LATENCY_BREAKDOWN_MAP was parsed correctly
+        Map<String, Long> parsedBreakdown = (Map<String, Long>) parsedRecord.getAttributes().get(Attribute.LATENCY_BREAKDOWN_MAP);
+        assertNotNull("Parsed record should have LATENCY_BREAKDOWN_MAP", parsedBreakdown);
+        assertEquals("query should be parsed correctly", Long.valueOf(40L), parsedBreakdown.get("query"));
+        assertEquals("fetch should be parsed correctly", Long.valueOf(15L), parsedBreakdown.get("fetch"));
+        assertEquals("pre_phase_overhead should be parsed correctly", Long.valueOf(10L), parsedBreakdown.get("pre_phase_overhead"));
+        assertEquals("_has_timed_breakdown should be parsed correctly", Long.valueOf(1L), parsedBreakdown.get("_has_timed_breakdown"));
+        assertEquals(
+            "query.start_offset_micros should be parsed correctly",
+            Long.valueOf(5000L),
+            parsedBreakdown.get("query.start_offset_micros")
+        );
+        assertEquals(
+            "query.duration_micros should be parsed correctly",
+            Long.valueOf(40000L),
+            parsedBreakdown.get("query.duration_micros")
+        );
+    }
+
+    /**
      * Load the mapping file from resources.
      */
     @SuppressWarnings("unchecked")

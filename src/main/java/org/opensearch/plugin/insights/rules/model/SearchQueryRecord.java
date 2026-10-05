@@ -152,6 +152,10 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Indicates if the search request failed during execution
      */
     public static final String FAILED = "failed";
+    /**
+     * The unified latency breakdown map showing where time is spent across all instrumentation layers
+     */
+    public static final String LATENCY_BREAKDOWN_MAP = "latency_breakdown_map";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -342,6 +346,21 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case FAILED:
                         attributes.put(Attribute.FAILED, parser.booleanValue());
+                        break;
+                    case LATENCY_BREAKDOWN_MAP:
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        Map<String, Object> latencyBreakdownMap = new HashMap<>();
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String metricName = parser.currentName();
+                            parser.nextToken();
+                            // Handle both numeric values (durations, offsets) and string values (_overlaps metadata)
+                            if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
+                                latencyBreakdownMap.put(metricName, parser.text());
+                            } else {
+                                latencyBreakdownMap.put(metricName, parser.longValue());
+                            }
+                        }
+                        attributes.put(Attribute.LATENCY_BREAKDOWN_MAP, latencyBreakdownMap);
                         break;
                     case WLM_GROUP_ID:
                         attributes.put(Attribute.WLM_GROUP_ID, parser.text());

@@ -655,6 +655,230 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertFalse("Listener should be disabled when all features including cache are disabled", listener.isEnabled());
     }
 
+    /**
+     * Test that QueryInsightsListener correctly merges phase latency map, gap breakdown map,
+     * and timed breakdown map into a unified LATENCY_BREAKDOWN_MAP attribute.
+     *
+     * Validates: Requirements 11.1, 11.3, 11.4, 11.6
+     */
+    @SuppressWarnings("unchecked")
+    public void testLatencyBreakdownMapMergesAllSources() {
+        Long timestamp = System.currentTimeMillis() - 100L;
+        SearchType searchType = SearchType.QUERY_THEN_FETCH;
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.size(10);
+
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        String[] indices = new String[] { "test-index" };
+
+        // Phase latency map (existing phase timing data)
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("query", 40L);
+        phaseLatencyMap.put("fetch", 15L);
+        phaseLatencyMap.put("can_match", 5L);
+
+        // Gap breakdown map (coordinator-level overhead and gap metrics)
+        Map<String, Long> gapBreakdownMap = new HashMap<>();
+        gapBreakdownMap.put("pre_phase_overhead", 18L);
+        gapBreakdownMap.put("query_rewrite", 8L);
+        gapBreakdownMap.put("shard_routing", 3L);
+        gapBreakdownMap.put("coordinator_queue_wait", 35L);
+        gapBreakdownMap.put("query_to_fetch_gap", 12L);
+        gapBreakdownMap.put("post_phase_overhead", 4L);
+
+        // Timed breakdown map (Gantt-chart positioning data)
+        Map<String, Map<String, Long>> timedBreakdownMap = new HashMap<>();
+        Map<String, Long> queryRewriteTiming = new HashMap<>();
+        queryRewriteTiming.put("start_offset_micros", 120L);
+        queryRewriteTiming.put("duration_micros", 8000L);
+        timedBreakdownMap.put("query_rewrite", queryRewriteTiming);
+
+        Map<String, Long> shardRoutingTiming = new HashMap<>();
+        shardRoutingTiming.put("start_offset_micros", 8200L);
+        shardRoutingTiming.put("duration_micros", 3000L);
+        timedBreakdownMap.put("shard_routing", shardRoutingTiming);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(searchType);
+        when(searchRequest.source()).thenReturn(searchSourceBuilder);
+        when(searchRequest.indices()).thenReturn(indices);
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchRequestContext.getLatencyBreakdownMap()).thenReturn(gapBreakdownMap);
+        when(searchRequestContext.getTimedLatencyBreakdownMap()).thenReturn(timedBreakdownMap);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(5);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+
+        SearchQueryRecord record = captor.getValue();
+        Map<Attribute, Object> attributes = record.getAttributes();
+
+        // Verify LATENCY_BREAKDOWN_MAP attribute is present
+        assertNotNull("LATENCY_BREAKDOWN_MAP attribute should be present", attributes.get(Attribute.LATENCY_BREAKDOWN_MAP));
+        Map<String, Long> unifiedBreakdown = (Map<String, Long>) attributes.get(Attribute.LATENCY_BREAKDOWN_MAP);
+
+        // Verify phase latency map entries are included
+        assertEquals("query phase should be in unified breakdown", Long.valueOf(40L), unifiedBreakdown.get("query"));
+        assertEquals("fetch phase should be in unified breakdown", Long.valueOf(15L), unifiedBreakdown.get("fetch"));
+        assertEquals("can_match phase should be in unified breakdown", Long.valueOf(5L), unifiedBreakdown.get("can_match"));
+
+        // Verify gap breakdown entries are included
+        assertEquals("pre_phase_overhead should be in unified breakdown", Long.valueOf(18L), unifiedBreakdown.get("pre_phase_overhead"));
+        assertEquals("query_rewrite should be in unified breakdown", Long.valueOf(8L), unifiedBreakdown.get("query_rewrite"));
+        assertEquals("shard_routing should be in unified breakdown", Long.valueOf(3L), unifiedBreakdown.get("shard_routing"));
+        assertEquals(
+            "coordinator_queue_wait should be in unified breakdown",
+            Long.valueOf(35L),
+            unifiedBreakdown.get("coordinator_queue_wait")
+        );
+        assertEquals(
+            "query_to_fetch_gap should be in unified breakdown",
+            Long.valueOf(12L),
+            unifiedBreakdown.get("query_to_fetch_gap")
+        );
+        assertEquals("post_phase_overhead should be in unified breakdown", Long.valueOf(4L), unifiedBreakdown.get("post_phase_overhead"));
+
+        // Verify _has_timed_breakdown flag is set (Req 11.4)
+        assertEquals("_has_timed_breakdown flag should be 1", Long.valueOf(1L), unifiedBreakdown.get("_has_timed_breakdown"));
+
+        // Verify timed breakdown entries are flattened with correct suffixes (Req 11.3)
+        assertEquals(
+            "query_rewrite.start_offset_micros should be present",
+            Long.valueOf(120L),
+            unifiedBreakdown.get("query_rewrite.start_offset_micros")
+        );
+        assertEquals(
+            "query_rewrite.duration_micros should be present",
+            Long.valueOf(8000L),
+            unifiedBreakdown.get("query_rewrite.duration_micros")
+        );
+        assertEquals(
+            "shard_routing.start_offset_micros should be present",
+            Long.valueOf(8200L),
+            unifiedBreakdown.get("shard_routing.start_offset_micros")
+        );
+        assertEquals(
+            "shard_routing.duration_micros should be present",
+            Long.valueOf(3000L),
+            unifiedBreakdown.get("shard_routing.duration_micros")
+        );
+
+        // Verify PHASE_LATENCY_MAP is still set separately for backward compatibility (Req 14.1)
+        assertNotNull("PHASE_LATENCY_MAP should still be present", attributes.get(Attribute.PHASE_LATENCY_MAP));
+        Map<String, Long> phaseMap = (Map<String, Long>) attributes.get(Attribute.PHASE_LATENCY_MAP);
+        assertEquals("phase_latency_map should contain query", Long.valueOf(40L), phaseMap.get("query"));
+        assertEquals("phase_latency_map should contain fetch", Long.valueOf(15L), phaseMap.get("fetch"));
+    }
+
+    /**
+     * Test that when no breakdown data or timed data is available,
+     * the unified map is still constructed from phase data alone.
+     *
+     * Validates: Requirements 11.6, 14.1, 14.3
+     */
+    @SuppressWarnings("unchecked")
+    public void testLatencyBreakdownMapWithNullBreakdownData() {
+        Long timestamp = System.currentTimeMillis() - 50L;
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        Map<String, Long> phaseLatencyMap = new HashMap<>();
+        phaseLatencyMap.put("query", 20L);
+        phaseLatencyMap.put("fetch", 5L);
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchRequestContext.phaseTookMap()).thenReturn(phaseLatencyMap);
+        when(searchRequestContext.getLatencyBreakdownMap()).thenReturn(null);
+        when(searchRequestContext.getTimedLatencyBreakdownMap()).thenReturn(null);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(2);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+
+        SearchQueryRecord record = captor.getValue();
+        Map<Attribute, Object> attributes = record.getAttributes();
+
+        // Even with null gap/timed data, phase data should populate the unified breakdown
+        Map<String, Long> unifiedBreakdown = (Map<String, Long>) attributes.get(Attribute.LATENCY_BREAKDOWN_MAP);
+        assertNotNull("LATENCY_BREAKDOWN_MAP should still be present from phase data", unifiedBreakdown);
+        assertEquals("query from phase map should be in unified breakdown", Long.valueOf(20L), unifiedBreakdown.get("query"));
+        assertEquals("fetch from phase map should be in unified breakdown", Long.valueOf(5L), unifiedBreakdown.get("fetch"));
+
+        // _has_timed_breakdown should NOT be set when no timed data is available
+        assertNull("_has_timed_breakdown should not be set", unifiedBreakdown.get("_has_timed_breakdown"));
+
+        // PHASE_LATENCY_MAP should still be separately preserved
+        assertNotNull("PHASE_LATENCY_MAP should still be present", attributes.get(Attribute.PHASE_LATENCY_MAP));
+    }
+
+    /**
+     * Test that when all breakdown sources are null/empty, LATENCY_BREAKDOWN_MAP is not set.
+     *
+     * Validates: Requirements 11.5, 14.3
+     */
+    public void testLatencyBreakdownMapNotSetWhenAllSourcesEmpty() {
+        Long timestamp = System.currentTimeMillis() - 50L;
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(Task.X_OPAQUE_ID, "userLabel")
+        );
+
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(timestamp);
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "test-index" });
+        when(searchRequestContext.phaseTookMap()).thenReturn(null);
+        when(searchRequestContext.getLatencyBreakdownMap()).thenReturn(null);
+        when(searchRequestContext.getTimedLatencyBreakdownMap()).thenReturn(null);
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+
+        SearchQueryRecord record = captor.getValue();
+        Map<Attribute, Object> attributes = record.getAttributes();
+
+        // When all breakdown sources are null/empty, the attribute should not be set
+        assertNull("LATENCY_BREAKDOWN_MAP should not be set when all sources are empty/null",
+            attributes.get(Attribute.LATENCY_BREAKDOWN_MAP));
+    }
+
     private void setupValidSearchRequest() {
         SearchTask task = new SearchTask(
             0,
