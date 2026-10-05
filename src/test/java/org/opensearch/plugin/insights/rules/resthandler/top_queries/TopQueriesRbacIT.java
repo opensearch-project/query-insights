@@ -59,6 +59,10 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
     private static final String PASSWORD_B = "UserTeamB_1234";
     private static final String PASSWORD_C = "UserTeamC_1234";
     private static final String TEST_ROLE = "query_insights_test_role";
+    private static final String USER_WITHOUT_TOP_QUERIES_PERMISSION = "user_without_top_queries_permission";
+    private static final String PASSWORD_WITHOUT_TOP_QUERIES_PERMISSION = "UserWithoutTopQueries_1234";
+    private static final String ROLE_WITHOUT_TOP_QUERIES_PERMISSION = "role_without_top_queries_permission";
+    private static final String TOP_QUERIES_PERMISSION = "cluster:admin/opensearch/insights/top_queries";
     private static final String TEST_INDEX = "test-rbac-index";
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT)
         .withZone(ZoneOffset.UTC);
@@ -86,14 +90,63 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
         deleteSecurityResource("internalusers", USER_TEAM_A);
         deleteSecurityResource("internalusers", USER_TEAM_B);
         deleteSecurityResource("internalusers", USER_TEAM_C);
+        deleteSecurityResource("internalusers", USER_WITHOUT_TOP_QUERIES_PERMISSION);
         deleteSecurityResource("rolesmapping", TEST_ROLE);
+        deleteSecurityResource("rolesmapping", ROLE_WITHOUT_TOP_QUERIES_PERMISSION);
         deleteSecurityResource("roles", TEST_ROLE);
+        deleteSecurityResource("roles", ROLE_WITHOUT_TOP_QUERIES_PERMISSION);
 
         // Delete test index
         try {
             client().performRequest(new Request("DELETE", "/" + TEST_INDEX));
         } catch (Exception e) {
             log.warning("Failed to delete test index: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Verify that the Security plugin preserves the authorization failure as an HTTP 403 response.
+     */
+    public void testTopQueriesRequiresExplicitPermission() throws Exception {
+        assumeTrue("This test requires the security plugin", isSecurityPluginInstalled());
+        setupUserWithoutTopQueriesPermission();
+
+        Request topQueriesRequest = new Request("GET", "/_insights/top_queries");
+        try (RestClient userClient = buildClientForUser(USER_WITHOUT_TOP_QUERIES_PERMISSION, PASSWORD_WITHOUT_TOP_QUERIES_PERMISSION)) {
+            Response clusterHealthResponse = userClient.performRequest(new Request("GET", "/_cluster/health"));
+            assertEquals(200, clusterHealthResponse.getStatusLine().getStatusCode());
+
+            try {
+                userClient.performRequest(topQueriesRequest);
+                fail("A user without the top queries action permission should be denied");
+            } catch (ResponseException e) {
+                assertEquals(403, e.getResponse().getStatusLine().getStatusCode());
+                String responseBody = new String(e.getResponse().getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                assertTrue(
+                    "Expected a security_exception response but received: " + responseBody,
+                    responseBody.contains("security_exception")
+                );
+                assertTrue(
+                    "Expected the denied action in the response but received: " + responseBody,
+                    responseBody.contains(TOP_QUERIES_PERMISSION)
+                );
+            }
+        }
+
+        grantTopQueriesPermission();
+        try (RestClient userClient = buildClientForUser(USER_WITHOUT_TOP_QUERIES_PERMISSION, PASSWORD_WITHOUT_TOP_QUERIES_PERMISSION)) {
+            assertBusy(() -> {
+                try {
+                    Response response = userClient.performRequest(new Request("GET", "/_insights/top_queries"));
+                    assertEquals(200, response.getStatusLine().getStatusCode());
+                } catch (ResponseException e) {
+                    int statusCode = e.getResponse().getStatusLine().getStatusCode();
+                    if (statusCode != 403) {
+                        throw e;
+                    }
+                    throw new AssertionError("Top Queries permission has not propagated yet", e);
+                }
+            }, 10, TimeUnit.SECONDS);
         }
     }
 
@@ -377,6 +430,48 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
         assertTrue(
             "Role mapping creation should succeed",
             mappingResp.getStatusLine().getStatusCode() == 200 || mappingResp.getStatusLine().getStatusCode() == 201
+        );
+    }
+
+    /**
+     * Create a user that can monitor the cluster but cannot invoke the Top Queries transport action.
+     */
+    private void setupUserWithoutTopQueriesPermission() throws IOException {
+        Request createRole = new Request("PUT", "/_plugins/_security/api/roles/" + ROLE_WITHOUT_TOP_QUERIES_PERMISSION);
+        createRole.setJsonEntity("{\"cluster_permissions\":[\"cluster_monitor\"]}");
+        Response roleResponse = client().performRequest(createRole);
+        assertTrue(
+            "Role creation should succeed",
+            roleResponse.getStatusLine().getStatusCode() == 200 || roleResponse.getStatusLine().getStatusCode() == 201
+        );
+
+        Request createUser = new Request("PUT", "/_plugins/_security/api/internalusers/" + USER_WITHOUT_TOP_QUERIES_PERMISSION);
+        createUser.setJsonEntity("{\"password\":\"" + PASSWORD_WITHOUT_TOP_QUERIES_PERMISSION + "\"}");
+        Response userResponse = client().performRequest(createUser);
+        assertTrue(
+            "User creation should succeed",
+            userResponse.getStatusLine().getStatusCode() == 200 || userResponse.getStatusLine().getStatusCode() == 201
+        );
+
+        Request createMapping = new Request("PUT", "/_plugins/_security/api/rolesmapping/" + ROLE_WITHOUT_TOP_QUERIES_PERMISSION);
+        createMapping.setJsonEntity("{\"users\":[\"" + USER_WITHOUT_TOP_QUERIES_PERMISSION + "\"]}");
+        Response mappingResponse = client().performRequest(createMapping);
+        assertTrue(
+            "Role mapping creation should succeed",
+            mappingResponse.getStatusLine().getStatusCode() == 200 || mappingResponse.getStatusLine().getStatusCode() == 201
+        );
+    }
+
+    /**
+     * Replace the test role's monitor permission with the Top Queries action permission.
+     */
+    private void grantTopQueriesPermission() throws IOException {
+        Request updateRole = new Request("PUT", "/_plugins/_security/api/roles/" + ROLE_WITHOUT_TOP_QUERIES_PERMISSION);
+        updateRole.setJsonEntity("{\"cluster_permissions\":[\"" + TOP_QUERIES_PERMISSION + "\"]}");
+        Response roleResponse = client().performRequest(updateRole);
+        assertTrue(
+            "Role update should succeed",
+            roleResponse.getStatusLine().getStatusCode() == 200 || roleResponse.getStatusLine().getStatusCode() == 201
         );
     }
 
