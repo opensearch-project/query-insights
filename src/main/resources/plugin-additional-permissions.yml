@@ -1,0 +1,18 @@
+# Permissions granted to this plugin's own subject when the security plugin is installed.
+#
+# The top queries local index exporter owns top_queries-<date>-<hash> indices. They are not
+# registered as system indices, so the subject does not inherit access to them and has to be
+# granted it here. Reads only: the plugin writes and prunes these indices from its own background
+# threads rather than through the subject.
+#
+# No cluster permissions are needed. The only action the subject performs is a plain search, which
+# security classifies as an index permission. Multi-get, multi-search, scroll, multi-term-vectors,
+# reindex and the index template APIs are the ones it classifies as cluster permissions, and none of
+# them are used here. The key still has to be present, because security appends the bulk action to
+# the list it reads from this file.
+cluster_permissions: []
+index_permissions:
+  - index_patterns:
+      - "top_queries-*"
+    allowed_actions:
+      - "read"
