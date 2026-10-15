@@ -439,3 +439,22 @@ task updateVersion {
     ant.replaceregexp(file:'build.gradle', match: '"opensearch.version", "\\d.*"', replace: '"opensearch.version", "' + newVersion.tokenize('-')[0] + '-SNAPSHOT"', flags:'g', byline:true)
   }
 }
+
+// Pin org.apache.httpcomponents.client5:httpclient5 to a patched version for CVE-2026-64607 (transitive dependency; not declared directly).
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'org.apache.httpcomponents.client5:httpclient5:5.6.3'
+        }
+    }
+}
+
+// Pin org.apache.httpcomponents.core5:httpcore5 to a patched version for CVE-2026-54399 (transitive dependency; not declared directly).
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'org.apache.httpcomponents.core5:httpcore5:5.4.3'
+            force 'org.apache.httpcomponents.core5:httpcore5-h2:5.4.3'
+        }
+    }
+}
