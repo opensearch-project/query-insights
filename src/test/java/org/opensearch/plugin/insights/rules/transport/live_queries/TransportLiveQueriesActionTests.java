@@ -12,6 +12,7 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -27,6 +28,8 @@ import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksResponse;
 import org.opensearch.action.admin.cluster.node.tasks.list.TaskGroup;
+import org.opensearch.action.search.SearchRequest;
+import org.opensearch.action.search.SearchTask;
 import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.cluster.ClusterName;
@@ -35,6 +38,7 @@ import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.tasks.TaskId;
 import org.opensearch.core.tasks.resourcetracker.TaskResourceStats;
@@ -44,6 +48,9 @@ import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
@@ -59,12 +66,19 @@ import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.ClusterAdminClient;
+import org.opensearch.wlm.WorkloadGroupTask;
 
 /**
  * Unit tests for the {@link TransportLiveQueriesAction} class.
  */
 @SuppressWarnings("unchecked")
 public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
+
+    // Spelled out rather than taken from TransportLiveQueriesAction: the PPL action name is the SQL
+    // plugin's, and these tests pin it.
+    private static final String PPL_ACTION = "cluster:admin/opensearch/ppl";
+    private static final String SEARCH_ACTION = "indices:data/read/search";
+    private static final String SHARD_QUERY_ACTION = "indices:data/read/search[phase/query]";
 
     private TransportLiveQueriesAction transportLiveQueriesAction;
     private Client client;
@@ -1479,5 +1493,248 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
             351600L,
             rec.getShardTasks().get(2).getTaskInfo().getResourceStats().getResourceUsageInfo().get("total").getMemoryInBytes()
         );
+    }
+
+    // =====================================================================
+    // PPL queries
+    // =====================================================================
+
+    /** A task with a fixed id and parent, so a real ListTasksResponse groups it as list tasks would. */
+    private TaskInfo taskInfo(TaskId taskId, TaskId parentTaskId, String action, long runningTimeNanos, long cpuNanos, long memoryBytes) {
+        TaskResourceStats resourceStats = new TaskResourceStats(
+            Map.of("total", new TaskResourceUsage(cpuNanos, memoryBytes)),
+            new TaskThreadUsage(0, 0)
+        );
+        return new TaskInfo(
+            taskId,
+            "transport",
+            action,
+            action + " " + taskId,
+            null,
+            100L,
+            runningTimeNanos,
+            true,
+            false,
+            parentTaskId,
+            emptyMap(),
+            resourceStats
+        );
+    }
+
+    /** Stubs list tasks with a real ListTasksResponse, which builds the task groups from parent ids. */
+    private void stubListTasks(List<TaskInfo> tasks) {
+        ListTasksResponse response = new ListTasksResponse(tasks, emptyList(), emptyList());
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(response);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+    }
+
+    private LiveQueriesResponse executeLiveQueries(LiveQueriesRequest request) {
+        PlainActionFuture<LiveQueriesResponse> future = PlainActionFuture.newFuture();
+        transportLiveQueriesAction.execute(request, future);
+        return future.actionGet();
+    }
+
+    private static LiveQueryRecord recordFor(LiveQueriesResponse response, TaskId taskId) {
+        return response.getLiveQueries()
+            .stream()
+            .filter(r -> r.getQueryId().equals(taskId.toString()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no live query for task " + taskId));
+    }
+
+    private static List<String> queryIds(LiveQueriesResponse response) {
+        return response.getLiveQueries().stream().map(LiveQueryRecord::getQueryId).toList();
+    }
+
+    public void testPplQueryIsOneLiveQueryWithItsSearches() throws Exception {
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId searchId = new TaskId(node1.getId(), 11L);
+        TaskId shardId = new TaskId(node2.getId(), 12L);
+        TaskId dslId = new TaskId(node2.getId(), 20L);
+        stubListTasks(
+            List.of(
+                // The PPL task does not track resources, so list tasks reports zero usage for it.
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 0L, 0L),
+                taskInfo(searchId, pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                taskInfo(shardId, searchId, SHARD_QUERY_ACTION, 500_000L, 300L, 400L),
+                taskInfo(dslId, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 50L, 60L)
+            )
+        );
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        ArgumentCaptor<ListTasksRequest> captor = ArgumentCaptor.forClass(ListTasksRequest.class);
+        verify(clusterAdminClient).listTasks(captor.capture(), any(ActionListener.class));
+        assertArrayEquals(new String[] { "indices:data/read/search*", PPL_ACTION }, captor.getValue().getActions());
+
+        // The PPL query's search is reported inside the PPL query, not as a live query of its own.
+        assertEquals(List.of(pplId.toString(), dslId.toString()), queryIds(response));
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertEquals("running", ppl.getStatus());
+        assertEquals(PPL_ACTION, ppl.getCoordinatorTask().getTaskInfo().getAction());
+        assertEquals(List.of(searchId, shardId), ppl.getShardTasks().stream().map(t -> t.getTaskInfo().getTaskId()).toList());
+        assertEquals(400L, ppl.getTotalCpu()); // 0 + 100 + 300
+        assertEquals(600L, ppl.getTotalMemory()); // 0 + 200 + 400
+        assertEquals(3L, ppl.getTotalLatency()); // the PPL task's running time, not its search's
+
+        LiveQueryRecord dsl = recordFor(response, dslId);
+        assertEquals(SEARCH_ACTION, dsl.getCoordinatorTask().getTaskInfo().getAction());
+        assertEquals(50L, dsl.getTotalCpu());
+        assertTrue(dsl.getShardTasks().isEmpty());
+    }
+
+    public void testPplQueryWithNoSearchRunningIsStillLive() throws Exception {
+        // Between searches (planning, or processing a page) a PPL query has no child tasks.
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        stubListTasks(List.of(taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertTrue(ppl.getShardTasks().isEmpty());
+        assertEquals(0L, ppl.getTotalCpu());
+        assertEquals(2L, ppl.getTotalLatency());
+        assertNull(ppl.getUsername());
+        assertNull(ppl.getWlmGroupId());
+    }
+
+    public void testSearchWhoseParentIsNotListedIsReportedOnItsOwn() throws Exception {
+        // E.g. its PPL task finished between the listing on each node: the search is a DSL query then.
+        TaskId searchId = new TaskId(node1.getId(), 11L);
+        stubListTasks(List.of(taskInfo(searchId, new TaskId(node1.getId(), 10L), SEARCH_ACTION, 1_000_000L, 100L, 200L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        assertEquals(List.of(searchId.toString()), queryIds(response));
+        assertEquals(SEARCH_ACTION, recordFor(response, searchId).getCoordinatorTask().getTaskInfo().getAction());
+    }
+
+    public void testPplQueryUserComesFromItsSearch() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.NONE);
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId searchId = new TaskId(node1.getId(), 11L);
+        stubListTasks(
+            List.of(
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L),
+                taskInfo(searchId, pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L)
+            )
+        );
+        stubUserInfoFanOut(Map.of(searchId.toString(), new LiveQueryUserInfoDTO("alice", List.of("user_role"), List.of("backend1"))));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertEquals("alice", ppl.getUsername());
+        assertEquals(List.of("user_role"), ppl.getUserRoles());
+        assertEquals(List.of("backend1"), ppl.getBackendRoles());
+
+        // Both keys are asked for, from the node that runs the PPL query and its search.
+        ArgumentCaptor<LiveQueriesUserInfoRequest> captor = ArgumentCaptor.forClass(LiveQueriesUserInfoRequest.class);
+        verify(client).execute(eq(LiveQueriesUserInfoAction.INSTANCE), captor.capture(), any());
+        assertEquals(List.of(pplId.toString(), searchId.toString()), captor.getValue().getTaskKeys());
+        assertArrayEquals(new String[] { node1.getId() }, captor.getValue().nodesIds());
+    }
+
+    public void testPplQueryUserPrefersItsOwnKeyThenItsFirstSearchWithOne() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.NONE);
+        TaskInfo pplWithOwnIdentity = taskInfo(new TaskId(node1.getId(), 10L), TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 0L, 0L);
+        TaskInfo itsSearch = taskInfo(new TaskId(node1.getId(), 11L), pplWithOwnIdentity.getTaskId(), SEARCH_ACTION, 1L, 0L, 0L);
+        TaskInfo ppl = taskInfo(new TaskId(node1.getId(), 20L), TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L);
+        // The first search has already ended, taking its captured identity with it.
+        TaskInfo endedSearch = taskInfo(new TaskId(node1.getId(), 21L), ppl.getTaskId(), SEARCH_ACTION, 1L, 0L, 0L);
+        TaskInfo runningSearch = taskInfo(new TaskId(node1.getId(), 22L), ppl.getTaskId(), SEARCH_ACTION, 1L, 0L, 0L);
+        // Built by hand so the order of the PPL query's searches is fixed.
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(
+            List.of(
+                new TaskGroup(pplWithOwnIdentity, List.of(new TaskGroup(itsSearch, emptyList()))),
+                new TaskGroup(ppl, List.of(new TaskGroup(endedSearch, emptyList()), new TaskGroup(runningSearch, emptyList())))
+            )
+        );
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+        stubUserInfoFanOut(
+            Map.of(
+                pplWithOwnIdentity.getTaskId().toString(),
+                new LiveQueryUserInfoDTO("carol", List.of(), List.of()),
+                itsSearch.getTaskId().toString(),
+                new LiveQueryUserInfoDTO("alice", List.of(), List.of()),
+                runningSearch.getTaskId().toString(),
+                new LiveQueryUserInfoDTO("bob", List.of(), List.of())
+            )
+        );
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        assertEquals("carol", recordFor(response, pplWithOwnIdentity.getTaskId()).getUsername());
+        assertEquals("bob", recordFor(response, ppl.getTaskId()).getUsername());
+    }
+
+    public void testFilterByModeUsernameAppliesToPplQueries() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("alice|backend1|user_role");
+        TaskId alicePpl = new TaskId(node1.getId(), 10L);
+        TaskId aliceSearch = new TaskId(node1.getId(), 11L);
+        TaskId bobPpl = new TaskId(node1.getId(), 20L);
+        TaskId bobSearch = new TaskId(node1.getId(), 21L);
+        TaskId pplWithNoSearch = new TaskId(node1.getId(), 30L);
+        stubListTasks(
+            List.of(
+                taskInfo(alicePpl, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 0L, 0L),
+                taskInfo(aliceSearch, alicePpl, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                taskInfo(bobPpl, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L),
+                taskInfo(bobSearch, bobPpl, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                taskInfo(pplWithNoSearch, TaskId.EMPTY_TASK_ID, PPL_ACTION, 1_000_000L, 0L, 0L)
+            )
+        );
+        stubUserInfoFanOut(
+            Map.of(
+                aliceSearch.toString(),
+                new LiveQueryUserInfoDTO("alice", List.of("user_role"), List.of("backend1")),
+                bobSearch.toString(),
+                new LiveQueryUserInfoDTO("bob", List.of("user_role"), List.of("backend2"))
+            )
+        );
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        // A PPL query with no search running has no identity to match, like any query without one.
+        assertEquals(List.of(alicePpl.toString()), queryIds(response));
+    }
+
+    public void testPplQueryWorkloadGroupComesFromItsSearch() throws Exception {
+        ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
+        threadContext.putHeader(WorkloadGroupTask.WORKLOAD_GROUP_ID_HEADER, "analytics");
+        when(threadPool.getThreadContext()).thenReturn(threadContext);
+        SearchTask search = (SearchTask) transportService.getTaskManager().register("transport", SEARCH_ACTION, new SearchRequest());
+        search.setWorkloadGroupId(threadContext);
+        try {
+            // Only the search is a registered local task; the PPL task is not a WorkloadGroupTask.
+            TaskId pplId = new TaskId(node1.getId(), Long.MAX_VALUE);
+            stubListTasks(
+                List.of(
+                    taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L),
+                    taskInfo(new TaskId(node1.getId(), search.getId()), pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L)
+                )
+            );
+
+            LiveQueriesResponse inGroup = executeLiveQueries(
+                new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "analytics", false)
+            );
+            assertEquals(List.of(pplId.toString()), queryIds(inGroup));
+            assertEquals("analytics", recordFor(inGroup, pplId).getWlmGroupId());
+
+            LiveQueriesResponse otherGroup = executeLiveQueries(
+                new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "reporting", false)
+            );
+            assertTrue(otherGroup.getLiveQueries().isEmpty());
+        } finally {
+            transportService.getTaskManager().unregister(search);
+        }
     }
 }

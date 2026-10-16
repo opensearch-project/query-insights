@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.transport.live_queries;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,14 +51,25 @@ import org.opensearch.tasks.TaskInfo;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
+import org.opensearch.wlm.WorkloadGroupTask;
 
 /**
- * Transport action for fetching ongoing live queries
+ * Transport action for fetching ongoing live queries.
+ *
+ * <p>A live query is a root task group: a DSL search's coordinator task, or a PPL query's task. The
+ * searches a PPL query issues with its task as their parent nest under that task, so they and their
+ * shard tasks are reported as part of the one PPL query rather than as separate searches.
  */
 public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueriesRequest, LiveQueriesResponse> {
 
     private static final Logger logger = LogManager.getLogger(TransportLiveQueriesAction.class);
     private static final String TOTAL = "total";
+
+    /** Action of a DSL search's coordinator task. */
+    static final String SEARCH_ACTION = "indices:data/read/search";
+
+    /** Action of the SQL plugin's PPL query task. */
+    static final String PPL_ACTION = "cluster:admin/opensearch/ppl";
 
     private final Client client;
     private final TransportService transportService;
@@ -79,7 +91,10 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     @Override
     protected void doExecute(final Task task, final LiveQueriesRequest request, final ActionListener<LiveQueriesResponse> listener) {
-        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose()).setActions("indices:data/read/search*");
+        // The PPL task has to be listed too: when its child searches' parent is missing from the
+        // listing, ListTasksResponse makes each of them a top-level group of its own.
+        ListTasksRequest listTasksRequest = new ListTasksRequest().setDetailed(request.isVerbose())
+            .setActions(SEARCH_ACTION + "*", PPL_ACTION);
 
         // Set nodes filter if provided in the request
         String[] requestedNodeIds = request.nodesIds();
@@ -93,31 +108,32 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             public void onResponse(ListTasksResponse taskResponse) {
                 try {
                     List<LiveQueryRecord> allRecords = new ArrayList<>();
+                    // Task keys of each PPL query's child searches, by PPL query id. The search
+                    // listener captures identity per search task, never for the PPL task itself.
+                    Map<String, List<String>> childSearchKeysByQueryId = new HashMap<>();
 
                     for (TaskGroup taskGroup : taskResponse.getTaskGroups()) {
                         TaskInfo coordinatorInfo = taskGroup.getTaskInfo();
                         String action = coordinatorInfo.getAction();
+                        boolean isPpl = PPL_ACTION.equals(action);
 
-                        if (!action.equals("indices:data/read/search")) {
+                        if (!isPpl && !SEARCH_ACTION.equals(action)) {
                             continue;
                         }
 
                         // Build the query id with the shared key helper so it matches the key the
                         // listener stores user info under (nodeId:taskId) and can't drift from
                         // TaskId.toString()'s internal format.
-                        String queryId = QueryInsightsService.buildLiveQueryTaskKey(
-                            coordinatorInfo.getTaskId().getNodeId(),
-                            coordinatorInfo.getTaskId().getId()
-                        );
+                        String queryId = taskKey(coordinatorInfo);
+
+                        // A PPL task is not a search, so it has no workload group or captured
+                        // identity of its own; both come from the searches it is running.
+                        List<TaskInfo> childSearches = isPpl ? collectChildSearches(taskGroup) : List.of();
 
                         // Get WLM group ID
-                        String wlmGroupId = null;
-                        Task runningTask = null;
-                        if (transportService.getLocalNode().getId().equals(coordinatorInfo.getTaskId().getNodeId())) {
-                            runningTask = transportService.getTaskManager().getTask(coordinatorInfo.getTaskId().getId());
-                        }
-                        if (runningTask instanceof org.opensearch.wlm.WorkloadGroupTask workloadTask) {
-                            wlmGroupId = workloadTask.getWorkloadGroupId();
+                        String wlmGroupId = localWorkloadGroupId(coordinatorInfo);
+                        for (int i = 0; wlmGroupId == null && i < childSearches.size(); i++) {
+                            wlmGroupId = localWorkloadGroupId(childSearches.get(i));
                         }
 
                         String targetWlmGroupId = request.getWlmGroupId();
@@ -178,6 +194,9 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         );
 
                         allRecords.add(record);
+                        if (!childSearches.isEmpty()) {
+                            childSearchKeysByQueryId.put(queryId, childSearches.stream().map(TransportLiveQueriesAction::taskKey).toList());
+                        }
                     }
 
                     List<LiveQueryRecord> sortedRecords = allRecords.stream().sorted((a, b) -> {
@@ -193,7 +212,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
                     // Fan out to all nodes to resolve user identity captured on the coordinating node of
                     // each search, then continue with finished-queries handling (if requested).
-                    resolveUserInfoAndRespond(sortedRecords, request, listener);
+                    resolveUserInfoAndRespond(sortedRecords, childSearchKeysByQueryId, request, listener);
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -211,10 +230,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
     /**
      * Fans out to all nodes to resolve user identity for the given live query records (each record's
      * id is the {@code nodeId:taskId} key used by the listener), enriches the records, and then
-     * completes the response — appending finished queries if the request asked for them.
+     * completes the response — appending finished queries if the request asked for them. A PPL
+     * record's child search keys are resolved as well, as the fallback for its identity.
      */
     private void resolveUserInfoAndRespond(
         final List<LiveQueryRecord> records,
+        final Map<String, List<String>> childSearchKeysByQueryId,
         final LiveQueriesRequest request,
         final ActionListener<LiveQueriesResponse> listener
     ) {
@@ -224,7 +245,11 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             return;
         }
 
-        List<String> taskKeys = records.stream().map(LiveQueryRecord::getQueryId).toList();
+        List<String> taskKeys = new ArrayList<>();
+        for (LiveQueryRecord record : records) {
+            taskKeys.add(record.getQueryId());
+            taskKeys.addAll(childSearchKeysByQueryId.getOrDefault(record.getQueryId(), List.of()));
+        }
 
         // A task key is "nodeId:taskId"; user info for a task lives only on the node that
         // coordinated it. Target the fan-out at just those owning nodes instead of the whole
@@ -240,7 +265,11 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             LiveQueriesUserInfoAction.INSTANCE,
             new LiveQueriesUserInfoRequest(taskKeys, targetNodeIds),
             ActionListener.wrap(userInfoResponse -> {
-                List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(records, userInfoResponse.getAllUserInfo());
+                List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(
+                    records,
+                    userInfoResponse.getAllUserInfo(),
+                    childSearchKeysByQueryId
+                );
                 List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(enrichedRecords);
                 respondWithFinishedQueries(filteredRecords, request, listener);
             }, ex -> {
@@ -254,14 +283,15 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
 
     private List<LiveQueryRecord> enrichWithUserInfo(
         final List<LiveQueryRecord> records,
-        final Map<String, LiveQueryUserInfoDTO> userInfoByTaskKey
+        final Map<String, LiveQueryUserInfoDTO> userInfoByTaskKey,
+        final Map<String, List<String>> childSearchKeysByQueryId
     ) {
         if (userInfoByTaskKey.isEmpty()) {
             return records;
         }
         List<LiveQueryRecord> enriched = new ArrayList<>(records.size());
         for (LiveQueryRecord record : records) {
-            LiveQueryUserInfoDTO userInfo = userInfoByTaskKey.get(record.getQueryId());
+            LiveQueryUserInfoDTO userInfo = userInfoFor(record.getQueryId(), userInfoByTaskKey, childSearchKeysByQueryId);
             if (userInfo == null) {
                 enriched.add(record);
                 continue;
@@ -311,6 +341,60 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             );
         } else {
             listener.onResponse(new LiveQueriesResponse(finalRecords, List.of(), false));
+        }
+    }
+
+    /**
+     * Returns the identity captured for a live query: under its own task key, else under the first of
+     * its child searches that has one (a PPL query's identity is captured only on its searches).
+     */
+    private static LiveQueryUserInfoDTO userInfoFor(
+        final String queryId,
+        final Map<String, LiveQueryUserInfoDTO> userInfoByTaskKey,
+        final Map<String, List<String>> childSearchKeysByQueryId
+    ) {
+        LiveQueryUserInfoDTO userInfo = userInfoByTaskKey.get(queryId);
+        if (userInfo != null) {
+            return userInfo;
+        }
+        for (String childKey : childSearchKeysByQueryId.getOrDefault(queryId, List.of())) {
+            userInfo = userInfoByTaskKey.get(childKey);
+            if (userInfo != null) {
+                return userInfo;
+            }
+        }
+        return null;
+    }
+
+    private static String taskKey(final TaskInfo info) {
+        return QueryInsightsService.buildLiveQueryTaskKey(info.getTaskId().getNodeId(), info.getTaskId().getId());
+    }
+
+    /**
+     * Returns the workload group of the task behind {@code info}, or null when that task is not on
+     * this node, has finished, or is not a {@link WorkloadGroupTask}.
+     */
+    private String localWorkloadGroupId(final TaskInfo info) {
+        if (!transportService.getLocalNode().getId().equals(info.getTaskId().getNodeId())) {
+            return null;
+        }
+        Task runningTask = transportService.getTaskManager().getTask(info.getTaskId().getId());
+        return runningTask instanceof WorkloadGroupTask workloadTask ? workloadTask.getWorkloadGroupId() : null;
+    }
+
+    /** Collects the search coordinator tasks under {@code group}, depth first. */
+    private static List<TaskInfo> collectChildSearches(final TaskGroup group) {
+        List<TaskInfo> searches = new ArrayList<>();
+        collectChildSearches(group, searches);
+        return searches;
+    }
+
+    private static void collectChildSearches(final TaskGroup group, final List<TaskInfo> result) {
+        for (TaskGroup child : group.getChildTasks()) {
+            if (SEARCH_ACTION.equals(child.getTaskInfo().getAction())) {
+                result.add(child.getTaskInfo());
+            }
+            collectChildSearches(child, result);
         }
     }
 
