@@ -11,6 +11,7 @@ package org.opensearch.plugin.insights.rules.model;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -30,86 +31,124 @@ public enum Attribute {
     /**
      * The search query type
      */
-    SEARCH_TYPE,
+    SEARCH_TYPE(Version.V_2_16_0),
     /**
      * The search query source
      */
-    SOURCE,
+    SOURCE(Version.V_2_16_0),
     /**
      * Total shards queried
      */
-    TOTAL_SHARDS,
+    TOTAL_SHARDS(Version.V_2_16_0),
     /**
      * The indices involved
      */
-    INDICES,
+    INDICES(Version.V_2_16_0),
     /**
      * The per phase level latency map for a search query
      */
-    PHASE_LATENCY_MAP,
+    PHASE_LATENCY_MAP(Version.V_2_16_0),
     /**
      * The node id for this request
      */
-    NODE_ID,
+    NODE_ID(Version.V_2_16_0),
     /**
      * Tasks level resource usages in this request
      */
-    TASK_RESOURCE_USAGES,
+    TASK_RESOURCE_USAGES(Version.V_2_16_0),
     /**
      * Custom search request labels
      */
-    LABELS,
+    LABELS(Version.V_2_16_0),
     /**
      * Query Group hashcode
      */
-    QUERY_GROUP_HASHCODE,
+    QUERY_GROUP_HASHCODE(Version.V_2_19_0),
     /**
      * Grouping type of the query record (none, similarity)
      */
-    GROUP_BY,
+    GROUP_BY(Version.V_2_19_0),
     /**
      * The description of the search query, often used in live queries.
      */
-    DESCRIPTION,
+    DESCRIPTION(Version.V_3_0_0),
     /**
      * A map indicating for which metric type(s) this record was in the Top N
      */
-    TOP_N_QUERY,
+    TOP_N_QUERY(Version.V_3_1_0, Version.V_2_19_3),
 
     /**
      * The WLM query group ID associated with the query.
      */
-    WLM_GROUP_ID,
+    WLM_GROUP_ID(Version.V_3_3_0),
 
     /**
      * The cancelled of the search query, often used in live queries.
      */
-    IS_CANCELLED,
+    IS_CANCELLED(Version.V_3_1_0),
 
     /**
      * The username who initiated the search query.
      */
-    USERNAME,
+    USERNAME(Version.V_3_5_0),
 
     /**
      * The roles of the user who initiated the search query.
      */
-    USER_ROLES,
+    USER_ROLES(Version.V_3_5_0),
 
     /**
      * The backend roles of the user who initiated the search query.
      */
-    BACKEND_ROLES,
+    BACKEND_ROLES(Version.V_3_6_0),
 
     /**
      * Indicates if the source was truncated due to length limits.
      */
-    SOURCE_TRUNCATED,
+    SOURCE_TRUNCATED(Version.V_3_5_0),
 
     /**
      * Indicates if the search request failed during execution.
      */
-    FAILED;
+    FAILED(Version.V_3_6_0);
+
+    private final Version introducedVersion;
+    private final Version backportVersion;
+
+    // Every new attribute must declare the first release whose reader recognizes its name.
+    Attribute(Version introducedVersion) {
+        this(introducedVersion, null);
+    }
+
+    Attribute(Version introducedVersion, Version backportVersion) {
+        this.introducedVersion = introducedVersion;
+        this.backportVersion = backportVersion;
+    }
+
+    private boolean isSupportedBy(Version version) {
+        return version.onOrAfter(introducedVersion)
+            // A 2.x backport does not imply support in an earlier 3.x release.
+            || (backportVersion != null && version.major == backportVersion.major && version.onOrAfter(backportVersion));
+    }
+
+    /**
+     * Write only attributes recognized by the receiving node. Filter before writing the map
+     * so its entry count matches the number of key/value pairs on the wire. The original
+     * record remains intact for local use and responses to newer nodes.
+     *
+     * @param out the output stream, carrying the negotiated transport version
+     * @param attributes the record's attributes
+     * @throws IOException if serialization fails
+     */
+    public static void writeAttributeMap(StreamOutput out, Map<Attribute, Object> attributes) throws IOException {
+        Map<Attribute, Object> supportedAttributes = new LinkedHashMap<>();
+        for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
+            if (entry.getKey().isSupportedBy(out.getVersion())) {
+                supportedAttributes.put(entry.getKey(), entry.getValue());
+            }
+        }
+        out.writeMap(supportedAttributes, Attribute::writeTo, Attribute::writeValueTo);
+    }
 
     /**
      * Read an Attribute from a StreamInput
@@ -204,37 +243,7 @@ public enum Attribute {
         Map<Attribute, Object> map = new HashMap<>(size);
 
         for (int i = 0; i < size; i++) {
-            final Attribute key;
-            try {
-                key = readFromStream(in);
-            } catch (IllegalArgumentException e) {
-                // The attribute name doesn't match any constant this node's Attribute enum
-                // knows about. This happens during a rolling upgrade: a node running a newer
-                // version can add new Attribute constants (e.g. USER_ROLES, BACKEND_ROLES) and
-                // send them to an older-version coordinator whose enum predates them, and
-                // Attribute.valueOf() throws IllegalArgumentException for the unknown name.
-                //
-                // We can't just let this exception propagate: readAttributeMap is reading a
-                // fixed-size sequence of key/value pairs, so any entry we fail to fully consume
-                // corrupts the byte alignment for every entry after it in this stream, not just
-                // this one. Every attribute defined today other than the handful with bespoke
-                // encodings (TASK_RESOURCE_USAGES, SOURCE, GROUP_BY -- all handled explicitly in
-                // readAttributeValue below) is written through the self-describing
-                // writeGenericValue()/readGenericValue() wire format, so we can read and discard
-                // the value here to stay aligned, without needing to know what the attribute
-                // means. This trades knowledge of the new attribute for correctness of everything
-                // else in the record, which matches the documented expected behavior: "Query
-                // insight should not fail, or at least give up on trying to collect this
-                // particular event." See https://github.com/opensearch-project/query-insights/issues/510
-                //
-                // Caveat: writeValueTo() also special-cases java.util.List through the
-                // Writeable-based out.writeList(), which is NOT self-describing. No attribute
-                // uses a List value today (USER_ROLES/BACKEND_ROLES are String[]), but a future
-                // attribute that does would need its own explicit case in readAttributeValue()
-                // AND readAttributeMap() -- this generic skip cannot safely consume it.
-                in.readGenericValue();
-                continue;
-            }
+            Attribute key = readFromStream(in);
             Object value = readAttributeValue(in, key);
             map.put(key, value);
         }
