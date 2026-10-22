@@ -5,14 +5,15 @@
 # granted it here. Reads only: the plugin writes and prunes these indices from its own background
 # threads rather than through the subject.
 #
-# No cluster permissions are needed. The only action the subject performs is a plain search, which
-# security classifies as an index permission. Multi-get, multi-search, scroll, multi-term-vectors,
-# reindex and the index template APIs are the ones it classifies as cluster permissions, and none of
-# them are used here. The key still has to be present, because security appends the bulk action to
-# the list it reads from this file.
+# The only action the subject runs is one search over named indices. Security evaluates that
+# top-level action alone; the shard-level phases it fans out to are not evaluated again. Name the
+# action literally: action-group names such as "read" are not resolved in this file.
+#
+# No cluster permissions are needed, but the key must be present, because security appends the bulk
+# action to the list it reads from this file.
 cluster_permissions: []
 index_permissions:
   - index_patterns:
       - "top_queries-*"
     allowed_actions:
-      - "read"
+      - "indices:data/read/search"
