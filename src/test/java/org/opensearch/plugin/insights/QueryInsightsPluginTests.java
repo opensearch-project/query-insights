@@ -9,19 +9,31 @@
 package org.opensearch.plugin.insights;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.security.Principal;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Before;
 import org.opensearch.action.ActionRequest;
+import org.opensearch.action.search.SearchAction;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.CheckedRunnable;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.concurrent.ThreadContext;
+import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.action.ActionResponse;
+import org.opensearch.identity.PluginSubject;
+import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsAction;
@@ -31,6 +43,7 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserI
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.resthandler.health_stats.RestHealthStatsAction;
 import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQueriesAction;
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryInsightsSettingsAction;
@@ -130,8 +143,49 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
     }
 
     public void testCreateComponent() {
+        List<Object> components = createComponents();
+        assertEquals(2, components.size());
+        assertTrue(components.get(0) instanceof QueryInsightsService);
+        assertTrue(components.get(1) instanceof QueryInsightsListener);
+    }
+
+    public void testHistoricalReadRunsAsTheAssignedSubject() {
+        when(client.threadPool()).thenReturn(threadPool);
+        AtomicReference<String> markerSeenBySearch = new AtomicReference<>();
+        doAnswer(invocation -> {
+            markerSeenBySearch.set(threadPool.getThreadContext().getTransient("subject.marker"));
+            return null;
+        }).when(client).execute(eq(SearchAction.INSTANCE), any(), any());
+
+        List<Object> components = createComponents();
+        queryInsightsPlugin.assignSubject(new PluginSubject() {
+            @Override
+            public Principal getPrincipal() {
+                return () -> "plugin:test";
+            }
+
+            @Override
+            public <E extends Exception> void runAs(CheckedRunnable<E> runnable) throws E {
+                try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+                    threadPool.getThreadContext().putTransient("subject.marker", "set-by-subject");
+                    runnable.run();
+                }
+            }
+        });
+
+        QueryInsightsService queryInsightsService = (QueryInsightsService) components.get(0);
+        queryInsightsService.setExporterAndReaderType(SinkType.LOCAL_INDEX);
+        ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
+        queryInsightsService.getTopQueriesService(MetricType.LATENCY)
+            .getTopQueriesRecordsFromIndex(now.minusHours(1).toString(), now.toString(), null, false, ActionListener.wrap(r -> {}, e -> {}));
+
+        assertEquals("the historical search must run inside the plugin subject", "set-by-subject", markerSeenBySearch.get());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> createComponents() {
         RepositoriesService repositoriesService = mock(RepositoriesService.class);
-        List<Object> components = (List<Object>) queryInsightsPlugin.createComponents(
+        return (List<Object>) queryInsightsPlugin.createComponents(
             client,
             clusterService,
             threadPool,
@@ -146,9 +200,6 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
             null,
             metricsRegistry
         );
-        assertEquals(2, components.size());
-        assertTrue(components.get(0) instanceof QueryInsightsService);
-        assertTrue(components.get(1) instanceof QueryInsightsListener);
     }
 
     public void testGetExecutorBuilders() {

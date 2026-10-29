@@ -24,7 +24,6 @@ import org.opensearch.action.support.ActionFilters;
 import org.opensearch.action.support.nodes.TransportNodesAction;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.inject.Inject;
-import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -157,7 +156,7 @@ public class TransportTopQueriesAction extends TransportNodesAction<
             }
         }
 
-        try (final ThreadContext.StoredContext storedContext = threadPool.getThreadContext().stashContext()) {
+        try {
             queryInsightsService.getTopQueriesService(request.getMetricType())
                 .getTopQueriesRecordsFromIndex(
                     from,
