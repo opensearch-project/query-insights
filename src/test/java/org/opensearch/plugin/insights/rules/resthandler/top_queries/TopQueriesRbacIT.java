@@ -105,7 +105,8 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
     }
 
     /**
-     * Verify that the Security plugin preserves the authorization failure as an HTTP 403 response.
+     * Verify that a caller without the Top Queries action permission receives a 403 security_exception, and that granting
+     * only that permission is sufficient for the request to succeed.
      */
     public void testTopQueriesRequiresExplicitPermission() throws Exception {
         assumeTrue("This test requires the security plugin", isSecurityPluginInstalled());

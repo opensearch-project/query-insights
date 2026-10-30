@@ -71,8 +71,9 @@ PUT /_plugins/_security/api/rolesmapping/query_insights_full_access
 }
 ```
 
-For IAM-authenticated callers, use the IAM role ARN reported as the caller's backend role. The role-mapping `PUT`
-request creates or replaces the complete mapping, so preserve any existing assignments when updating it.
+On Amazon OpenSearch Service, map callers that authenticate with an IAM role by adding the role ARN to `backend_roles`,
+and map IAM users by adding the user ARN to `users`. The role-mapping `PUT` request creates or replaces the complete
+mapping, so preserve any existing assignments when updating it.
 
 The predefined `all_access` role also authorizes the API, but it grants unrestricted cluster and index access and
 should not be assigned solely for Query Insights.
