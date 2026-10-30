@@ -601,7 +601,9 @@ public class QueryInsightsSettings {
     static final class ExporterTypeValidator implements Setting.Validator<String> {
         @Override
         public void validate(String value) {
-            if (value == null || value.isEmpty()) {
+            // An empty or blank value must be rejected here: the update consumer and node startup both call
+            // SinkType.parse, which throws on it while cluster state is being applied.
+            if (value == null) {
                 return;
             }
             try {
