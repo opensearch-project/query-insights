@@ -1556,8 +1556,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         TaskId dslId = new TaskId(node2.getId(), 20L);
         stubListTasks(
             List.of(
-                // The PPL task does not track resources, so list tasks reports zero usage for it.
-                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 0L, 0L),
+                // The PPL task's own usage is the engine's threads, which the SQL plugin tracks on it.
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 50L, 60L),
                 taskInfo(searchId, pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L),
                 taskInfo(shardId, searchId, SHARD_QUERY_ACTION, 500_000L, 300L, 400L),
                 taskInfo(dslId, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 50L, 60L)
@@ -1576,8 +1576,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         assertEquals("running", ppl.getStatus());
         assertEquals(PPL_ACTION, ppl.getCoordinatorTask().getTaskInfo().getAction());
         assertEquals(List.of(searchId, shardId), ppl.getShardTasks().stream().map(t -> t.getTaskInfo().getTaskId()).toList());
-        assertEquals(400L, ppl.getTotalCpu()); // 0 + 100 + 300
-        assertEquals(600L, ppl.getTotalMemory()); // 0 + 200 + 400
+        assertEquals(450L, ppl.getTotalCpu()); // 50 + 100 + 300
+        assertEquals(660L, ppl.getTotalMemory()); // 60 + 200 + 400
         assertEquals(3L, ppl.getTotalLatency()); // the PPL task's running time, not its search's
 
         LiveQueryRecord dsl = recordFor(response, dslId);
@@ -1602,7 +1602,8 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
     }
 
     public void testSearchWhoseParentIsNotListedIsReportedOnItsOwn() throws Exception {
-        // E.g. its PPL task finished between the listing on each node: the search is a DSL query then.
+        // E.g. an async PPL query past its wait time: its PPL task has answered RUNNING and ended, but the
+        // query keeps running searches, so each is reported as a query of its own.
         TaskId searchId = new TaskId(node1.getId(), 11L);
         stubListTasks(List.of(taskInfo(searchId, new TaskId(node1.getId(), 10L), SEARCH_ACTION, 1_000_000L, 100L, 200L)));
 
@@ -1707,34 +1708,54 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         assertEquals(List.of(alicePpl.toString()), queryIds(response));
     }
 
-    public void testPplQueryWorkloadGroupComesFromItsSearch() throws Exception {
-        ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
-        threadContext.putHeader(WorkloadGroupTask.WORKLOAD_GROUP_ID_HEADER, "analytics");
-        when(threadPool.getThreadContext()).thenReturn(threadContext);
-        SearchTask search = (SearchTask) transportService.getTaskManager().register("transport", SEARCH_ACTION, new SearchRequest());
-        search.setWorkloadGroupId(threadContext);
+    public void testPplQueryHasNoWorkloadGroupAndMatchesTheGroupsItsSearchesRunIn() throws Exception {
+        when(threadPool.getThreadContext()).thenReturn(new ThreadContext(Settings.EMPTY));
+        // WLM tags each search a PPL query runs on its own, so one query can run in several groups.
+        SearchTask analyticsSearch = registerSearchInGroup("analytics");
+        SearchTask reportingSearch = registerSearchInGroup("reporting");
         try {
-            // Only the search is a registered local task; the PPL task is not a WorkloadGroupTask.
+            // Only the searches are registered local tasks; the PPL task is not a WorkloadGroupTask.
             TaskId pplId = new TaskId(node1.getId(), Long.MAX_VALUE);
+            TaskId pplBetweenSearchesId = new TaskId(node1.getId(), Long.MAX_VALUE - 1);
             stubListTasks(
                 List.of(
                     taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 0L, 0L),
-                    taskInfo(new TaskId(node1.getId(), search.getId()), pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L)
+                    taskInfo(new TaskId(node1.getId(), analyticsSearch.getId()), pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                    taskInfo(new TaskId(node1.getId(), reportingSearch.getId()), pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                    taskInfo(pplBetweenSearchesId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 1_000_000L, 0L, 0L)
                 )
             );
 
-            LiveQueriesResponse inGroup = executeLiveQueries(
-                new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "analytics", false)
-            );
-            assertEquals(List.of(pplId.toString()), queryIds(inGroup));
-            assertEquals("analytics", recordFor(inGroup, pplId).getWlmGroupId());
+            // WLM manages the searches a PPL query runs, not the query, so the query has no group.
+            LiveQueriesResponse unfiltered = executeLiveQueries(new LiveQueriesRequest(true));
+            assertNull(recordFor(unfiltered, pplId).getWlmGroupId());
+
+            // A PPL query matches the group of each search it is running, not only its first search's;
+            // between searches it matches none.
+            for (String group : List.of("analytics", "reporting")) {
+                LiveQueriesResponse inGroup = executeLiveQueries(
+                    new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], group, false)
+                );
+                assertEquals(group, List.of(pplId.toString()), queryIds(inGroup));
+                assertNull(recordFor(inGroup, pplId).getWlmGroupId());
+            }
 
             LiveQueriesResponse otherGroup = executeLiveQueries(
-                new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "reporting", false)
+                new LiveQueriesRequest(true, MetricType.LATENCY, -1, new String[0], "billing", false)
             );
             assertTrue(otherGroup.getLiveQueries().isEmpty());
         } finally {
-            transportService.getTaskManager().unregister(search);
+            transportService.getTaskManager().unregister(analyticsSearch);
+            transportService.getTaskManager().unregister(reportingSearch);
         }
+    }
+
+    /** Registers a local search in {@code group}, as WLM tags one. */
+    private SearchTask registerSearchInGroup(String group) {
+        ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
+        threadContext.putHeader(WorkloadGroupTask.WORKLOAD_GROUP_ID_HEADER, group);
+        SearchTask search = (SearchTask) transportService.getTaskManager().register("transport", SEARCH_ACTION, new SearchRequest());
+        search.setWorkloadGroupId(threadContext);
+        return search;
     }
 }

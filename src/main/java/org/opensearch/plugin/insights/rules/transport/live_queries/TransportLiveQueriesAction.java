@@ -59,6 +59,10 @@ import org.opensearch.wlm.WorkloadGroupTask;
  * <p>A live query is a root task group: a DSL search's coordinator task, or a PPL query's task. The
  * searches a PPL query issues with its task as their parent nest under that task, so they and their
  * shard tasks are reported as part of the one PPL query rather than as separate searches.
+ *
+ * <p>An async PPL query ({@code wait_for_completion_timeout} or {@code keep_alive}) that is still running
+ * when its wait time passes is the exception: its PPL task ends when it answers RUNNING while the query
+ * keeps running, so the searches it runs after that are reported as separate live queries.
  */
 public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueriesRequest, LiveQueriesResponse> {
 
@@ -126,18 +130,21 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         // TaskId.toString()'s internal format.
                         String queryId = taskKey(coordinatorInfo);
 
-                        // A PPL task is not a search, so it has no workload group or captured
-                        // identity of its own; both come from the searches it is running.
+                        // A PPL task is not a search, so it has no captured identity of its own;
+                        // it comes from the searches it is running.
                         List<TaskInfo> childSearches = isPpl ? collectChildSearches(taskGroup) : List.of();
 
-                        // Get WLM group ID
+                        // Get WLM group ID. A PPL query has none: its task is not a WorkloadGroupTask.
+                        // WLM tags each search the query runs on its own, so one query can run in
+                        // several groups.
                         String wlmGroupId = localWorkloadGroupId(coordinatorInfo);
-                        for (int i = 0; wlmGroupId == null && i < childSearches.size(); i++) {
-                            wlmGroupId = localWorkloadGroupId(childSearches.get(i));
-                        }
 
+                        // A PPL query matches a group while one of its searches is running in that
+                        // group, so a group filter hides it between searches.
                         String targetWlmGroupId = request.getWlmGroupId();
-                        if (targetWlmGroupId != null && !targetWlmGroupId.equals(wlmGroupId)) {
+                        if (targetWlmGroupId != null
+                            && !targetWlmGroupId.equals(wlmGroupId)
+                            && childSearches.stream().noneMatch(search -> targetWlmGroupId.equals(localWorkloadGroupId(search)))) {
                             continue;
                         }
 
