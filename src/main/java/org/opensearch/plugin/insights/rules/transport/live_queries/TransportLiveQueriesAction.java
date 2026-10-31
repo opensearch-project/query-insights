@@ -343,7 +343,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     List<FinishedQueryRecord> finishedRecords = filterFinishedRecordsByMode(
                         sortFinishedRecords(finishedResponse.getAllFinishedQueries(), request)
                     );
-                    finishedRecords = limitFinishedRecords(finishedRecords, request);
+                    finishedRecords = applyLimit(finishedRecords, request);
                     listener.onResponse(new LiveQueriesResponse(finalRecords, finishedRecords, true));
                 }, ex -> {
                     logger.error("Failed to retrieve finished queries from nodes", ex);
@@ -417,7 +417,11 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
         }
     }
 
-    private List<LiveQueryRecord> applyLimit(List<LiveQueryRecord> records, LiveQueriesRequest request) {
+    /**
+     * Truncates already sorted and RBAC-filtered records to the requested size. Must run after
+     * filtering; limiting first can hide records the caller is allowed to see. A negative size means no limit.
+     */
+    private static <T> List<T> applyLimit(List<T> records, LiveQueriesRequest request) {
         if (request.getSize() < 0) return records;
         return records.stream().limit(request.getSize()).toList();
     }
@@ -431,11 +435,6 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             if (mb == null) return -1;
             return Double.compare(mb.getMeasurement().doubleValue(), ma.getMeasurement().doubleValue());
         }).toList();
-    }
-
-    private List<FinishedQueryRecord> limitFinishedRecords(List<FinishedQueryRecord> records, LiveQueriesRequest request) {
-        if (request.getSize() < 0) return records;
-        return records.stream().limit(request.getSize()).toList();
     }
 
     /**
