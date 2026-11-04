@@ -8,10 +8,12 @@
 
 package org.opensearch.plugin.insights.core.auth;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
@@ -82,6 +84,22 @@ public class TopQueriesRbacFilterTests extends OpenSearchTestCase {
         UserPrincipalInfo userInfo = new UserPrincipalInfo("user3", List.of("team_a"), List.of("role3"));
 
         List<SearchQueryRecord> result = TopQueriesRbacFilter.filterRecords(records, FilterByMode.BACKEND_ROLES, userInfo);
+        assertEquals(1, result.size());
+    }
+
+    public void testFilterByBackendRoles_recordFromAnotherNode() throws IOException {
+        SearchQueryRecord local = createRecord("user1", new String[] { "role1" }, new String[] { "team_a" });
+        BytesStreamOutput out = new BytesStreamOutput();
+        local.writeTo(out);
+        SearchQueryRecord remote = new SearchQueryRecord(out.bytes().streamInput());
+        // Transport deserialization rebuilds the String[] attribute as a plain Object[]
+        Object backendRoles = remote.getAttributes().get(Attribute.BACKEND_ROLES);
+        assertTrue(backendRoles instanceof Object[]);
+        assertFalse(backendRoles instanceof String[]);
+
+        UserPrincipalInfo userInfo = new UserPrincipalInfo("user2", List.of("team_a"), List.of("role2"));
+
+        List<SearchQueryRecord> result = TopQueriesRbacFilter.filterRecords(List.of(remote), FilterByMode.BACKEND_ROLES, userInfo);
         assertEquals(1, result.size());
     }
 
