@@ -79,6 +79,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
+import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
@@ -206,6 +207,28 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertEquals(
             QueryInsightsSettings.DEFAULT_TOP_N_SIZE,
             queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null, null).size()
+        );
+    }
+
+    public void testDrainRecordsContinuesWhenOneMetricTypeFails() {
+        // timestamp ahead of now so the records always fall in the current window, even if a window boundary passes mid-test
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(2, 2, System.currentTimeMillis() + 60_000, 0);
+        Measurement failingMeasurement = mock(Measurement.class);
+        when(failingMeasurement.getMeasurement()).thenThrow(new IllegalStateException("simulated failure"));
+        for (SearchQueryRecord record : records) {
+            record.getMeasurements().put(MetricType.CPU, failingMeasurement);
+            assertTrue(queryInsightsService.addRecord(record));
+        }
+
+        queryInsightsService.drainRecords();
+
+        assertEquals(
+            2,
+            queryInsightsService.getTopQueriesService(MetricType.LATENCY).getTopQueriesRecords(false, null, null, null, null).size()
+        );
+        assertEquals(
+            2,
+            queryInsightsService.getTopQueriesService(MetricType.MEMORY).getTopQueriesRecords(false, null, null, null, null).size()
         );
     }
 
