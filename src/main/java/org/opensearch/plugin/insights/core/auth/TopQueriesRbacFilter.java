@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.core.auth;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -108,19 +109,29 @@ public class TopQueriesRbacFilter {
 
     /**
      * Extract a string collection attribute as a Set.
-     * Handles both String[] (in-memory/XContent path) and List (transport deserialization path,
-     * since readGenericValue converts arrays to List).
+     * Handles String[] (records captured on this node or parsed from XContent), Object[] (records
+     * received from another node, because StreamInput#readGenericValue rebuilds arrays as Object[])
+     * and collections.
      *
      * @return the attribute values as a Set, or null if the attribute is absent or unrecognized
      */
-    @SuppressWarnings("unchecked")
     private static Set<String> getStringSetAttribute(SearchQueryRecord record, Attribute attribute) {
         Object value = record.getAttributes().get(attribute);
-        if (value instanceof String[]) {
-            return new HashSet<>(Arrays.asList((String[]) value));
-        } else if (value instanceof List) {
-            return new HashSet<>((List<String>) value);
+        if (value instanceof Object[]) {
+            return toStringSet(Arrays.asList((Object[]) value));
+        } else if (value instanceof Collection) {
+            return toStringSet((Collection<?>) value);
         }
         return null;
+    }
+
+    private static Set<String> toStringSet(Collection<?> values) {
+        Set<String> result = new HashSet<>();
+        for (Object value : values) {
+            if (value != null) {
+                result.add(value.toString());
+            }
+        }
+        return result;
     }
 }
