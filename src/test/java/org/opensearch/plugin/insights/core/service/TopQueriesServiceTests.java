@@ -22,6 +22,7 @@ import static org.opensearch.plugin.insights.core.service.QueryInsightsService.Q
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.TOP_QUERIES_INDEX_TAG_VALUE;
 import static org.opensearch.plugin.insights.core.service.TopQueriesService.isTopQueriesIndex;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -43,6 +44,8 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
@@ -59,6 +62,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.search.SearchExtBuilder;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -1013,6 +1017,71 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertTrue(sourceValue instanceof SourceString);
         assertEquals(fullSource, ((SourceString) sourceValue).getValue());
         assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSetSourceAndTruncationWithUnserializableSource() {
+        SearchSourceBuilder unserializableSource = new SearchSourceBuilder().size(5).ext(List.of(new BareValueExtBuilder()));
+        expectThrows(Exception.class, unserializableSource::toString);
+
+        SearchQueryRecord record = createRecordWithSource(unserializableSource, System.currentTimeMillis(), 100L, "bad-id");
+        TopQueriesService.setSourceAndTruncation(record, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
+
+        Object sourceValue = record.getAttributes().get(Attribute.SOURCE);
+        assertTrue(sourceValue instanceof SourceString);
+        assertEquals("", ((SourceString) sourceValue).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testUnserializableSourceDoesNotBlockSubsequentConsumeRecords() {
+        SearchSourceBuilder unserializableSource = new SearchSourceBuilder().size(5).ext(List.of(new BareValueExtBuilder()));
+        SearchQueryRecord badRecord = createRecordWithSource(unserializableSource, System.currentTimeMillis(), 500L, "bad-id");
+        topQueriesService.consumeRecords(List.of(badRecord));
+
+        SearchSourceBuilder validSource = new SearchSourceBuilder().size(10);
+        SearchQueryRecord goodRecord = createRecordWithSource(validSource, System.currentTimeMillis(), 100L, "good-id");
+        topQueriesService.consumeRecords(List.of(goodRecord));
+
+        List<SearchQueryRecord> topQueries = topQueriesService.getTopQueriesRecords(false, null, null, null, null);
+        assertEquals(2, topQueries.size());
+        assertEquals("", ((SourceString) badRecord.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(validSource.toString(), ((SourceString) goodRecord.getAttributes().get(Attribute.SOURCE)).getValue());
+    }
+
+    private SearchQueryRecord createRecordWithSource(SearchSourceBuilder source, long timestamp, long latency, String id) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latency));
+        return new SearchQueryRecord(timestamp, measurements, new HashMap<>(), source, new UserPrincipalContext(threadPool), id);
+    }
+
+    /**
+     * A {@link SearchExtBuilder} that writes a bare value without a field name, which makes
+     * {@link SearchSourceBuilder#toString()} throw.
+     */
+    private static final class BareValueExtBuilder extends SearchExtBuilder {
+        @Override
+        public String getWriteableName() {
+            return "bare_value";
+        }
+
+        @Override
+        public void writeTo(StreamOutput out) throws IOException {
+            out.writeBoolean(true);
+        }
+
+        @Override
+        public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
+            return builder.value(true);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof BareValueExtBuilder;
+        }
+
+        @Override
+        public int hashCode() {
+            return BareValueExtBuilder.class.hashCode();
+        }
     }
 
     public void testSetUserInfoWithUserPrincipalContext() {
