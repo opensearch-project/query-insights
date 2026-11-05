@@ -51,6 +51,7 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRespo
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
@@ -1388,6 +1389,158 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         // Records have no enriched username (because fan-out failed), so the USERNAME filter
         // removes them (username on records is null, does not match "alice").
         assertEquals(0, response.getLiveQueries().size());
+    }
+
+    /**
+     * Stubs listTasks with three search tasks on node1, with latencies 3ms, 2ms and 1ms, so the default
+     * latency sort orders them task[0], task[1], task[2]. Returns them in that order.
+     */
+    private TaskInfo[] stubThreeSearchTasksByDescendingLatency() throws IOException {
+        long now = System.currentTimeMillis();
+        TaskInfo slowest = createTaskInfo(node1, "indices:data/read/search", now, 3_000_000L, "t1", 100L, 200L);
+        TaskInfo middle = createTaskInfo(node1, "indices:data/read/search", now, 2_000_000L, "t2", 100L, 200L);
+        TaskInfo fastest = createTaskInfo(node1, "indices:data/read/search", now, 1_000_000L, "t3", 100L, 200L);
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(
+            List.of(new TaskGroup(slowest, emptyList()), new TaskGroup(middle, emptyList()), new TaskGroup(fastest, emptyList()))
+        );
+        doAnswer(inv -> {
+            ActionListener<ListTasksResponse> listener = inv.getArgument(1);
+            listener.onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+        return new TaskInfo[] { slowest, middle, fastest };
+    }
+
+    /**
+     * Regression: under filter_by_mode=USERNAME the size limit must apply after the RBAC filter. The caller
+     * owns only the lowest-ranked of three records; with size=1, limiting first would keep someone else's
+     * record and then filter it out, returning nothing.
+     */
+    public void testFilterByModeUsername_SizeLimitAppliedAfterFilter() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("alice|backend1|user_role");
+
+        TaskInfo[] tasks = stubThreeSearchTasksByDescendingLatency();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            tasks[0].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO("bob", List.of("user_role"), List.of("b"))
+        );
+        infoMap.put(
+            tasks[1].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO("carol", List.of("user_role"), List.of("c"))
+        );
+        infoMap.put(
+            tasks[2].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "alice",
+                List.of("user_role"),
+                List.of("backend1")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesResponse response = executeLiveQueries(
+            new LiveQueriesRequest(true, MetricType.LATENCY, 1, new String[0], null, false)
+        );
+
+        assertEquals(1, response.getLiveQueries().size());
+        assertEquals(tasks[2].getTaskId().toString(), response.getLiveQueries().get(0).getQueryId());
+        assertEquals("alice", response.getLiveQueries().get(0).getUsername());
+    }
+
+    /**
+     * Regression: under filter_by_mode=BACKEND_ROLES the size limit must apply after the RBAC filter. Only
+     * the two lower-ranked records share a backend role with the caller; size=1 must return the higher of them.
+     */
+    public void testFilterByModeBackendRoles_SizeLimitAppliedAfterFilter() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.BACKEND_ROLES);
+        setRequestingUser("carol|engineering|user_role");
+
+        TaskInfo[] tasks = stubThreeSearchTasksByDescendingLatency();
+        Map<String, org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO> infoMap = new HashMap<>();
+        infoMap.put(
+            tasks[0].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO("bob", List.of("user_role"), List.of("finance"))
+        );
+        infoMap.put(
+            tasks[1].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "dave",
+                List.of("user_role"),
+                List.of("engineering")
+            )
+        );
+        infoMap.put(
+            tasks[2].getTaskId().toString(),
+            new org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO(
+                "erin",
+                List.of("user_role"),
+                List.of("engineering")
+            )
+        );
+        stubUserInfoFanOut(infoMap);
+
+        LiveQueriesResponse response = executeLiveQueries(
+            new LiveQueriesRequest(true, MetricType.LATENCY, 1, new String[0], null, false)
+        );
+
+        assertEquals(1, response.getLiveQueries().size());
+        assertEquals(tasks[1].getTaskId().toString(), response.getLiveQueries().get(0).getQueryId());
+    }
+
+    private static FinishedQueryRecord finishedRecord(String id, long latency, String username, String... backendRoles) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latency));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.USERNAME, username);
+        attributes.put(Attribute.BACKEND_ROLES, backendRoles);
+        return new FinishedQueryRecord(new SearchQueryRecord(1L, measurements, attributes, id), "topn-" + id, "completed", id);
+    }
+
+    /**
+     * Regression: the finished-queries path must also filter before limiting. The caller owns only the
+     * lowest-latency of three finished records; with size=1 it must still get that record back.
+     */
+    public void testFinishedQueriesFilterByModeUsername_SizeLimitAppliedAfterFilter() throws Exception {
+        when(queryInsightsService.getFilterByMode()).thenReturn(FilterByMode.USERNAME);
+        setRequestingUser("alice|backend1|user_role");
+
+        // No live queries: this exercises only the finished-queries path.
+        ListTasksResponse mockResponse = mock(ListTasksResponse.class);
+        when(mockResponse.getTaskGroups()).thenReturn(emptyList());
+        doAnswer(inv -> {
+            ((ActionListener<ListTasksResponse>) inv.getArgument(1)).onResponse(mockResponse);
+            return null;
+        }).when(clusterAdminClient).listTasks(any(ListTasksRequest.class), any(ActionListener.class));
+
+        List<FinishedQueryRecord> finished = List.of(
+            finishedRecord("id1", 500L, "bob", "b"),
+            finishedRecord("id2", 300L, "carol", "c"),
+            finishedRecord("id3", 100L, "alice", "backend1")
+        );
+        doAnswer(inv -> {
+            ActionListener<org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse> listener = inv.getArgument(2);
+            listener.onResponse(
+                new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesResponse(
+                    new ClusterName("test-cluster"),
+                    List.of(new org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesNodeResponse(node1, finished)),
+                    emptyList()
+                )
+            );
+            return null;
+        }).when(client)
+            .execute(
+                org.mockito.Mockito.eq(org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction.INSTANCE),
+                any(),
+                any()
+            );
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true, MetricType.LATENCY, 1, new String[0], null, true));
+
+        assertEquals(1, response.getFinishedQueries().size());
+        assertEquals("id3", response.getFinishedQueries().get(0).getId());
     }
 
     public void testCoordinatorAndShardResourceAggregation() throws Exception {
