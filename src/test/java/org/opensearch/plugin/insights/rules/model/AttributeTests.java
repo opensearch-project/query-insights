@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
+import java.util.Map;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -137,4 +138,38 @@ public class AttributeTests extends OpenSearchTestCase {
         assertNotNull("Should not be null", result);
     }
 
+    public void testWriteEmptyAttributeMap() throws IOException {
+        assertEmptyAttributeMapRoundTrip(Map.of());
+    }
+
+    public void testWriteAttributeMapWithOnlyUnsupportedAttributes() throws IOException {
+        assertEmptyAttributeMapRoundTrip(Map.of(Attribute.USER_ROLES, new String[] { "admin" }, Attribute.FAILED, true));
+    }
+
+    private void assertEmptyAttributeMapRoundTrip(Map<Attribute, Object> attributes) throws IOException {
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            out.setVersion(Version.V_3_4_0);
+            Attribute.writeAttributeMap(out, attributes);
+            out.writeString("next-field");
+            try (StreamInput in = out.bytes().streamInput()) {
+                in.setVersion(Version.V_3_4_0);
+                assertEquals(0, in.readVInt());
+                assertEquals("next-field", in.readString());
+                assertEquals(0, in.available());
+            }
+        }
+    }
+
+    public void testUnknownAttributeFailsWithoutGuessingValueEncoding() throws IOException {
+        try (BytesStreamOutput out = new BytesStreamOutput()) {
+            out.writeVInt(1);
+            out.writeString("unknown_attribute");
+            // A future attribute could use a bespoke codec, so a generic skip is unsafe.
+            out.writeString("bespoke-value");
+            try (StreamInput in = out.bytes().streamInput()) {
+                expectThrows(IllegalArgumentException.class, () -> Attribute.readAttributeMap(in));
+                assertEquals("bespoke-value", in.readString());
+            }
+        }
+    }
 }
