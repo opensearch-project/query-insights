@@ -99,6 +99,10 @@
     "failed" : {
       "type" : "boolean"
     },
+    "latency_breakdown_map" : {
+      "type" : "object",
+      "enabled" : true
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {
