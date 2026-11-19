@@ -20,18 +20,21 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.TransportRequest;
 import org.opensearch.transport.TransportService;
 
 /**
- * Fans out to all nodes to resolve live query user info from each node's local map.
+ * Fans out to all nodes to resolve live query user info from each node's local map, and to collect
+ * the searches each running PPL query has finished.
  * <p>
  * The listener captures user identity on the node that coordinates a search, keyed by
  * {@code nodeId:taskId}. Since the live queries API can be served by any node, this fan-out
@@ -96,7 +99,15 @@ public class TransportLiveQueriesUserInfoAction extends TransportNodesAction<
         for (Map.Entry<String, UserPrincipalContext.UserPrincipalInfo> entry : resolved.entrySet()) {
             dtos.put(entry.getKey(), new LiveQueryUserInfoDTO(entry.getValue()));
         }
-        return new LiveQueriesUserInfoNodeResponse(clusterService.localNode(), dtos);
+        // A PPL query's finished searches are held on the node that runs it, which owns its key.
+        Map<String, FinishedSearches> finishedSearches = new HashMap<>();
+        for (Map.Entry<String, ChildSearchCosts.Cost> entry : queryInsightsService.getFinishedSearchCostsOfPplQueries(
+            nodeRequest.request.getTaskKeys()
+        ).entrySet()) {
+            ChildSearchCosts.Cost cost = entry.getValue();
+            finishedSearches.put(entry.getKey(), new FinishedSearches(cost.getSearches(), cost.getCpuNanos(), cost.getMemoryBytes()));
+        }
+        return new LiveQueriesUserInfoNodeResponse(clusterService.localNode(), dtos, finishedSearches);
     }
 
     /**

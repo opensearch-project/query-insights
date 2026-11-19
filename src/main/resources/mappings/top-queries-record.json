@@ -99,6 +99,22 @@
     "failed" : {
       "type" : "boolean"
     },
+    "query_source" : {
+      "type" : "keyword"
+    },
+    "derived_from" : {
+      "type" : "keyword"
+    },
+    "parent_marker" : {
+      "type" : "keyword"
+    },
+    "is_child" : {
+      "type" : "boolean"
+    },
+    "phases" : {
+      "type" : "object",
+      "enabled" : true
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {

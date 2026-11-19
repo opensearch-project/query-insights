@@ -612,4 +612,28 @@ public class QueryInsightsQueryBuilderTests extends OpenSearchTestCase {
         // Original overload should have no filter clauses
         assertTrue(boolQuery.filter().isEmpty());
     }
+
+    public void testChildSearchesRequestReadsEverySearchOfTheQuery() {
+        ZonedDateTime end = ZonedDateTime.now(ZoneOffset.UTC);
+
+        SearchRequest request = QueryInsightsQueryBuilder.buildChildrenSearchRequest(
+            List.of("top_queries-2026.11.09-00001"),
+            end.minusDays(7),
+            end,
+            "PPL:node-1:42",
+            true
+        );
+
+        assertEquals(QueryInsightsQueryBuilder.MAX_CHILD_SEARCHES_READ_SIZE, request.source().size());
+        BoolQueryBuilder query = (BoolQueryBuilder) request.source().query();
+        assertTrue(
+            query.must()
+                .stream()
+                .anyMatch(
+                    clause -> clause instanceof TermQueryBuilder term
+                        && "derived_from".equals(term.fieldName())
+                        && "PPL:node-1:42".equals(term.value())
+                )
+        );
+    }
 }

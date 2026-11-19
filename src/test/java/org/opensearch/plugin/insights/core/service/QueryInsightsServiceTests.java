@@ -12,10 +12,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,10 +48,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Before;
+import org.mockito.ArgumentCaptor;
 import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.state.ClusterStateRequest;
 import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
@@ -77,6 +82,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
@@ -230,6 +236,97 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             2,
             queryInsightsService.getTopQueriesService(MetricType.MEMORY).getTopQueriesRecords(false, null, null, null, null).size()
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testEverySearchOfAQueryIsStoredUnranked() {
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
+        // More than Top N keeps: the searches are stored as they are, not ranked.
+        int searches = QueryInsightsSettings.DEFAULT_TOP_N_SIZE * 3;
+        for (int i = 0; i < searches; i++) {
+            assertTrue(queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 1L, 10L)));
+        }
+
+        queryInsightsService.drainRecords();
+
+        ArgumentCaptor<List<SearchQueryRecord>> exported = ArgumentCaptor.forClass(List.class);
+        verify(mockLocalIndexExporter, atLeastOnce()).export(exported.capture());
+        long stored = exported.getAllValues().stream().flatMap(List::stream).filter(QueryInsightsServiceTests::isSearchOfAQuery).count();
+        assertEquals(searches, stored);
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            assertTrue(queryInsightsService.getTopQueriesService(metricType).getTopQueriesRecords(false, null, null, null, null).isEmpty());
+        }
+    }
+
+    public void testAQueryTakesTheCostOfItsSearchesOnce() {
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 10L, 100L));
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 20L, 200L));
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:43", 5L, 50L));
+
+        ChildSearchCosts.Cost cost = queryInsightsService.takeChildSearchCosts("PPL:node-1:42");
+
+        assertEquals(30L, cost.getCpuNanos());
+        assertEquals(300L, cost.getMemoryBytes());
+        assertEquals(2, cost.getSearches());
+        assertNull(queryInsightsService.takeChildSearchCosts("PPL:node-1:42"));
+        assertNull(queryInsightsService.takeChildSearchCosts(null));
+    }
+
+    public void testARunningPplQuerysFinishedSearchesAreReadByItsLiveId() {
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 10L, 100L));
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 20L, 200L));
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:43", 5L, 50L));
+
+        Map<String, ChildSearchCosts.Cost> costs = queryInsightsService.getFinishedSearchCostsOfPplQueries(
+            List.of("node-1:42", "node-1:44", "node-2:42")
+        );
+
+        assertEquals(List.of("node-1:42"), List.copyOf(costs.keySet()));
+        assertEquals(2, costs.get("node-1:42").getSearches());
+        assertEquals(30L, costs.get("node-1:42").getCpuNanos());
+        assertEquals(300L, costs.get("node-1:42").getMemoryBytes());
+        // Reading them leaves them for the query's own record.
+        assertEquals(2, queryInsightsService.takeChildSearchCosts("PPL:node-1:42").getSearches());
+        assertTrue(queryInsightsService.getFinishedSearchCostsOfPplQueries(List.of("node-1:42")).isEmpty());
+        assertTrue(queryInsightsService.getFinishedSearchCostsOfPplQueries(null).isEmpty());
+    }
+
+    public void testSearchesOfAQueryAreNotStoredWhileTopNIsOff() {
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            queryInsightsService.enableCollection(metricType, false);
+        }
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 1L, 10L));
+
+        queryInsightsService.drainRecords();
+
+        verify(mockLocalIndexExporter, never()).export(argThat(records -> records.stream().anyMatch(QueryInsightsServiceTests::isSearchOfAQuery)));
+    }
+
+    public void testSearchesOfAQueryAreStoredOnlyInTheLocalIndex() {
+        // They are read back only from the local index, so another sink gets none of them.
+        when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockDebugExporter);
+        queryInsightsService.addRecord(searchOfQuery("PPL:node-1:42", 1L, 10L));
+
+        queryInsightsService.drainRecords();
+
+        verify(mockDebugExporter, never()).export(argThat(records -> records.stream().anyMatch(QueryInsightsServiceTests::isSearchOfAQuery)));
+    }
+
+    private static SearchQueryRecord searchOfQuery(String marker, long cpu, long memory) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(5L));
+        measurements.put(MetricType.CPU, new Measurement(cpu));
+        measurements.put(MetricType.MEMORY, new Measurement(memory));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "DSL");
+        attributes.put(Attribute.DERIVED_FROM, marker);
+        attributes.put(Attribute.IS_CHILD, true);
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, UUID.randomUUID().toString());
+    }
+
+    private static boolean isSearchOfAQuery(SearchQueryRecord record) {
+        return Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD));
     }
 
     public void testDoStart() throws IOException {

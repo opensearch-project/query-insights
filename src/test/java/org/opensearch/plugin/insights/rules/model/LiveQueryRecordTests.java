@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
 import java.util.List;
+import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -204,5 +205,65 @@ public class LiveQueryRecordTests extends OpenSearchTestCase {
         assertEquals("user_with_null_roles", deserialized.getUsername());
         assertEquals(List.of(), deserialized.getUserRoles());
         assertEquals(List.of(), deserialized.getBackendRoles());
+    }
+
+    private static LiveQueryRecord pplQueryWithFinishedSearches(FinishedSearches finished) {
+        return new LiveQueryRecord(
+            "node-1:42",
+            "running",
+            5000L,
+            null,
+            100L,
+            50L,
+            256L,
+            null,
+            List.of(),
+            "alice",
+            List.of(),
+            List.of(),
+            finished
+        );
+    }
+
+    private static LiveQueryRecord roundTrip(LiveQueryRecord record, Version version) throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.setVersion(version);
+        record.writeTo(out);
+        StreamInput in = out.bytes().streamInput();
+        in.setVersion(version);
+        return new LiveQueryRecord(in);
+    }
+
+    public void testSerializationWithFinishedSearches() throws IOException {
+        LiveQueryRecord deserialized = roundTrip(
+            pplQueryWithFinishedSearches(new FinishedSearches(604, 7_000_000L, 9_000L)),
+            Version.CURRENT
+        );
+
+        assertEquals(new FinishedSearches(604, 7_000_000L, 9_000L), deserialized.getFinishedSearches());
+        assertEquals("alice", deserialized.getUsername());
+        assertNull(roundTrip(pplQueryWithFinishedSearches(null), Version.CURRENT).getFinishedSearches());
+    }
+
+    public void testFinishedSearchesAreNotSentToNodesBefore3_10() throws IOException {
+        LiveQueryRecord deserialized = roundTrip(
+            pplQueryWithFinishedSearches(new FinishedSearches(604, 7_000_000L, 9_000L)),
+            Version.V_3_9_0
+        );
+
+        assertNull(deserialized.getFinishedSearches());
+        // The fields before it still read as they were written.
+        assertEquals("alice", deserialized.getUsername());
+        assertEquals(50L, deserialized.getTotalCpu());
+    }
+
+    public void testToXContentWithFinishedSearches() throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        pplQueryWithFinishedSearches(new FinishedSearches(604, 7_000_000L, 9_000L)).toXContent(builder, ToXContent.EMPTY_PARAMS);
+        assertTrue(builder.toString().contains("\"finished_searches\":{\"count\":604,\"cpu_nanos\":7000000,\"memory_bytes\":9000}"));
+
+        XContentBuilder without = XContentFactory.jsonBuilder();
+        pplQueryWithFinishedSearches(null).toXContent(without, ToXContent.EMPTY_PARAMS);
+        assertFalse(without.toString().contains("finished_searches"));
     }
 }

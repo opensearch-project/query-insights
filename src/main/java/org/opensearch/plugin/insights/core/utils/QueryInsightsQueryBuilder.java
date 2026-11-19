@@ -44,6 +44,9 @@ public final class QueryInsightsQueryBuilder {
 
     private static final int MAX_TOP_N_INDEX_READ_SIZE = 500;
 
+    /** Most searches read for one query's detail view; the default {@code index.max_result_window}. */
+    static final int MAX_CHILD_SEARCHES_READ_SIZE = 10_000;
+
     private QueryInsightsQueryBuilder() {}
 
     /**
@@ -107,6 +110,49 @@ public final class QueryInsightsQueryBuilder {
         final MetricType metricType
     ) {
         return buildTopNSearchRequest(indexNames, start, end, id, verbose, metricType, null, null);
+    }
+
+    /**
+     * Builds the search for the records whose {@code derived_from} is {@code parentMarker}, oldest
+     * first. Unlike the Top N search, it doesn't filter on {@code top_n_query}, since these aren't ranked.
+     *
+     * @param indexNames indices to search
+     * @param start start of the time range
+     * @param end end of the time range
+     * @param parentMarker the query's marker
+     * @param verbose whether to return full output
+     * @return the search request
+     */
+    public static SearchRequest buildChildrenSearchRequest(
+        final List<String> indexNames,
+        final ZonedDateTime start,
+        final ZonedDateTime end,
+        final String parentMarker,
+        final Boolean verbose
+    ) {
+        SearchRequest searchRequest = new SearchRequest(indexNames.toArray(new String[0]));
+        searchRequest.indicesOptions(IndicesOptions.fromOptions(true, true, true, false));
+        searchRequest.requestCache(true);
+
+        RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery(TIMESTAMP)
+            .from(start.toInstant().toEpochMilli())
+            .to(end.toInstant().toEpochMilli());
+        BoolQueryBuilder query = QueryBuilders.boolQuery()
+            .must(rangeQuery)
+            .must(QueryBuilders.termQuery(Attribute.DERIVED_FROM.toString(), parentMarker));
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder().size(MAX_CHILD_SEARCHES_READ_SIZE);
+        searchSourceBuilder.query(query);
+        if (Boolean.FALSE.equals(verbose)) {
+            searchSourceBuilder.fetchSource(
+                Strings.EMPTY_ARRAY,
+                Arrays.stream(VERBOSE_ONLY_FIELDS).map(Attribute::toString).toArray(String[]::new)
+            );
+        }
+        searchSourceBuilder.sort(SortBuilders.fieldSort(TIMESTAMP).order(SortOrder.ASC));
+        searchSourceBuilder.timeout(DEFAULT_SEARCH_REQUEST_TIMEOUT);
+        searchRequest.source(searchSourceBuilder);
+        return searchRequest;
     }
 
     /**

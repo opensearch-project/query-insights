@@ -33,6 +33,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.search.CreatePitAction;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
@@ -66,6 +67,12 @@ import org.opensearch.threadpool.ThreadPool;
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
+
+    /**
+     * Header the SQL plugin sets on each search a SQL/PPL query runs: {@code <source>:<nodeId>:<taskId>}.
+     * The plugins share no classes, so it must match the SQL plugin's name.
+     */
+    static final String QUERY_INSIGHTS_PARENT_HEADER = "X-Query-Insights-Parent";
 
     private final QueryInsightsService queryInsightsService;
     private final ClusterService clusterService;
@@ -339,6 +346,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .orElse(false);
     }
 
+    /** Creating a point in time goes through the search phases but isn't a query, so it isn't recorded. */
+    private static boolean isPointInTimeCreation(final SearchPhaseContext context) {
+        return context != null && context.getTask() != null && CreatePitAction.NAME.equals(context.getTask().getAction());
+    }
+
     private boolean matchedExcludedIndices(String indexName) {
         if (indexName == null || excludedIndicesPattern == null) {
             return false;
@@ -352,7 +364,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final String recordId,
         final boolean failed
     ) {
-        if (skipSearchRequest(searchRequestContext)) {
+        if (skipSearchRequest(searchRequestContext) || isPointInTimeCreation(context)) {
             return null;
         }
 
@@ -428,6 +440,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 labels.put(Task.X_OPAQUE_ID, userProvidedLabel);
             }
             attributes.put(Attribute.LABELS, labels);
+
+            // A search run by a SQL/PPL query is linked to it by the marker. It's stored unranked and
+            // its cost goes into the query's record.
+            String parentMarker = context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+            if (parentMarker != null && !parentMarker.isEmpty()) {
+                attributes.put(Attribute.QUERY_SOURCE, "DSL");
+                attributes.put(Attribute.DERIVED_FROM, parentMarker);
+                attributes.put(Attribute.IS_CHILD, true);
+            }
 
             UserPrincipalContext userPrincipalContext = threadPool != null ? new UserPrincipalContext(threadPool) : null;
 

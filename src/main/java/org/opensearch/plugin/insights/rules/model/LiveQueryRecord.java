@@ -35,6 +35,8 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
     private final String username;
     private final List<String> userRoles;
     private final List<String> backendRoles;
+    // Finished searches of a running PPL query; already counted in totalCpu and totalMemory. Null if none.
+    private final FinishedSearches finishedSearches;
 
     public LiveQueryRecord(
         String liveQueryRecordId,
@@ -50,6 +52,38 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         List<String> userRoles,
         List<String> backendRoles
     ) {
+        this(
+            liveQueryRecordId,
+            status,
+            startTime,
+            wlmGroupId,
+            totalLatency,
+            totalCpu,
+            totalMemory,
+            coordinatorTask,
+            shardTasks,
+            username,
+            userRoles,
+            backendRoles,
+            null
+        );
+    }
+
+    public LiveQueryRecord(
+        String liveQueryRecordId,
+        String status,
+        long startTime,
+        String wlmGroupId,
+        long totalLatency,
+        long totalCpu,
+        long totalMemory,
+        TaskDetails coordinatorTask,
+        List<TaskDetails> shardTasks,
+        String username,
+        List<String> userRoles,
+        List<String> backendRoles,
+        FinishedSearches finishedSearches
+    ) {
         this.liveQueryRecordId = liveQueryRecordId;
         this.status = status;
         this.startTime = startTime;
@@ -62,6 +96,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
         this.username = username;
         this.userRoles = userRoles != null ? userRoles : List.of();
         this.backendRoles = backendRoles != null ? backendRoles : List.of();
+        this.finishedSearches = finishedSearches;
     }
 
     public LiveQueryRecord(StreamInput in) throws IOException {
@@ -85,7 +120,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             this.userRoles = List.of();
             this.backendRoles = List.of();
         }
-
+        this.finishedSearches = in.getVersion().onOrAfter(Version.V_3_10_0) ? in.readOptionalWriteable(FinishedSearches::new) : null;
     }
 
     @Override
@@ -104,7 +139,9 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             out.writeOptionalStringCollection(userRoles.isEmpty() ? null : userRoles);
             out.writeOptionalStringCollection(backendRoles.isEmpty() ? null : backendRoles);
         }
-
+        if (out.getVersion().onOrAfter(Version.V_3_10_0)) {
+            out.writeOptionalWriteable(finishedSearches);
+        }
     }
 
     @Override
@@ -128,6 +165,10 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             task.toXContent(builder, params);
         }
         builder.endArray();
+        if (finishedSearches != null) {
+            builder.field("finished_searches");
+            finishedSearches.toXContent(builder, params);
+        }
         if (username != null) {
             builder.field("username", username);
         }
@@ -187,5 +228,10 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
 
     public List<String> getBackendRoles() {
         return backendRoles;
+    }
+
+    /** @return the PPL query's finished searches, or {@code null} if there are none */
+    public FinishedSearches getFinishedSearches() {
+        return finishedSearches;
     }
 }

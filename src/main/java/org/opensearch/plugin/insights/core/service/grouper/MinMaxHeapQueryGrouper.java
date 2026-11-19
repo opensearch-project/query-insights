@@ -288,7 +288,12 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         try {
             switch (groupingType) {
                 case SIMILARITY:
-                    return searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE).toString();
+                    // SQL/PPL records have no query shape, so no hashcode. Leave them ungrouped.
+                    final Object hashcode = searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE);
+                    if (hashcode == null) {
+                        return null;
+                    }
+                    return hashcode.toString();
                 case NONE:
                     throw new IllegalArgumentException("Should not try to group queries if grouping type is NONE");
                 default:

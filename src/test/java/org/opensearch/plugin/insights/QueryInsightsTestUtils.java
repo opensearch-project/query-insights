@@ -227,6 +227,11 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
             // Add failed attribute
             attributes.put(Attribute.FAILED, random().nextBoolean());
+            attributes.put(Attribute.QUERY_SOURCE, "PPL");
+            String marker = "PPL:node_for_top_queries_test:" + i;
+            attributes.put(Attribute.DERIVED_FROM, marker);
+            attributes.put(Attribute.PARENT_MARKER, marker);
+            attributes.put(Attribute.IS_CHILD, false);
 
             SearchQueryRecord record = new SearchQueryRecord(
                 timestamp,
@@ -481,7 +486,10 @@ final public class QueryInsightsTestUtils {
 
             Set<String> requiredFields = new HashSet<>();
             // Fields that are not Attributes or are explicitly excluded from serialization
-            Set<String> excludedFields = new HashSet<>(Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description"));
+            // phases isn't compared in round trips, so generated records leave it out.
+            Set<String> excludedFields = new HashSet<>(
+                Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description", "phases")
+            );
 
             for (String fieldName : properties.keySet()) {
                 if (!excludedFields.contains(fieldName)) {

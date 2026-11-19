@@ -33,6 +33,18 @@ public class UserPrincipalContext {
         this.userString = threadContext != null ? threadContext.getTransient(SECURITY_USER_INFO_THREAD_CONTEXT) : null;
     }
 
+    private UserPrincipalContext(String userString) {
+        this.userString = userString;
+    }
+
+    /**
+     * Builds a context from a user info string in the security plugin's format. Used for records the
+     * SQL plugin reports, which carry the user as a string.
+     */
+    public static UserPrincipalContext fromUserString(String userString) {
+        return new UserPrincipalContext(userString);
+    }
+
     /**
      * Get the raw user string
      * @return raw user string, or null if not available

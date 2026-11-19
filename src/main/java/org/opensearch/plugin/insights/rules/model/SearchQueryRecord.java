@@ -12,11 +12,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -45,6 +47,15 @@ import reactor.util.annotation.NonNull;
  */
 public class SearchQueryRecord implements ToXContentObject, Writeable {
     private static final Logger log = LogManager.getLogger(SearchQueryRecord.class);
+
+    /** Attributes added for SQL/PPL queries. Older nodes fail on unknown attribute names, so they don't get these. */
+    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(
+        Attribute.QUERY_SOURCE,
+        Attribute.DERIVED_FROM,
+        Attribute.PARENT_MARKER,
+        Attribute.PHASES,
+        Attribute.IS_CHILD
+    );
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
@@ -152,6 +163,21 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      * Indicates if the search request failed during execution
      */
     public static final String FAILED = "failed";
+
+    /** Query source field name (DSL/SQL/PPL). */
+    public static final String QUERY_SOURCE = "query_source";
+
+    /** Derived-from marker field name. */
+    public static final String DERIVED_FROM = "derived_from";
+
+    /** Parent marker field name. */
+    public static final String PARENT_MARKER = "parent_marker";
+
+    /** Is-child flag field name. */
+    public static final String IS_CHILD = "is_child";
+
+    /** Per-phase breakdown field name. */
+    public static final String PHASES = "phases";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -291,6 +317,20 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         MetricType metric = MetricType.fromString(fieldName);
                         measurements.put(metric, Measurement.fromXContent(parser));
                         break;
+                    case MEASUREMENTS:
+                        // Exported as "measurements": {"latency": {...}, "cpu": {...}, "memory": {...}}.
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String metricName = parser.currentName();
+                            parser.nextToken();
+                            try {
+                                measurements.put(MetricType.fromString(metricName), Measurement.fromXContent(parser));
+                            } catch (Exception ex) {
+                                // Unknown metric; skip it.
+                                log.debug("Skipping unrecognized measurement [{}] during parse", metricName);
+                            }
+                        }
+                        break;
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());
                         break;
@@ -412,6 +452,21 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                             labels.put(Task.X_OPAQUE_ID, parser.text());
                         }
                         attributes.put(Attribute.LABELS, labels);
+                        break;
+                    case QUERY_SOURCE:
+                        attributes.put(Attribute.QUERY_SOURCE, parser.text());
+                        break;
+                    case DERIVED_FROM:
+                        attributes.put(Attribute.DERIVED_FROM, parser.text());
+                        break;
+                    case PARENT_MARKER:
+                        attributes.put(Attribute.PARENT_MARKER, parser.text());
+                        break;
+                    case IS_CHILD:
+                        attributes.put(Attribute.IS_CHILD, parser.booleanValue());
+                        break;
+                    case PHASES:
+                        attributes.put(Attribute.PHASES, parser.map());
                         break;
                     case TOP_N_QUERY:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
@@ -702,8 +757,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         } else {
             out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
         }
+        // Older nodes fail on attribute names they don't know (see QUERY_SOURCE_ATTRIBUTES).
+        final Map<Attribute, Object> attributesToWrite;
+        if (out.getVersion().onOrAfter(Version.V_3_10_0)) {
+            attributesToWrite = attributes;
+        } else {
+            attributesToWrite = new HashMap<>(attributes);
+            attributesToWrite.keySet().removeAll(QUERY_SOURCE_ATTRIBUTES);
+        }
         out.writeMap(
-            attributes,
+            attributesToWrite,
             (stream, attribute) -> Attribute.writeTo(out, attribute),
             (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
         );

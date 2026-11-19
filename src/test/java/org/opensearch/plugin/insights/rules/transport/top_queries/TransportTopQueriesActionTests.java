@@ -12,7 +12,9 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -821,5 +823,125 @@ public class TransportTopQueriesActionTests extends OpenSearchTestCase {
         TopQueriesResponse filteredResponse = responseCaptor.getValue();
         assertEquals(1, filteredResponse.getNodes().size());
         assertEquals(0, filteredResponse.getNodes().get(0).getTopQueriesRecord().size());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testDetailViewListsEverySearchOfTheQuery() {
+        SearchQueryRecord query = pplParent("query", "PPL:node1:1", 130L, 1300L);
+        List<SearchQueryRecord> searches = List.of(
+            dslSearch("search-1", "PPL:node1:1", 10L, 100L),
+            dslSearch("search-2", "PPL:node1:1", 20L, 200L)
+        );
+        doAnswer(invocation -> {
+            ActionListener<List<SearchQueryRecord>> listener = invocation.getArgument(4);
+            listener.onResponse(new ArrayList<>(searches));
+            return null;
+        }).when(mockTopQueriesService).getChildrenFromIndex(any(), any(), eq("PPL:node1:1"), any(), any());
+        TopQueriesRequest request = new TopQueriesRequest(
+            MetricType.CPU,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+            "query",
+            null,
+            null
+        );
+        ActionListener<TopQueriesResponse> listener = mock(ActionListener.class);
+
+        actionToTest.appendChildrenAndRespond(
+            request,
+            new ArrayList<>(List.of(new TopQueries(node1, List.of(query)))),
+            Collections.emptyList(),
+            listener
+        );
+
+        ArgumentCaptor<TopQueriesResponse> response = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(listener).onResponse(response.capture());
+        List<SearchQueryRecord> shown = response.getValue()
+            .getNodes()
+            .stream()
+            .flatMap(node -> node.getTopQueriesRecord().stream())
+            .toList();
+        assertEquals(List.of("query", "search-1", "search-2"), shown.stream().map(SearchQueryRecord::getId).toList());
+        // The query's record already includes its searches' cost; nothing is added when it is read.
+        assertEquals(130L, cpu(shown.get(0)));
+        assertEquals(1300L, memory(shown.get(0)));
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testDetailViewOfASearchFetchesNothingMore() {
+        SearchQueryRecord search = dslSearch("search", null, 5L, 50L);
+        TopQueriesRequest request = new TopQueriesRequest(
+            MetricType.CPU,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+            "search",
+            null,
+            null
+        );
+        ActionListener<TopQueriesResponse> listener = mock(ActionListener.class);
+
+        actionToTest.appendChildrenAndRespond(
+            request,
+            new ArrayList<>(List.of(new TopQueries(node1, List.of(search)))),
+            Collections.emptyList(),
+            listener
+        );
+
+        verify(mockTopQueriesService, never()).getChildrenFromIndex(any(), any(), any(), any(), any());
+        verify(listener).onResponse(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testOverviewLeavesOutStoredSearchesAndAddsNothing() {
+        SearchQueryRecord query = pplParent("query", "PPL:node1:1", 130L, 1300L);
+        SearchQueryRecord search = dslSearch("search-1", "PPL:node1:1", 10L, 100L);
+        TopQueriesRequest request = new TopQueriesRequest(MetricType.CPU, "from", "to", null, false, null);
+        ActionListener<TopQueriesResponse> listener = mock(ActionListener.class);
+
+        actionToTest.onHistoricalDataResponse(request, new ArrayList<>(), new ArrayList<>(), List.of(query, search), listener);
+
+        ArgumentCaptor<TopQueriesResponse> response = ArgumentCaptor.forClass(TopQueriesResponse.class);
+        verify(listener).onResponse(response.capture());
+        List<SearchQueryRecord> shown = response.getValue()
+            .getNodes()
+            .stream()
+            .flatMap(node -> node.getTopQueriesRecord().stream())
+            .toList();
+        assertEquals(List.of("query"), shown.stream().map(SearchQueryRecord::getId).toList());
+        assertEquals(130L, cpu(shown.get(0)));
+    }
+
+    private static SearchQueryRecord pplParent(String id, String marker, long cpu, long memory) {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.PARENT_MARKER, marker);
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements(cpu, memory), attributes, id);
+    }
+
+    /** A DSL search; with a marker, a child search of that SQL/PPL query. */
+    private static SearchQueryRecord dslSearch(String id, String derivedFrom, long cpu, long memory) {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "DSL");
+        if (derivedFrom != null) {
+            attributes.put(Attribute.DERIVED_FROM, derivedFrom);
+            attributes.put(Attribute.IS_CHILD, true);
+        }
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements(cpu, memory), attributes, id);
+    }
+
+    private static Map<MetricType, Measurement> measurements(long cpu, long memory) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(5L, AggregationType.NONE));
+        measurements.put(MetricType.CPU, new Measurement(cpu, AggregationType.NONE));
+        measurements.put(MetricType.MEMORY, new Measurement(memory, AggregationType.NONE));
+        return measurements;
+    }
+
+    private static long cpu(SearchQueryRecord record) {
+        return record.getMeasurement(MetricType.CPU).longValue();
+    }
+
+    private static long memory(SearchQueryRecord record) {
+        return record.getMeasurement(MetricType.MEMORY).longValue();
     }
 }

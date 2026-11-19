@@ -49,6 +49,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
+import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
@@ -61,6 +62,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -150,6 +152,18 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     private final FinishedQueriesCache finishedQueriesCache;
+
+    /** Searches run by SQL/PPL queries, waiting to be stored. All of them are stored, unranked. */
+    private final LinkedBlockingQueue<SearchQueryRecord> childSearchQueue = new LinkedBlockingQueue<>(
+        QueryInsightsSettings.CHILD_SEARCH_QUEUE_CAPACITY
+    );
+
+    /** Cost of the searches each running SQL/PPL query has finished. */
+    private final ChildSearchCosts childSearchCosts = new ChildSearchCosts();
+    /** A PPL query's marker is this prefix plus its Live Queries id, {@code nodeId:taskId}. */
+    static final String PPL_MARKER_PREFIX = "PPL:";
+
+    private volatile int maxSourceLength = QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
     private final ConcurrentHashMap<String, TimestampedUserInfo> liveQueryUserMap = new ConcurrentHashMap<>();
     private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
     private volatile TaskManager taskManager;
@@ -253,6 +267,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @return true/false
      */
     public boolean addRecord(final SearchQueryRecord record) {
+        // A search run by a SQL/PPL query: hold its cost for the query's record and store it unranked.
+        if (Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD))
+            && record.getAttributes().get(Attribute.DERIVED_FROM) instanceof String marker
+            && !marker.isEmpty()) {
+            childSearchCosts.add(marker, asLong(record.getMeasurement(MetricType.CPU)), asLong(record.getMeasurement(MetricType.MEMORY)));
+            return childSearchQueue.offer(record);
+        }
         boolean shouldAdd = isSearchQueryMetricsFeatureEnabled() || isGroupingEnabled();
         if (!shouldAdd) {
             for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
@@ -279,6 +300,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param maxSourceLength maximum length for source strings
      */
     public void setMaxSourceLength(int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
         // Update all TopQueriesService instances
         for (TopQueriesService topQueriesService : topQueriesServices.values()) {
             topQueriesService.setMaxSourceLength(maxSourceLength);
@@ -304,14 +326,78 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             }
         }
 
+        final List<SearchQueryRecord> childSearches = new ArrayList<>();
+        childSearchQueue.drainTo(childSearches);
+        exportChildSearches(childSearches);
         if (searchQueryMetricsEnabled) {
             try {
                 searchQueryCategorizer.consumeRecords(records);
+                if (!childSearches.isEmpty()) {
+                    searchQueryCategorizer.consumeRecords(childSearches);
+                }
             } catch (Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.QUERY_CATEGORIZE_EXCEPTIONS);
                 logger.error("Error while trying to categorize the queries.", e);
             }
         }
+    }
+
+    /**
+     * Writes the searches SQL/PPL queries ran to the local index, unranked. Only the local index gets
+     * them, since that's where the detail view reads them from. Skipped while Top N is off.
+     */
+    private void exportChildSearches(final List<SearchQueryRecord> childSearches) {
+        if (childSearches.isEmpty() || !isTopNFeatureEnabled()) {
+            return;
+        }
+        final QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
+        if (!(exporter instanceof LocalIndexExporter)) {
+            return;
+        }
+        for (SearchQueryRecord search : childSearches) {
+            if (search.getAttributes().get(Attribute.SOURCE) == null) {
+                TopQueriesService.setSourceAndTruncation(search, maxSourceLength);
+            }
+            if (search.getAttributes().get(Attribute.USERNAME) == null) {
+                TopQueriesService.setUserInfo(search);
+            }
+        }
+        exporter.export(childSearches);
+    }
+
+    /**
+     * Removes and returns the cost of the searches a SQL/PPL query ran.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     * @return the cost, or {@code null} if none of its searches ended
+     */
+    public ChildSearchCosts.Cost takeChildSearchCosts(final String parentMarker) {
+        return parentMarker == null ? null : childSearchCosts.take(parentMarker);
+    }
+
+    /**
+     * Returns the cost so far of the searches each running PPL query has finished on this node,
+     * without removing it.
+     *
+     * @param liveQueryIds Live Queries ids, {@code nodeId:taskId}
+     * @return the cost by live id, for the queries that have finished searches
+     */
+    public Map<String, ChildSearchCosts.Cost> getFinishedSearchCostsOfPplQueries(final Collection<String> liveQueryIds) {
+        final Map<String, ChildSearchCosts.Cost> costs = new HashMap<>();
+        if (liveQueryIds == null) {
+            return costs;
+        }
+        for (String liveQueryId : liveQueryIds) {
+            final ChildSearchCosts.Cost cost = childSearchCosts.get(PPL_MARKER_PREFIX + liveQueryId);
+            if (cost != null) {
+                costs.put(liveQueryId, cost);
+            }
+        }
+        return costs;
+    }
+
+    private static long asLong(final Number number) {
+        return number == null ? 0L : number.longValue();
     }
 
     /**
@@ -612,6 +698,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         finishedQueriesCache.stop();
+        childSearchQueue.clear();
+        childSearchCosts.clear();
         liveQueryUserMap.clear();
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);

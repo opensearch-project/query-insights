@@ -144,14 +144,12 @@ public class FinishedQueriesCache {
         }
 
         removeExpiredQueries();
-        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES)
-            .map(fq -> fq.record)
-            .toList();
+        return newest();
     }
 
     /**
      * Captures a finished query into the cache.
+     * Searches run by a SQL/PPL query are skipped; they're shown as part of the query.
      * This method is fully lock-free and is safe to call on the hot search path.
      * No-op if the cache is disabled (idleTimeoutMs == 0) or not yet activated by an API request.
      *
@@ -160,6 +158,7 @@ public class FinishedQueriesCache {
      */
     public void capture(SearchQueryRecord record, long coordinatorTaskId) {
         if (idleTimeoutMs == 0 || stopped.get() || !active.get()) return;
+        if (isSearchOfAQuery(record)) return;
 
         String liveQueryId = clusterService.localNode().getId() + ":" + coordinatorTaskId;
         Object taskUsages = record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES);
@@ -171,6 +170,22 @@ public class FinishedQueriesCache {
                 }
             }
         }
+        store(record, liveQueryId);
+    }
+
+    /**
+     * Captures a finished SQL/PPL query under the id Live Queries listed it under while it ran.
+     * No-op if the cache is disabled or not yet activated by an API request.
+     *
+     * @param record      the finished query's record
+     * @param liveQueryId the query's Live Queries id, {@code nodeId:taskId}
+     */
+    public void capture(SearchQueryRecord record, String liveQueryId) {
+        if (idleTimeoutMs == 0 || stopped.get() || !active.get()) return;
+        store(record, liveQueryId);
+    }
+
+    private void store(SearchQueryRecord record, String liveQueryId) {
         boolean failed = (Boolean) record.getAttributes().getOrDefault(Attribute.FAILED, false);
         boolean cancelled = record.isCancelled();
         String status = cancelled ? "cancelled" : (failed ? "failed" : "completed");
@@ -202,10 +217,22 @@ public class FinishedQueriesCache {
     public List<FinishedQueryRecord> getFinishedQueriesIfActive() {
         if (!active.get()) return List.of();
         removeExpiredQueries();
-        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES)
-            .map(fq -> fq.record)
-            .toList();
+        return newest();
+    }
+
+    private List<FinishedQueryRecord> newest() {
+        List<FinishedQueryRecord> newestFirst = StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED),
+            false
+        ).map(fq -> fq.record).limit(MAX_RETURNED_QUERIES).toList();
+        return newestFirst;
+    }
+
+    /** Whether the record is a search run by a SQL/PPL query. */
+    private static boolean isSearchOfAQuery(SearchQueryRecord record) {
+        return Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD))
+            && record.getAttributes().get(Attribute.DERIVED_FROM) instanceof String marker
+            && !marker.isEmpty();
     }
 
     /**

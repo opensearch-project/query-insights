@@ -377,6 +377,36 @@ public class TopQueriesService {
     }
 
     /**
+     * Reads the searches a SQL/PPL query ran from the local index, for its detail view. See
+     * {@link QueryInsightsReader#readChildren}.
+     *
+     * @param from start timestamp
+     * @param to end timestamp
+     * @param parentMarker the query's marker
+     * @param verbose whether to return full output
+     * @param listener called with the records
+     */
+    public void getChildrenFromIndex(
+        final String from,
+        final String to,
+        final String parentMarker,
+        final Boolean verbose,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
+        final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
+        if (reader == null) {
+            listener.onResponse(new ArrayList<>());
+            return;
+        }
+        try {
+            reader.readChildren(from, to, parentMarker, verbose, listener);
+        } catch (Exception e) {
+            logger.error("Failed to initiate child read from index: ", e);
+            listener.onFailure(e);
+        }
+    }
+
+    /**
      * Consume records to top queries stores
      *
      * @param records a list of {@link SearchQueryRecord}
@@ -433,6 +463,17 @@ public class TopQueriesService {
 
     // Add Source and Source Truncated attributes to record
     public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
+        // A SQL/PPL record has no SearchSourceBuilder and already holds its query text as SOURCE.
+        // Keep it, since the grouping path calls this for every record.
+        if (record.getSearchSourceBuilder() == null) {
+            final Object existingSource = record.getAttributes().get(Attribute.SOURCE);
+            if (existingSource != null) {
+                if (record.getAttributes().get(Attribute.SOURCE_TRUNCATED) == null) {
+                    record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+                }
+                return;
+            }
+        }
         if (maxSourceLength == 0) {
             record.addAttribute(Attribute.SOURCE, new SourceString(""));
             record.addAttribute(Attribute.SOURCE_TRUNCATED, true);

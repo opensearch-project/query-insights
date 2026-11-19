@@ -17,9 +17,10 @@ import org.opensearch.action.support.nodes.BaseNodesResponse;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 
 /**
- * Aggregated response carrying resolved live query user info from all nodes.
+ * Aggregated response with resolved live query user info and PPL queries' finished searches from all nodes.
  */
 public class LiveQueriesUserInfoResponse extends BaseNodesResponse<LiveQueriesUserInfoNodeResponse> {
 
@@ -55,6 +56,20 @@ public class LiveQueriesUserInfoResponse extends BaseNodesResponse<LiveQueriesUs
         Map<String, LiveQueryUserInfoDTO> merged = new HashMap<>();
         for (LiveQueriesUserInfoNodeResponse nodeResponse : getNodes()) {
             merged.putAll(nodeResponse.getUserInfoByTaskKey());
+        }
+        return merged;
+    }
+
+    /**
+     * Merges the per-node maps. A PPL query's searches are all coordinated on its own node, so no id
+     * comes from two nodes.
+     *
+     * @return finished searches by live query id
+     */
+    public Map<String, FinishedSearches> getAllFinishedSearches() {
+        Map<String, FinishedSearches> merged = new HashMap<>();
+        for (LiveQueriesUserInfoNodeResponse nodeResponse : getNodes()) {
+            merged.putAll(nodeResponse.getFinishedSearchesByQueryId());
         }
         return merged;
     }

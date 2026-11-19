@@ -36,6 +36,7 @@ import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesResponse;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.recommendations.Recommendation;
@@ -194,6 +195,12 @@ public class TransportTopQueriesAction extends TransportNodesAction<
         if (historicalRecords != null && !historicalRecords.isEmpty()) {
             // Remove duplicates between in-memory and historical records
             List<SearchQueryRecord> deduplicatedHistoricalRecords = removeDuplicates(inMemoryTopQueries, historicalRecords);
+            // Searches run by SQL/PPL queries are only shown in their query's details.
+            if (request.getId() == null && !deduplicatedHistoricalRecords.isEmpty()) {
+                deduplicatedHistoricalRecords = deduplicatedHistoricalRecords.stream()
+                    .filter(record -> !Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD)))
+                    .collect(Collectors.toList());
+            }
             if (!deduplicatedHistoricalRecords.isEmpty()) {
                 // Pre-compute recommendations for historical records (in-memory records already have them from nodeOperation)
                 Map<String, List<Recommendation>> historicalRecs = Collections.emptyMap();
@@ -210,9 +217,75 @@ public class TransportTopQueriesAction extends TransportNodesAction<
                 combinedTopQueriesList.add(new TopQueries(clusterService.localNode(), deduplicatedHistoricalRecords, historicalRecs));
             }
         }
+
+        // Detail view: also return the searches the query ran.
+        if (request.getId() != null) {
+            appendChildrenAndRespond(request, combinedTopQueriesList, inMemoryDataFailures, finalListener);
+            return;
+        }
+
         finalListener.onResponse(
             new TopQueriesResponse(clusterService.getClusterName(), combinedTopQueriesList, inMemoryDataFailures, request.getMetricType())
         );
+    }
+
+    /**
+     * For a SQL/PPL query's detail view, appends the searches it ran. If the record has no marker or the
+     * read fails, responds with the record alone.
+     */
+    void appendChildrenAndRespond(
+        TopQueriesRequest request,
+        List<TopQueries> combined,
+        List<FailedNodeException> inMemoryDataFailures,
+        ActionListener<TopQueriesResponse> finalListener
+    ) {
+        String parentMarker = null;
+        for (TopQueries tq : combined) {
+            if (tq.getTopQueriesRecord() == null) {
+                continue;
+            }
+            for (SearchQueryRecord record : tq.getTopQueriesRecord()) {
+                if (request.getId().equals(record.getId())
+                    && record.getAttributes().get(Attribute.PARENT_MARKER) instanceof String marker) {
+                    parentMarker = marker;
+                }
+            }
+        }
+
+        // Nothing to add for a DSL query or without a time range.
+        if (parentMarker == null || parentMarker.isEmpty() || request.getFrom() == null || request.getTo() == null) {
+            finalListener.onResponse(
+                new TopQueriesResponse(clusterService.getClusterName(), combined, inMemoryDataFailures, request.getMetricType())
+            );
+            return;
+        }
+
+        queryInsightsService.getTopQueriesService(request.getMetricType())
+            .getChildrenFromIndex(
+                request.getFrom(),
+                request.getTo(),
+                parentMarker,
+                request.getVerbose(),
+                new ActionListener<List<SearchQueryRecord>>() {
+                    @Override
+                    public void onResponse(List<SearchQueryRecord> children) {
+                        if (children != null && !children.isEmpty()) {
+                            combined.add(new TopQueries(clusterService.localNode(), children, Collections.emptyMap()));
+                        }
+                        finalListener.onResponse(
+                            new TopQueriesResponse(clusterService.getClusterName(), combined, inMemoryDataFailures, request.getMetricType())
+                        );
+                    }
+
+                    @Override
+                    public void onFailure(Exception e) {
+                        logger.warn("Failed to fetch the searches of a SQL/PPL query for its detail view; returning the query alone.", e);
+                        finalListener.onResponse(
+                            new TopQueriesResponse(clusterService.getClusterName(), combined, inMemoryDataFailures, request.getMetricType())
+                        );
+                    }
+                }
+            );
     }
 
     void onHistoricalDataFailure(

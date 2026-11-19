@@ -10,11 +10,15 @@ package org.opensearch.plugin.insights;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.opensearch.action.ActionRequest;
+import org.opensearch.action.support.ActionFilter;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.node.DiscoveryNodes;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.SetOnce;
+import org.opensearch.common.network.NetworkService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.IndexScopedSettings;
 import org.opensearch.common.settings.Setting;
@@ -25,6 +29,7 @@ import org.opensearch.common.util.concurrent.OpenSearchExecutors;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.discovery.SeedHostsProvider;
 import org.opensearch.env.Environment;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.identity.PluginSubject;
@@ -38,6 +43,7 @@ import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsActio
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -47,15 +53,18 @@ import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryIns
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.health_stats.TransportHealthStatsAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.PplQueryUserFilter;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportFinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.transport.report_query.ReportQueryBytesRequestHandler;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.settings.TransportUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.transport.top_queries.TransportTopQueriesAction;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
+import org.opensearch.plugins.DiscoveryPlugin;
 import org.opensearch.plugins.IdentityAwarePlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.plugins.TelemetryAwarePlugin;
@@ -68,13 +77,15 @@ import org.opensearch.telemetry.tracing.Tracer;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.BytesTransportRequest;
+import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.Client;
 import org.opensearch.watcher.ResourceWatcherService;
 
 /**
  * Plugin class for Query Insights.
  */
-public class QueryInsightsPlugin extends Plugin implements ActionPlugin, TelemetryAwarePlugin, IdentityAwarePlugin {
+public class QueryInsightsPlugin extends Plugin implements ActionPlugin, TelemetryAwarePlugin, IdentityAwarePlugin, DiscoveryPlugin {
 
     private PluginClient pluginClient;
 
@@ -82,6 +93,29 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
      * Default constructor
      */
     public QueryInsightsPlugin() {}
+
+    /** Set in {@link #createComponents}; the report-query handler needs it. */
+    private final SetOnce<QueryInsightsService> queryInsightsServiceHolder = new SetOnce<>();
+
+    /** Created up front because the node can ask for action filters before {@link #createComponents}. */
+    private final PplQueryUserFilter pplQueryUserFilter = new PplQueryUserFilter();
+
+    /**
+     * Registers the report-query handler once both the transport service and the Query Insights service
+     * exist. They arrive in different callbacks, in no fixed order, so each callback tries.
+     */
+    private void maybeRegisterReportQueryHandler(final TransportService transportService) {
+        final QueryInsightsService service = queryInsightsServiceHolder.get();
+        if (transportService == null || service == null) {
+            return;
+        }
+        transportService.registerRequestHandler(
+            ReportQueryBytesAction.NAME,
+            ThreadPool.Names.GENERIC,
+            BytesTransportRequest::new,
+            new ReportQueryBytesRequestHandler(service)
+        );
+    }
 
     @Override
     public Collection<Object> createComponents(
@@ -115,7 +149,24 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             new QueryInsightsReaderFactory(pluginClient)
         );
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        queryInsightsServiceHolder.set(queryInsightsService);
+        pplQueryUserFilter.initialize(clusterService, threadPool, queryInsightsService);
+        maybeRegisterReportQueryHandler(transportServiceHolder.get());
         return List.of(queryInsightsService, queryInsightsListener);
+    }
+
+    /** Set in {@link #getSeedHostProviders}; used only to register the report-query handler. */
+    private final SetOnce<TransportService> transportServiceHolder = new SetOnce<>();
+
+    @Override
+    public Map<String, Supplier<SeedHostsProvider>> getSeedHostProviders(
+        final TransportService transportService,
+        final NetworkService networkService
+    ) {
+        // Not for seed hosts: this is the earliest callback that gets the TransportService.
+        transportServiceHolder.set(transportService);
+        maybeRegisterReportQueryHandler(transportService);
+        return Map.of();
     }
 
     @Override
@@ -155,6 +206,11 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
     }
 
     @Override
+    public List<ActionFilter> getActionFilters() {
+        return List.of(pplQueryUserFilter);
+    }
+
+    @Override
     public List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> getActions() {
         return List.of(
             new ActionPlugin.ActionHandler<>(TopQueriesAction.INSTANCE, TransportTopQueriesAction.class),
@@ -180,6 +236,7 @@ public class QueryInsightsPlugin extends Plugin implements ActionPlugin, Telemet
             QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED,
             QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE,
             QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
+            QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED,
             QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY,
             QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
             QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,

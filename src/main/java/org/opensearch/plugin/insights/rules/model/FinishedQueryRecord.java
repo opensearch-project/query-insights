@@ -74,11 +74,18 @@ public class FinishedQueryRecord extends SearchQueryRecord {
         return builder.endObject();
     }
 
+    /** Whether this is a DSL search. Records without a query source are DSL searches. */
+    private boolean isDsl() {
+        Object querySource = getAttributes().get(Attribute.QUERY_SOURCE);
+        return querySource == null || "DSL".equals(querySource);
+    }
+
     private void serializeAttribute(XContentBuilder builder, Params params, Attribute key, Object value) throws IOException {
         if (value instanceof SourceString ss) {
             // Truncated source is not valid JSON — write as a plain string to avoid parse errors.
+            // A SQL/PPL query's text isn't JSON either.
             Boolean truncated = (Boolean) getAttributes().get(Attribute.SOURCE_TRUNCATED);
-            if (truncated != null && truncated) {
+            if ((truncated != null && truncated) || !isDsl()) {
                 builder.field(key.toString(), ss.getValue());
             } else {
                 builder.rawField(key.toString(), new BytesArray(ss.getValue()).streamInput(), XContentType.JSON);

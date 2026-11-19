@@ -62,5 +62,25 @@ public interface QueryInsightsReader extends Closeable {
         read(from, to, id, verbose, metricType, listener);
     }
 
+    /**
+     * Reads the searches a SQL/PPL query ran: the records whose {@code derived_from} is its marker.
+     * Readers that can't do this return an empty list.
+     *
+     * @param from         start timestamp
+     * @param to           end timestamp
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     * @param verbose      whether to return full output
+     * @param listener     called with the records
+     */
+    default void readChildren(
+        final String from,
+        final String to,
+        final String parentMarker,
+        final Boolean verbose,
+        final ActionListener<List<SearchQueryRecord>> listener
+    ) {
+        listener.onResponse(java.util.Collections.emptyList());
+    }
+
     String getId();
 }

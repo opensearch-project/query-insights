@@ -117,6 +117,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
+                QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,

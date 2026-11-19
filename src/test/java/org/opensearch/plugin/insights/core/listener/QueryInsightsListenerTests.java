@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +32,7 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
+import org.opensearch.action.search.CreatePitAction;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
@@ -155,6 +157,58 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         Map<String, String> labels = (Map<String, String>) generatedRecord.getAttributes().get(Attribute.LABELS);
         assertEquals("userLabel", labels.get(Task.X_OPAQUE_ID));
         assertEquals(false, generatedRecord.getAttributes().get(Attribute.FAILED));
+    }
+
+    public void testCreatingAPointInTimeIsNotRecorded() {
+        // A SQL/PPL query opens one for each index it reads in batches; it runs the create_pit phase only.
+        SearchTask task = new SearchTask(7, "transport", CreatePitAction.NAME, () -> "create pit", TaskId.EMPTY_TASK_ID, Map.of());
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequest.indices()).thenReturn(new String[] { "qibig_scan" });
+        when(searchRequestContext.phaseTookMap()).thenReturn(Map.of("create_pit", 0L));
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, never()).addRecord(any());
+        // Its identity, captured as for any search, is still let go.
+        String taskKey = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), 7);
+        verify(queryInsightsService, times(2)).removeLiveQueryUserInfo(taskKey);
+    }
+
+    public void testSearchOfAPplQueryIsTaggedAndNotRanked() {
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42")
+        );
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder().size(100));
+        when(searchRequest.indices()).thenReturn(new String[] { "logs" });
+        when(searchRequestContext.phaseTookMap()).thenReturn(new HashMap<>());
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+
+        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(captor.capture());
+        Map<Attribute, Object> attributes = captor.getValue().getAttributes();
+        assertEquals(true, attributes.get(Attribute.IS_CHILD));
+        assertEquals("PPL:node-1:42", attributes.get(Attribute.DERIVED_FROM));
+        assertEquals("DSL", attributes.get(Attribute.QUERY_SOURCE));
+        // Stored unranked, so it never takes a Top N place.
+        assertEquals(SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP, attributes.get(Attribute.TOP_N_QUERY));
     }
 
     @SuppressWarnings("unchecked")

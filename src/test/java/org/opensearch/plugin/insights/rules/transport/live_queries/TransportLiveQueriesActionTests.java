@@ -49,10 +49,13 @@ import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesRequest;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
+import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -1757,5 +1760,101 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         SearchTask search = (SearchTask) transportService.getTaskManager().register("transport", SEARCH_ACTION, new SearchRequest());
         search.setWorkloadGroupId(threadContext);
         return search;
+    }
+
+    /** Stubs the fan-out to return, from node1, the searches the given PPL queries have finished. */
+    private void stubFinishedSearches(Map<String, FinishedSearches> finished) {
+        doAnswer(inv -> {
+            ActionListener<LiveQueriesUserInfoResponse> listener = inv.getArgument(2);
+            listener.onResponse(
+                new LiveQueriesUserInfoResponse(
+                    new ClusterName("test-cluster"),
+                    List.of(new LiveQueriesUserInfoNodeResponse(node1, Map.of(), finished)),
+                    emptyList()
+                )
+            );
+            return null;
+        }).when(client).execute(eq(LiveQueriesUserInfoAction.INSTANCE), any(), any());
+    }
+
+    public void testPplQueryAddsTheSearchesItHasFinishedToItsTotals() throws Exception {
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId searchId = new TaskId(node1.getId(), 11L);
+        TaskId shardId = new TaskId(node1.getId(), 12L);
+        TaskId dslId = new TaskId(node1.getId(), 20L);
+        stubListTasks(
+            List.of(
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 50L, 60L),
+                taskInfo(searchId, pplId, SEARCH_ACTION, 1_000_000L, 100L, 200L),
+                taskInfo(shardId, searchId, SHARD_QUERY_ACTION, 500_000L, 300L, 400L),
+                taskInfo(dslId, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 50L, 60L)
+            )
+        );
+        stubFinishedSearches(Map.of(pplId.toString(), new FinishedSearches(604, 7_000L, 9_000L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertEquals(new FinishedSearches(604, 7_000L, 9_000L), ppl.getFinishedSearches());
+        assertEquals(7_450L, ppl.getTotalCpu()); // 7,000 finished + 50 + 100 + 300 running
+        assertEquals(9_660L, ppl.getTotalMemory()); // 9,000 finished + 60 + 200 + 400 running
+        // The running search and its shard task are still listed.
+        assertEquals(List.of(searchId, shardId), ppl.getShardTasks().stream().map(t -> t.getTaskInfo().getTaskId()).toList());
+        LiveQueryRecord dsl = recordFor(response, dslId);
+        assertNull(dsl.getFinishedSearches());
+        assertEquals(50L, dsl.getTotalCpu());
+
+        // The finished searches are asked for from the node that runs the PPL query, under its id.
+        ArgumentCaptor<LiveQueriesUserInfoRequest> captor = ArgumentCaptor.forClass(LiveQueriesUserInfoRequest.class);
+        verify(client).execute(eq(LiveQueriesUserInfoAction.INSTANCE), captor.capture(), any());
+        assertTrue(captor.getValue().getTaskKeys().contains(pplId.toString()));
+        assertArrayEquals(new String[] { node1.getId() }, captor.getValue().nodesIds());
+    }
+
+    public void testPplQueryBetweenSearchesStillShowsTheSearchesItHasFinished() throws Exception {
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        stubListTasks(List.of(taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 50L, 60L)));
+        stubFinishedSearches(Map.of(pplId.toString(), new FinishedSearches(604, 7_000L, 9_000L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertTrue(ppl.getShardTasks().isEmpty());
+        assertEquals(604, ppl.getFinishedSearches().getCount());
+        assertEquals(7_050L, ppl.getTotalCpu());
+        assertEquals(9_060L, ppl.getTotalMemory());
+    }
+
+    public void testFinishedSearchesCountWhenSortingByCpu() throws Exception {
+        // Running, the PPL query uses less CPU than the DSL search; with its finished searches, more.
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId dslId = new TaskId(node1.getId(), 20L);
+        stubListTasks(
+            List.of(
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 50L, 60L),
+                taskInfo(dslId, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 500L, 600L)
+            )
+        );
+        stubFinishedSearches(Map.of(pplId.toString(), new FinishedSearches(604, 7_000L, 9_000L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true, MetricType.CPU, -1, new String[0], null, false));
+
+        assertEquals(List.of(pplId.toString(), dslId.toString()), queryIds(response));
+    }
+
+    public void testPplQueryHasNoFinishedSearchesWhenTheFanOutFails() throws Exception {
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        stubListTasks(List.of(taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 2_000_000L, 50L, 60L)));
+        doAnswer(inv -> {
+            ActionListener<LiveQueriesUserInfoResponse> listener = inv.getArgument(2);
+            listener.onFailure(new RuntimeException("node left"));
+            return null;
+        }).when(client).execute(eq(LiveQueriesUserInfoAction.INSTANCE), any(), any());
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true));
+
+        LiveQueryRecord ppl = recordFor(response, pplId);
+        assertNull(ppl.getFinishedSearches());
+        assertEquals(50L, ppl.getTotalCpu());
     }
 }
