@@ -295,6 +295,11 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
 
         String toTs = FORMATTER.format(Instant.now().plusSeconds(60));
 
+        // The API answers a failed index read with the in-memory records alone. Wait until the first window is
+        // exported, then clear the in-memory store, so every record below can only come from the local index.
+        assertBusy(() -> assertTrue("records are exported to the local index", countExportedRecords() > 0), 30, TimeUnit.SECONDS);
+        drainInMemoryRecords();
+
         // === Test historical filter_by_mode = none ===
         setFilterByMode("none");
 
@@ -692,6 +697,40 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
     /**
      * Set the filter_by_mode cluster setting.
      */
+    /**
+     * Counts the records in the top queries indices, read by the admin directly.
+     */
+    @SuppressWarnings("unchecked")
+    private int countExportedRecords() throws IOException {
+        Request request = new Request("GET", "/top_queries-*/_count");
+        request.addParameter("ignore_unavailable", "true");
+        request.addParameter("allow_no_indices", "true");
+        Response response = client().performRequest(request);
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                response.getEntity().getContent()
+            )
+        ) {
+            return ((Number) parser.map().get("count")).intValue();
+        }
+    }
+
+    /**
+     * Clears the in-memory top queries on every node: a change of the grouping setting drains them.
+     */
+    private void drainInMemoryRecords() throws IOException, InterruptedException {
+        for (String groupBy : List.of("similarity", "none")) {
+            Request request = new Request("PUT", "/_cluster/settings");
+            request.setJsonEntity("{\"persistent\":{\"search.insights.top_queries.grouping.group_by\":\"" + groupBy + "\"}}");
+            Assert.assertEquals(200, client().performRequest(request).getStatusLine().getStatusCode());
+            Thread.sleep(1000);
+        }
+        List<Map<String, Object>> inMemory = getTopQueriesAsUser(null, null);
+        assertTrue("the in-memory store is empty, but holds " + inMemory.size() + " records", inMemory.isEmpty());
+    }
+
     private void setFilterByMode(String mode) throws IOException, InterruptedException {
         Request request = new Request("PUT", "/_cluster/settings");
         request.setJsonEntity("{\"persistent\":{\"search.insights.top_queries.filter_by_mode\":\"" + mode + "\"}}");
