@@ -77,7 +77,8 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
                     + "\"persistent\":{"
                     + "\"search.insights.top_queries.filter_by_mode\":\"none\","
                     + "\"search.insights.top_queries.latency.window_size\":\"5m\","
-                    + "\"search.insights.top_queries.latency.top_n_size\":10"
+                    + "\"search.insights.top_queries.latency.top_n_size\":10,"
+                    + "\"search.insights.top_queries.grouping.group_by\":null"
                     + "}"
                     + "}"
             );
@@ -294,6 +295,18 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
         Thread.sleep(QueryInsightsSettings.QUERY_RECORD_QUEUE_DRAIN_INTERVAL.millis() + 3000);
 
         String toTs = FORMATTER.format(Instant.now().plusSeconds(60));
+
+        // The API answers a failed index read with the in-memory records alone. Wait until the first window is
+        // exported, then clear the in-memory store, so every record below can only come from the local index.
+        // The export is asynchronous, so also wait until the count stops changing.
+        assertBusy(() -> {
+            int before = countExportedRecords();
+            Thread.sleep(2000);
+            int after = countExportedRecords();
+            assertTrue("records are exported to the local index", after > 0);
+            assertEquals("the export is still writing records", before, after);
+        }, 60, TimeUnit.SECONDS);
+        drainInMemoryRecords();
 
         // === Test historical filter_by_mode = none ===
         setFilterByMode("none");
@@ -687,6 +700,39 @@ public class TopQueriesRbacIT extends QueryInsightsRestTestCase {
             }
         }
         return usernames;
+    }
+
+    /**
+     * Counts the records in the top queries indices, read by the admin directly.
+     */
+    private int countExportedRecords() throws IOException {
+        Request request = new Request("GET", "/top_queries-*/_count");
+        request.addParameter("ignore_unavailable", "true");
+        request.addParameter("allow_no_indices", "true");
+        Response response = client().performRequest(request);
+        try (
+            XContentParser parser = JsonXContent.jsonXContent.createParser(
+                NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION,
+                response.getEntity().getContent()
+            )
+        ) {
+            return ((Number) parser.map().get("count")).intValue();
+        }
+    }
+
+    /**
+     * Clears the in-memory top queries on every node: a change of the grouping setting drains them.
+     */
+    private void drainInMemoryRecords() throws IOException, InterruptedException {
+        for (String groupBy : List.of("similarity", "none")) {
+            Request request = new Request("PUT", "/_cluster/settings");
+            request.setJsonEntity("{\"persistent\":{\"search.insights.top_queries.grouping.group_by\":\"" + groupBy + "\"}}");
+            Assert.assertEquals(200, client().performRequest(request).getStatusLine().getStatusCode());
+            Thread.sleep(1000);
+        }
+        List<Map<String, Object>> inMemory = getTopQueriesAsUser(null, null);
+        assertTrue("the in-memory store is empty, but holds " + inMemory.size() + " records", inMemory.isEmpty());
     }
 
     /**
