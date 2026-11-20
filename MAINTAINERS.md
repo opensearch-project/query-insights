@@ -12,7 +12,6 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 | ------------------ | --------------------------------------------------------- | ----------- |
 | Chenyang Ji   | [ansjcy](https://github.com/ansjcy)                   | Amazon      |
 | Ankit Jain  | [jainankitk](https://github.com/jainankitk)                       | Amazon      |
-| Siddhant Deshmukh     | [deshsidd](https://github.com/deshsidd)                           | Amazon      |
 | David Zane         | [dzane17](https://github.com/dzane17)                 | Amazon      |
 | Kishore Kumaar Natarajan         | [KishoreKicha14](https://github.com/KishoreKicha14)                 | Amazon      |
 
@@ -20,3 +19,4 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 
 | Maintainer         | GitHub ID                                                 | Affiliation |
 | ------------------ | --------------------------------------------------------- | ----------- |
+| Siddhant Deshmukh     | [deshsidd](https://github.com/deshsidd)                           | Amazon      |
