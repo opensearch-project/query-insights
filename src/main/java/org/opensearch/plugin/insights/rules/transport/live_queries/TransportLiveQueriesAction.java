@@ -119,6 +119,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     // Task keys of each PPL query's child searches, by PPL query id. The search
                     // listener captures identity per search task, never for the PPL task itself.
                     Map<String, List<String>> childSearchKeysByQueryId = new HashMap<>();
+                    Set<String> pplQueryIds = new HashSet<>();
 
                     for (TaskGroup taskGroup : taskResponse.getTaskGroups()) {
                         TaskInfo coordinatorInfo = taskGroup.getTaskInfo();
@@ -205,19 +206,25 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         );
 
                         allRecords.add(record);
+                        if (isPpl) {
+                            pplQueryIds.add(queryId);
+                        }
                         if (!childSearches.isEmpty()) {
                             childSearchKeysByQueryId.put(queryId, childSearches.stream().map(TransportLiveQueriesAction::taskKey).toList());
                         }
                     }
 
-                    List<LiveQueryRecord> sortedRecords = allRecords.stream()
-                        .sorted(largestFirst(request.getSortBy()))
-                        .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
-                        .toList();
-
                     // Fan out to all nodes to resolve user identity captured on the coordinating node of
-                    // each search, then continue with finished-queries handling (if requested).
-                    resolveUserInfoAndRespond(sortedRecords, childSearchKeysByQueryId, request, listener);
+                    // each search, then continue with finished-queries handling (if requested). The size
+                    // limit is applied after the fan-out, which adds each PPL query's finished searches to
+                    // its totals. A DSL search's totals don't change, so only the largest DSL searches up to
+                    // the limit can make it; the rest are left out of the fan-out.
+                    resolveUserInfoAndRespond(
+                        topDslSearchesAndEveryPplQuery(allRecords, pplQueryIds, request),
+                        childSearchKeysByQueryId,
+                        request,
+                        listener
+                    );
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -276,14 +283,12 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     userInfoResponse.getAllFinishedSearches(),
                     childSearchKeysByQueryId
                 );
-                // Finished searches change PPL queries' totals, so sort again.
-                enrichedRecords.sort(largestFirst(request.getSortBy()));
-                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(enrichedRecords);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(largest(enrichedRecords, request));
                 respondWithFinishedQueries(filteredRecords, request, listener);
             }, ex -> {
                 // User info is best-effort — on failure, fall back to records without identity
                 logger.error("Failed to resolve live query user info from nodes", ex);
-                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(records);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(largest(records, request));
                 respondWithFinishedQueries(filteredRecords, request, listener);
             })
         );
@@ -323,6 +328,37 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             );
         }
         return enriched;
+    }
+
+    /** The requested number of records, largest first by the requested metric. */
+    private static List<LiveQueryRecord> largest(final List<LiveQueryRecord> records, final LiveQueriesRequest request) {
+        return records.stream()
+            .sorted(largestFirst(request.getSortBy()))
+            .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
+            .toList();
+    }
+
+    /**
+     * The records that can still make the size limit once PPL queries' finished searches are added: every
+     * PPL query, and the largest DSL searches up to the limit.
+     */
+    private static List<LiveQueryRecord> topDslSearchesAndEveryPplQuery(
+        final List<LiveQueryRecord> records,
+        final Set<String> pplQueryIds,
+        final LiveQueriesRequest request
+    ) {
+        final long size = request.getSize() < 0 ? Long.MAX_VALUE : request.getSize();
+        final List<LiveQueryRecord> candidates = new ArrayList<>();
+        long dslSearches = 0;
+        for (LiveQueryRecord record : records.stream().sorted(largestFirst(request.getSortBy())).toList()) {
+            if (pplQueryIds.contains(record.getQueryId())) {
+                candidates.add(record);
+            } else if (dslSearches < size) {
+                candidates.add(record);
+                dslSearches++;
+            }
+        }
+        return candidates;
     }
 
     /** Orders live queries by the requested metric, largest first. */

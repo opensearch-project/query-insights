@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest;
@@ -1840,6 +1841,47 @@ public class TransportLiveQueriesActionTests extends OpenSearchTestCase {
         LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true, MetricType.CPU, -1, new String[0], null, false));
 
         assertEquals(List.of(pplId.toString(), dslId.toString()), queryIds(response));
+    }
+
+    public void testTheSizeLimitCountsTheSearchesAPplQueryHasFinished() throws Exception {
+        // Running, the PPL query uses less CPU than the DSL search; with its finished searches, more.
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId dslId = new TaskId(node1.getId(), 20L);
+        stubListTasks(
+            List.of(
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 50L, 60L),
+                taskInfo(dslId, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 500L, 600L)
+            )
+        );
+        stubFinishedSearches(Map.of(pplId.toString(), new FinishedSearches(604, 7_000L, 9_000L)));
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, false));
+
+        assertEquals(List.of(pplId.toString()), queryIds(response));
+    }
+
+    public void testDslSearchesThatCantMakeTheSizeLimitAreLeftOutOfTheFanOut() throws Exception {
+        TaskId pplId = new TaskId(node1.getId(), 10L);
+        TaskId largest = new TaskId(node1.getId(), 20L);
+        TaskId second = new TaskId(node1.getId(), 21L);
+        TaskId third = new TaskId(node1.getId(), 22L);
+        stubListTasks(
+            List.of(
+                taskInfo(pplId, TaskId.EMPTY_TASK_ID, PPL_ACTION, 3_000_000L, 50L, 60L),
+                taskInfo(largest, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 500L, 600L),
+                taskInfo(second, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 400L, 600L),
+                taskInfo(third, TaskId.EMPTY_TASK_ID, SEARCH_ACTION, 2_000_000L, 300L, 600L)
+            )
+        );
+        stubFinishedSearches(Map.of());
+
+        LiveQueriesResponse response = executeLiveQueries(new LiveQueriesRequest(true, MetricType.CPU, 1, new String[0], null, false));
+
+        assertEquals(List.of(largest.toString()), queryIds(response));
+        ArgumentCaptor<LiveQueriesUserInfoRequest> captor = ArgumentCaptor.forClass(LiveQueriesUserInfoRequest.class);
+        verify(client).execute(eq(LiveQueriesUserInfoAction.INSTANCE), captor.capture(), any());
+        // The PPL query could still have made it, so it was resolved too.
+        assertEquals(Set.of(pplId.toString(), largest.toString()), Set.copyOf(captor.getValue().getTaskKeys()));
     }
 
     public void testPplQueryHasNoFinishedSearchesWhenTheFanOutFails() throws Exception {
