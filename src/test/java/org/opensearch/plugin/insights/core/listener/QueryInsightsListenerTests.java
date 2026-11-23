@@ -530,6 +530,42 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         verify(queryInsightsService, times(1)).addRecord(any());
     }
 
+    public void testAPplQuerysSearchOnAnExcludedIndexLeavesTheQueryOut() {
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42")
+        );
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.indices()).thenReturn(new String[] { EXCLUDED_INDICES.get(0) });
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index(EXCLUDED_INDICES.get(0), "uuid-1")))
+        );
+
+        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).excludeQuery("PPL:node-1:42");
+        verify(queryInsightsService, never()).addChildSearch(any(), any());
+        verify(queryInsightsService, never()).addRecord(any());
+    }
+
+    public void testADslSearchOnAnExcludedIndexLeavesNoQueryOut() {
+        when(searchRequest.indices()).thenReturn(new String[] { EXCLUDED_INDICES.get(0) });
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index(EXCLUDED_INDICES.get(0), "uuid-1")))
+        );
+
+        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, never()).excludeQuery(any());
+        verify(queryInsightsService, never()).addRecord(any());
+    }
+
     public void testExcludeInternalIndex() {
         QueryInsightsService queryInsightsService = mock(QueryInsightsService.class);
         when(queryInsightsService.isTopNFeatureEnabled()).thenReturn(true);

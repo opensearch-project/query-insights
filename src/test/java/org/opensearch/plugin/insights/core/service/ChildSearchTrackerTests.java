@@ -40,6 +40,19 @@ public class ChildSearchTrackerTests extends OpenSearchTestCase {
         assertEquals(5L, tracker.take("PPL:node-1:2").getCpuNanos());
     }
 
+    public void testAQueryWithASearchOnAnExcludedIndexIsMarked() {
+        tracker.add("PPL:node-1:1", search(10L, 100L));
+        tracker.exclude("PPL:node-1:1");
+        tracker.add("PPL:node-1:1", search(20L, 200L));
+        // It can be the query's first search.
+        tracker.exclude("PPL:node-1:2");
+        tracker.add("PPL:node-1:3", search(5L, 50L));
+
+        assertTrue(tracker.take("PPL:node-1:1").isExcluded());
+        assertTrue(tracker.take("PPL:node-1:2").isExcluded());
+        assertFalse(tracker.take("PPL:node-1:3").isExcluded());
+    }
+
     public void testAQueryWithoutSearchesHasNone() {
         assertNull(tracker.take("PPL:node-1:9"));
         assertNull(tracker.get("PPL:node-1:9"));

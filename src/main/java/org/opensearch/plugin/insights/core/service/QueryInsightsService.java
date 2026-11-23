@@ -356,6 +356,16 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Leaves the SQL/PPL query with this marker out of Top N and finished queries, because one of its
+     * searches read an index that {@code excluded_indices} names.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     */
+    public void excludeQuery(final String parentMarker) {
+        childSearches.exclude(parentMarker);
+    }
+
+    /**
      * Removes and returns the searches a SQL/PPL query ran.
      *
      * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}

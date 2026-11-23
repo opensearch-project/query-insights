@@ -20,9 +20,9 @@ import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 
 /**
  * The searches each running SQL/PPL query has finished, keyed by the query's marker: their summed CPU
- * and memory, and the first {@link ChildSearches#MAX_SEARCHES} of them. The query's record takes them
- * when it arrives, and Live Queries reads the totals while the query runs. A query and its searches are
- * coordinated on the same node, so they're complete by then.
+ * and memory, the first {@link ChildSearches#MAX_SEARCHES} of them, and whether one read an excluded
+ * index. The query's record takes them when it arrives, and Live Queries reads the totals while the
+ * query runs. A query and its searches are coordinated on the same node, so they're complete by then.
  */
 public final class ChildSearchTracker {
 
@@ -53,6 +53,22 @@ public final class ChildSearchTracker {
     public void add(final String marker, final ChildSearches.Search search) {
         final long now = clock.getAsLong();
         tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).add(search, now));
+        if (tracked.size() > MAX_QUERIES) {
+            removeStale(now);
+            if (tracked.size() > MAX_QUERIES) {
+                dropStalest();
+            }
+        }
+    }
+
+    /**
+     * Marks the query with {@code marker} as left out: one of its searches read an excluded index.
+     *
+     * @param marker the query's marker
+     */
+    public void exclude(final String marker) {
+        final long now = clock.getAsLong();
+        tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).exclude(now));
         if (tracked.size() > MAX_QUERIES) {
             removeStale(now);
             if (tracked.size() > MAX_QUERIES) {
@@ -119,6 +135,7 @@ public final class ChildSearchTracker {
         private long memoryBytes;
         private int count;
         private final List<ChildSearches.Search> searches = new ArrayList<>();
+        private boolean excluded;
         private volatile long lastUpdate;
 
         private Tracked add(final ChildSearches.Search search, final long now) {
@@ -130,6 +147,19 @@ public final class ChildSearchTracker {
             }
             lastUpdate = now;
             return this;
+        }
+
+        private Tracked exclude(final long now) {
+            excluded = true;
+            lastUpdate = now;
+            return this;
+        }
+
+        /**
+         * @return whether one of the searches read an excluded index, which leaves the query out
+         */
+        public boolean isExcluded() {
+            return excluded;
         }
 
         /**

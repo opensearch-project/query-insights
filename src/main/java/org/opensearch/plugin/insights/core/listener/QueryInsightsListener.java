@@ -335,7 +335,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             && Arrays.stream(searchIndices).allMatch(index -> index.contains(QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX))) {
             return true;
         }
+        return false;
+    }
 
+    /** Whether the search read an index that {@code excluded_indices} names. */
+    private boolean readsExcludedIndex(final SearchRequestContext searchRequestContext) {
         if (excludedIndicesPattern.isEmpty()) {
             return false;
         }
@@ -344,6 +348,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .map(SearchRequestContext::getSuccessfulSearchShardIndices)
             .map(indices -> indices.stream().map(Index::getName).anyMatch(this::matchedExcludedIndices))
             .orElse(false);
+    }
+
+    /** The marker of the SQL/PPL query that ran this search, or {@code null} if no such query did. */
+    private static String parentMarkerOf(final SearchPhaseContext context) {
+        final String marker = context == null || context.getTask() == null
+            ? null
+            : context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+        return marker == null || marker.isEmpty() ? null : marker;
     }
 
     /** Creating a point in time goes through the search phases but isn't a query, so it isn't recorded. */
@@ -365,6 +377,14 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final boolean failed
     ) {
         if (skipSearchRequest(searchRequestContext) || isPointInTimeCreation(context)) {
+            return null;
+        }
+        final String parentMarker = parentMarkerOf(context);
+        if (readsExcludedIndex(searchRequestContext)) {
+            // A SQL/PPL query that reads an excluded index is left out as a whole, as a DSL search is.
+            if (parentMarker != null) {
+                queryInsightsService.excludeQuery(parentMarker);
+            }
             return null;
         }
 
@@ -455,8 +475,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             record.setStreaming(searchRequestContext.isStreamingRequest());
             // A search run by a SQL/PPL query goes into that query's record, by its marker. It isn't
             // ranked or listed as a finished query on its own.
-            final String parentMarker = context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
-            if (parentMarker != null && !parentMarker.isEmpty()) {
+            if (parentMarker != null) {
                 queryInsightsService.addChildSearch(parentMarker, record);
                 return null;
             }

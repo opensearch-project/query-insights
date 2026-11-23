@@ -302,6 +302,13 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertNull(queryInsightsService.takeChildSearches(null));
     }
 
+    public void testAQueryWithASearchOnAnExcludedIndexIsLeftOut() {
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
+        queryInsightsService.excludeQuery("PPL:node-1:42");
+
+        assertTrue(queryInsightsService.takeChildSearches("PPL:node-1:42").isExcluded());
+    }
+
     public void testARunningPplQuerysFinishedSearchesAreReadByItsLiveId() {
         queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
         queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(20L, 200L));

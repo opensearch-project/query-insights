@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.core.transport.TransportResponse;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.ChildSearchTracker;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
@@ -163,6 +164,28 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         assertEquals("latency is the query's own", 15L, record.getMeasurement(MetricType.LATENCY).longValue());
         // They're listed in its record, which keeps them if it makes Top N.
         assertEquals(new ChildSearches(2, List.of(first, second)), record.getAttributes().get(Attribute.CHILD_SEARCHES));
+    }
+
+    public void testAQueryWithASearchOnAnExcludedIndexIsLeftOut() throws Exception {
+        final QueryInsightsService service = mock(QueryInsightsService.class);
+        final FinishedQueriesCache finishedQueries = mock(FinishedQueriesCache.class);
+        when(service.getFinishedQueriesCache()).thenReturn(finishedQueries);
+        final ChildSearchTracker held = new ChildSearchTracker();
+        held.add("PPL:node-1:42", new ChildSearches.Search(1L, List.of("logs"), 1, 5L, 30L, 300L, false, null));
+        held.exclude("PPL:node-1:42");
+        when(service.takeChildSearches("PPL:node-1:42")).thenReturn(held.take("PPL:node-1:42"));
+        final TransportChannel channel = mock(TransportChannel.class);
+
+        new ReportQueryBytesRequestHandler(service).messageReceived(
+            new BytesTransportRequest(serializePayload(false), Version.CURRENT),
+            channel,
+            mock(Task.class)
+        );
+
+        // Like a DSL search on that index: neither in Top N nor in finished queries.
+        verify(service, never()).addRecord(any(SearchQueryRecord.class));
+        verify(finishedQueries, never()).capture(any(SearchQueryRecord.class), anyString());
+        verify(channel).sendResponse(TransportResponse.Empty.INSTANCE);
     }
 
     public void testAQueryWithoutSearchesListsNone() throws Exception {

@@ -54,20 +54,29 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
         try {
             final Reported reported = deserialize(request);
             if (reported != null) {
-                final SearchQueryRecord record = reported.queryRecord();
-                // Its searches have all ended, so they're final.
-                addItsSearches(record, queryInsightsService.takeChildSearches(reported.marker()));
-                // Set the user now so the finished entry has it for filter_by_mode.
-                TopQueriesService.setUserInfo(record);
-                // Capture before addRecord hands the record to the drain thread, which changes it.
-                captureFinished(record, reported.marker());
-                queryInsightsService.addRecord(record);
+                record(reported);
             }
         } catch (final Exception e) {
             logger.warn("Failed to ingest reported PPL/SQL query record into Query Insights", e);
         }
         // A core response type, for the same classloader reason as the request.
         channel.sendResponse(TransportResponse.Empty.INSTANCE);
+    }
+
+    private void record(final Reported reported) {
+        final SearchQueryRecord record = reported.queryRecord();
+        // Its searches have all ended, so they're final.
+        final ChildSearchTracker.Tracked searches = queryInsightsService.takeChildSearches(reported.marker());
+        if (searches != null && searches.isExcluded()) {
+            // One of them read an excluded index. A DSL search on it isn't recorded, so neither is the query.
+            return;
+        }
+        addItsSearches(record, searches);
+        // Set the user now so the finished entry has it for filter_by_mode.
+        TopQueriesService.setUserInfo(record);
+        // Capture before addRecord hands the record to the drain thread, which changes it.
+        captureFinished(record, reported.marker());
+        queryInsightsService.addRecord(record);
     }
 
     /**
