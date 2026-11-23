@@ -88,13 +88,18 @@ import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
+import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
@@ -238,6 +243,36 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         );
     }
 
+    public void testCategorizingSkipsPplRecordsAndKeepsTheRestOfTheBatch() {
+        queryInsightsService.getSearchQueryCategorizer().reset();
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Counter.class));
+        when(metricsRegistry.createHistogram(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Histogram.class));
+        QueryInsightsService service = new QueryInsightsService(
+            clusterService,
+            threadPool,
+            client,
+            metricsRegistry,
+            namedXContentRegistry,
+            queryInsightsExporterFactory,
+            queryInsightsReaderFactory
+        );
+        try {
+            service.enableSearchQueryMetricsFeature(true);
+            long now = System.currentTimeMillis();
+            // The PPL record sorts first, so a failure on it would stop the DSL search after it.
+            assertTrue(service.addRecord(pplQuery(now)));
+            SearchSourceBuilder source = new SearchSourceBuilder().aggregation(new TermsAggregationBuilder("by_user").field("user"));
+            assertTrue(service.addRecord(new SearchQueryRecord(now + 1, measurements(1L, 10L), new HashMap<>(), source, null, "dsl-1")));
+
+            service.drainRecords();
+
+            verify(service.getSearchQueryCategorizer().getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
+        } finally {
+            service.getSearchQueryCategorizer().reset();
+        }
+    }
+
     @SuppressWarnings("unchecked")
     public void testEverySearchOfAQueryIsStoredUnranked() {
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockLocalIndexExporter);
@@ -327,6 +362,22 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
 
     private static boolean isSearchOfAQuery(SearchQueryRecord record) {
         return Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD));
+    }
+
+    private static Map<MetricType, Measurement> measurements(long cpu, long memory) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(5L));
+        measurements.put(MetricType.CPU, new Measurement(cpu));
+        measurements.put(MetricType.MEMORY, new Measurement(memory));
+        return measurements;
+    }
+
+    /** A reported PPL query's record: its text is its source, and it has no SearchSourceBuilder. */
+    private static SearchQueryRecord pplQuery(long timestamp) {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.SOURCE, new SourceString("source=logs | stats count()"));
+        return new SearchQueryRecord(timestamp, measurements(100L, 1000L), attributes, null, null, UUID.randomUUID().toString());
     }
 
     public void testDoStart() throws IOException {

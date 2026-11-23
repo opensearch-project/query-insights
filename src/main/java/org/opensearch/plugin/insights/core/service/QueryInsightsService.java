@@ -331,7 +331,9 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         exportChildSearches(childSearches);
         if (searchQueryMetricsEnabled) {
             try {
-                searchQueryCategorizer.consumeRecords(records);
+                // Categorizing reads a search's DSL body, which a SQL/PPL record doesn't have. The searches
+                // the query ran are categorized instead.
+                searchQueryCategorizer.consumeRecords(records.stream().filter(record -> record.getSearchSourceBuilder() != null).toList());
                 if (!childSearches.isEmpty()) {
                     searchQueryCategorizer.consumeRecords(childSearches);
                 }
