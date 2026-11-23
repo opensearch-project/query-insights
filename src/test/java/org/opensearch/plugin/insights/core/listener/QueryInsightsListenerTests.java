@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.core.listener;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -181,7 +182,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         verify(queryInsightsService, times(2)).removeLiveQueryUserInfo(taskKey);
     }
 
-    public void testSearchOfAPplQueryIsTaggedAndNotRanked() {
+    public void testSearchOfAPplQueryGoesToItsQuery() {
         SearchTask task = new SearchTask(
             0,
             "n/a",
@@ -202,13 +203,14 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
 
-        verify(queryInsightsService, times(1)).addRecord(captor.capture());
-        Map<Attribute, Object> attributes = captor.getValue().getAttributes();
-        assertEquals(true, attributes.get(Attribute.IS_CHILD));
-        assertEquals("PPL:node-1:42", attributes.get(Attribute.DERIVED_FROM));
-        assertEquals("DSL", attributes.get(Attribute.QUERY_SOURCE));
-        // Stored unranked, so it never takes a Top N place.
-        assertEquals(SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP, attributes.get(Attribute.TOP_N_QUERY));
+        // It's held for the PPL query's record, not ranked or listed as a finished query on its own.
+        verify(queryInsightsService, times(1)).addChildSearch(eq("PPL:node-1:42"), captor.capture());
+        verify(queryInsightsService, never()).addRecord(any());
+        verify(queryInsightsService, never()).getFinishedQueriesCache();
+        assertArrayEquals(new String[] { "logs" }, (String[]) captor.getValue().getAttributes().get(Attribute.INDICES));
+        // Its identity, captured as for any search, is still let go.
+        String taskKey = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), 0);
+        verify(queryInsightsService, times(1)).removeLiveQueryUserInfo(taskKey);
     }
 
     @SuppressWarnings("unchecked")

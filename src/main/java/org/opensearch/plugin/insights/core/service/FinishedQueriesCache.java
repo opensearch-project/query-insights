@@ -149,7 +149,6 @@ public class FinishedQueriesCache {
 
     /**
      * Captures a finished query into the cache.
-     * Searches run by a SQL/PPL query are skipped; they're shown as part of the query.
      * This method is fully lock-free and is safe to call on the hot search path.
      * No-op if the cache is disabled (idleTimeoutMs == 0) or not yet activated by an API request.
      *
@@ -158,7 +157,6 @@ public class FinishedQueriesCache {
      */
     public void capture(SearchQueryRecord record, long coordinatorTaskId) {
         if (idleTimeoutMs == 0 || stopped.get() || !active.get()) return;
-        if (isSearchOfAQuery(record)) return;
 
         String liveQueryId = clusterService.localNode().getId() + ":" + coordinatorTaskId;
         Object taskUsages = record.getAttributes().get(Attribute.TASK_RESOURCE_USAGES);
@@ -226,13 +224,6 @@ public class FinishedQueriesCache {
             false
         ).map(fq -> fq.record).limit(MAX_RETURNED_QUERIES).toList();
         return newestFirst;
-    }
-
-    /** Whether the record is a search run by a SQL/PPL query. */
-    private static boolean isSearchOfAQuery(SearchQueryRecord record) {
-        return Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD))
-            && record.getAttributes().get(Attribute.DERIVED_FROM) instanceof String marker
-            && !marker.isEmpty();
     }
 
     /**

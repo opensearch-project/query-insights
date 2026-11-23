@@ -49,7 +49,6 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.FutureUtils;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
-import org.opensearch.plugin.insights.core.exporter.LocalIndexExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporter;
 import org.opensearch.plugin.insights.core.exporter.QueryInsightsExporterFactory;
 import org.opensearch.plugin.insights.core.exporter.RemoteRepositoryExporter;
@@ -62,8 +61,9 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
-import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -153,13 +153,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private final FinishedQueriesCache finishedQueriesCache;
 
-    /** Searches run by SQL/PPL queries, waiting to be stored. All of them are stored, unranked. */
+    /** Searches run by SQL/PPL queries, waiting to be categorized. They're kept in their query's record. */
     private final LinkedBlockingQueue<SearchQueryRecord> childSearchQueue = new LinkedBlockingQueue<>(
         QueryInsightsSettings.CHILD_SEARCH_QUEUE_CAPACITY
     );
 
-    /** Cost of the searches each running SQL/PPL query has finished. */
-    private final ChildSearchCosts childSearchCosts = new ChildSearchCosts();
+    /** The searches each running SQL/PPL query has finished. */
+    private final ChildSearchTracker childSearches = new ChildSearchTracker();
     /** A PPL query's marker is this prefix plus its Live Queries id, {@code nodeId:taskId}. */
     static final String PPL_MARKER_PREFIX = "PPL:";
 
@@ -267,13 +267,6 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @return true/false
      */
     public boolean addRecord(final SearchQueryRecord record) {
-        // A search run by a SQL/PPL query: hold its cost for the query's record and store it unranked.
-        if (Boolean.TRUE.equals(record.getAttributes().get(Attribute.IS_CHILD))
-            && record.getAttributes().get(Attribute.DERIVED_FROM) instanceof String marker
-            && !marker.isEmpty()) {
-            childSearchCosts.add(marker, asLong(record.getMeasurement(MetricType.CPU)), asLong(record.getMeasurement(MetricType.MEMORY)));
-            return childSearchQueue.offer(record);
-        }
         boolean shouldAdd = isSearchQueryMetricsFeatureEnabled() || isGroupingEnabled();
         if (!shouldAdd) {
             for (Map.Entry<MetricType, TopQueriesService> entry : topQueriesServices.entrySet()) {
@@ -293,6 +286,20 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             return queryRecordsQueue.offer(record);
         }
         return false;
+    }
+
+    /**
+     * Holds a search a SQL/PPL query ran for the query's record, which takes it when the query is
+     * reported. The search isn't ranked on its own.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     * @param search       the search's record
+     */
+    public void addChildSearch(final String parentMarker, final SearchQueryRecord search) {
+        childSearches.add(parentMarker, ChildSearches.Search.of(search));
+        if (isSearchQueryMetricsFeatureEnabled()) {
+            childSearchQueue.offer(search);
+        }
     }
 
     /**
@@ -333,17 +340,14 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             }
         }
 
-        final List<SearchQueryRecord> childSearches = new ArrayList<>();
-        childSearchQueue.drainTo(childSearches);
-        exportChildSearches(childSearches);
+        final List<SearchQueryRecord> searchesOfQueries = new ArrayList<>();
+        childSearchQueue.drainTo(searchesOfQueries);
         if (searchQueryMetricsEnabled) {
             try {
                 // Categorizing reads a search's DSL body, which a SQL/PPL record doesn't have. The searches
                 // the query ran are categorized instead.
                 searchQueryCategorizer.consumeRecords(records.stream().filter(record -> record.getSearchSourceBuilder() != null).toList());
-                if (!childSearches.isEmpty()) {
-                    searchQueryCategorizer.consumeRecords(childSearches);
-                }
+                searchQueryCategorizer.consumeRecords(searchesOfQueries);
             } catch (Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.QUERY_CATEGORIZE_EXCEPTIONS);
                 logger.error("Error while trying to categorize the queries.", e);
@@ -352,61 +356,34 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Writes the searches SQL/PPL queries ran to the local index, unranked. Only the local index gets
-     * them, since that's where the detail view reads them from. Skipped while Top N is off.
-     */
-    private void exportChildSearches(final List<SearchQueryRecord> childSearches) {
-        if (childSearches.isEmpty() || !isTopNFeatureEnabled()) {
-            return;
-        }
-        final QueryInsightsExporter exporter = queryInsightsExporterFactory.getExporter(TOP_QUERIES_EXPORTER_ID);
-        if (!(exporter instanceof LocalIndexExporter)) {
-            return;
-        }
-        for (SearchQueryRecord search : childSearches) {
-            if (search.getAttributes().get(Attribute.SOURCE) == null) {
-                TopQueriesService.setSourceAndTruncation(search, maxSourceLength);
-            }
-            if (search.getAttributes().get(Attribute.USERNAME) == null) {
-                TopQueriesService.setUserInfo(search);
-            }
-        }
-        exporter.export(childSearches);
-    }
-
-    /**
-     * Removes and returns the cost of the searches a SQL/PPL query ran.
+     * Removes and returns the searches a SQL/PPL query ran.
      *
      * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
-     * @return the cost, or {@code null} if none of its searches ended
+     * @return the searches, or {@code null} if none of them ended
      */
-    public ChildSearchCosts.Cost takeChildSearchCosts(final String parentMarker) {
-        return parentMarker == null ? null : childSearchCosts.take(parentMarker);
+    public ChildSearchTracker.Tracked takeChildSearches(final String parentMarker) {
+        return parentMarker == null ? null : childSearches.take(parentMarker);
     }
 
     /**
-     * Returns the cost so far of the searches each running PPL query has finished on this node,
-     * without removing it.
+     * Returns how many searches each running PPL query has finished on this node so far, and their cost,
+     * without removing them.
      *
      * @param liveQueryIds Live Queries ids, {@code nodeId:taskId}
-     * @return the cost by live id, for the queries that have finished searches
+     * @return the count and cost by live id, for the queries that have finished searches
      */
-    public Map<String, ChildSearchCosts.Cost> getFinishedSearchCostsOfPplQueries(final Collection<String> liveQueryIds) {
-        final Map<String, ChildSearchCosts.Cost> costs = new HashMap<>();
+    public Map<String, FinishedSearches> getFinishedSearchesOfPplQueries(final Collection<String> liveQueryIds) {
+        final Map<String, FinishedSearches> finished = new HashMap<>();
         if (liveQueryIds == null) {
-            return costs;
+            return finished;
         }
         for (String liveQueryId : liveQueryIds) {
-            final ChildSearchCosts.Cost cost = childSearchCosts.get(PPL_MARKER_PREFIX + liveQueryId);
-            if (cost != null) {
-                costs.put(liveQueryId, cost);
+            final FinishedSearches soFar = childSearches.get(PPL_MARKER_PREFIX + liveQueryId);
+            if (soFar != null) {
+                finished.put(liveQueryId, soFar);
             }
         }
-        return costs;
-    }
-
-    private static long asLong(final Number number) {
-        return number == null ? 0L : number.longValue();
+        return finished;
     }
 
     /**
@@ -708,7 +685,7 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         finishedQueriesCache.stop();
         childSearchQueue.clear();
-        childSearchCosts.clear();
+        childSearches.clear();
         liveQueryUserMap.clear();
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);

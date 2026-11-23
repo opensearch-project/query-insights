@@ -114,14 +114,8 @@ public enum Attribute {
     /** Query language: DSL, SQL or PPL. */
     QUERY_SOURCE,
 
-    /** On a search run by a SQL/PPL query: that query's marker, {@code <source>:<nodeId>:<taskId>}. */
-    DERIVED_FROM,
-
-    /** True on a search run by a SQL/PPL query. Kept out of the Top N overview, shown in the query's details. */
-    IS_CHILD,
-
-    /** On a SQL/PPL query's record: its own marker, which its searches carry as {@link #DERIVED_FROM}. */
-    PARENT_MARKER;
+    /** On a SQL/PPL query's record: the searches it ran, as {@link ChildSearches}. */
+    CHILD_SEARCHES;
 
     /**
      * Read an Attribute from a StreamInput
@@ -172,6 +166,8 @@ public enum Attribute {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
         } else if (attributeValue instanceof GroupingType) {
             out.writeString(((GroupingType) attributeValue).getValue());
+        } else if (attributeValue instanceof ChildSearches) {
+            ((ChildSearches) attributeValue).writeTo(out);
         } else {
             out.writeGenericValue(attributeValue);
         }
@@ -196,6 +192,8 @@ public enum Attribute {
             }
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        } else if (attribute == Attribute.CHILD_SEARCHES) {
+            return new ChildSearches(in);
         } else {
             return in.readGenericValue();
         }

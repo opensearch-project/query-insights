@@ -20,6 +20,7 @@ import org.opensearch.action.search.SearchPhaseName;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -51,7 +52,7 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
         attributes.put(Attribute.NODE_ID, "node-1");
-        attributes.put(Attribute.PARENT_MARKER, "PPL:node-1:42");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
 
         SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "PPL:node-1:42");
 
@@ -59,7 +60,44 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         Map<Attribute, Object> after = roundTripped.getAttributes();
         assertEquals("PPL", after.get(Attribute.QUERY_SOURCE));
         assertEquals("node-1", after.get(Attribute.NODE_ID));
-        assertEquals("PPL:node-1:42", after.get(Attribute.PARENT_MARKER));
+        assertEquals(childSearches(), after.get(Attribute.CHILD_SEARCHES));
+    }
+
+    /** A SQL/PPL record read back from its document, as the detail view reads it, keeps its searches. */
+    public void testChildSearchesReadBackFromTheRecordsDocument() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentForExport(builder, ToXContent.EMPTY_PARAMS);
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, BytesReference.bytes(builder).utf8ToString())) {
+            SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
+
+            assertEquals(childSearches(), read.getAttributes().get(Attribute.CHILD_SEARCHES));
+            assertEquals("PPL", read.getAttributes().get(Attribute.QUERY_SOURCE));
+        }
+    }
+
+    public void testChildSearchesAreLeftOutOfANonVerboseRecord() {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+
+        assertNull(record.copyAndSimplifyRecord().getAttributes().get(Attribute.CHILD_SEARCHES));
+        assertEquals(childSearches(), record.getAttributes().get(Attribute.CHILD_SEARCHES));
+    }
+
+    private static ChildSearches childSearches() {
+        return new ChildSearches(
+            3,
+            List.of(
+                new ChildSearches.Search(1_700_000_000_000L, List.of("logs"), 2, 12L, 4_000_000L, 2_048L, false, "analytics"),
+                new ChildSearches.Search(1_700_000_000_100L, List.of("logs"), 2, 7L, 1_000_000L, 512L, true, null)
+            )
+        );
     }
 
     /**

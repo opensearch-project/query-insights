@@ -16,17 +16,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
-import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
+import org.opensearch.plugin.insights.core.service.ChildSearchTracker;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.SourceString;
@@ -137,12 +139,14 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         assertSame(topN.getValue(), finished.getValue());
     }
 
-    public void testTheQueryTakesTheCostOfItsSearches() throws Exception {
+    public void testTheQueryTakesItsSearches() throws Exception {
         final QueryInsightsService service = mock(QueryInsightsService.class);
-        final ChildSearchCosts held = new ChildSearchCosts();
-        held.add("PPL:node-1:42", 30L, 300L);
-        held.add("PPL:node-1:42", 70L, 700L);
-        when(service.takeChildSearchCosts("PPL:node-1:42")).thenReturn(held.take("PPL:node-1:42"));
+        final ChildSearchTracker held = new ChildSearchTracker();
+        final ChildSearches.Search first = new ChildSearches.Search(1L, List.of("logs"), 1, 5L, 30L, 300L, false, null);
+        final ChildSearches.Search second = new ChildSearches.Search(2L, List.of("logs"), 1, 6L, 70L, 700L, false, null);
+        held.add("PPL:node-1:42", first);
+        held.add("PPL:node-1:42", second);
+        when(service.takeChildSearches("PPL:node-1:42")).thenReturn(held.take("PPL:node-1:42"));
 
         new ReportQueryBytesRequestHandler(service).messageReceived(
             new BytesTransportRequest(serializePayload(false), Version.CURRENT),
@@ -157,6 +161,15 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         assertEquals(1_100L, record.getMeasurement(MetricType.CPU).longValue());
         assertEquals(3_048L, record.getMeasurement(MetricType.MEMORY).longValue());
         assertEquals("latency is the query's own", 15L, record.getMeasurement(MetricType.LATENCY).longValue());
+        // They're listed in its record, which keeps them if it makes Top N.
+        assertEquals(new ChildSearches(2, List.of(first, second)), record.getAttributes().get(Attribute.CHILD_SEARCHES));
+    }
+
+    public void testAQueryWithoutSearchesListsNone() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false);
+
+        assertNull(record.getAttributes().get(Attribute.CHILD_SEARCHES));
+        assertEquals(1_000L, record.getMeasurement(MetricType.CPU).longValue());
     }
 
     public void testMarkerWithoutATaskIdRecordsNoFinishedQuery() throws Exception {

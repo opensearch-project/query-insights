@@ -20,7 +20,6 @@ import org.opensearch.common.inject.Inject;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
-import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse;
@@ -100,13 +99,9 @@ public class TransportLiveQueriesUserInfoAction extends TransportNodesAction<
             dtos.put(entry.getKey(), new LiveQueryUserInfoDTO(entry.getValue()));
         }
         // A PPL query's finished searches are held on the node that runs it, which owns its key.
-        Map<String, FinishedSearches> finishedSearches = new HashMap<>();
-        for (Map.Entry<String, ChildSearchCosts.Cost> entry : queryInsightsService.getFinishedSearchCostsOfPplQueries(
+        Map<String, FinishedSearches> finishedSearches = queryInsightsService.getFinishedSearchesOfPplQueries(
             nodeRequest.request.getTaskKeys()
-        ).entrySet()) {
-            ChildSearchCosts.Cost cost = entry.getValue();
-            finishedSearches.put(entry.getKey(), new FinishedSearches(cost.getSearches(), cost.getCpuNanos(), cost.getMemoryBytes()));
-        }
+        );
         return new LiveQueriesUserInfoNodeResponse(clusterService.localNode(), dtos, finishedSearches);
     }
 

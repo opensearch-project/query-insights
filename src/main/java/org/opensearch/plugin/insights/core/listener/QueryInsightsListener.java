@@ -441,15 +441,6 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             }
             attributes.put(Attribute.LABELS, labels);
 
-            // A search run by a SQL/PPL query is linked to it by the marker. It's stored unranked and
-            // its cost goes into the query's record.
-            String parentMarker = context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
-            if (parentMarker != null && !parentMarker.isEmpty()) {
-                attributes.put(Attribute.QUERY_SOURCE, "DSL");
-                attributes.put(Attribute.DERIVED_FROM, parentMarker);
-                attributes.put(Attribute.IS_CHILD, true);
-            }
-
             UserPrincipalContext userPrincipalContext = threadPool != null ? new UserPrincipalContext(threadPool) : null;
 
             // construct SearchQueryRecord from attributes and measurements
@@ -462,6 +453,13 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
+            // A search run by a SQL/PPL query goes into that query's record, by its marker. It isn't
+            // ranked or listed as a finished query on its own.
+            final String parentMarker = context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+            if (parentMarker != null && !parentMarker.isEmpty()) {
+                queryInsightsService.addChildSearch(parentMarker, record);
+                return null;
+            }
             queryInsightsService.addRecord(record);
             return record;
         } catch (Exception e) {

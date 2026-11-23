@@ -22,7 +22,6 @@ import org.opensearch.action.support.ActionFilters;
 import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
-import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoNodeResponse;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoRequest;
@@ -60,10 +59,7 @@ public class TransportLiveQueriesUserInfoActionTests extends OpenSearchTestCase 
         when(queryInsightsService.getLiveQueryUserInfoForKeys(keys)).thenReturn(
             Map.of("node1:11", new UserPrincipalContext.UserPrincipalInfo("alice", List.of("backend1"), List.of("user_role")))
         );
-        ChildSearchCosts held = new ChildSearchCosts();
-        held.add("PPL:node1:10", 10L, 100L);
-        held.add("PPL:node1:10", 20L, 200L);
-        when(queryInsightsService.getFinishedSearchCostsOfPplQueries(keys)).thenReturn(Map.of("node1:10", held.get("PPL:node1:10")));
+        when(queryInsightsService.getFinishedSearchesOfPplQueries(keys)).thenReturn(Map.of("node1:10", new FinishedSearches(2, 30L, 300L)));
 
         LiveQueriesUserInfoNodeResponse response = action.nodeOperation(
             new TransportLiveQueriesUserInfoAction.NodeRequest(new LiveQueriesUserInfoRequest(keys, "node1"))

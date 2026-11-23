@@ -49,12 +49,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private static final Logger log = LogManager.getLogger(SearchQueryRecord.class);
 
     /** Attributes added for SQL/PPL queries. Older nodes fail on unknown attribute names, so they don't get these. */
-    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(
-        Attribute.QUERY_SOURCE,
-        Attribute.DERIVED_FROM,
-        Attribute.PARENT_MARKER,
-        Attribute.IS_CHILD
-    );
+    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(Attribute.QUERY_SOURCE, Attribute.CHILD_SEARCHES);
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
@@ -166,14 +161,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     /** Query source field name (DSL/SQL/PPL). */
     public static final String QUERY_SOURCE = "query_source";
 
-    /** Derived-from marker field name. */
-    public static final String DERIVED_FROM = "derived_from";
-
-    /** Parent marker field name. */
-    public static final String PARENT_MARKER = "parent_marker";
-
-    /** Is-child flag field name. */
-    public static final String IS_CHILD = "is_child";
+    /** Child searches field name. */
+    public static final String CHILD_SEARCHES = "child_searches";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -181,7 +170,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     /**
      * Array of search query record {@link Attribute} to ignore when verbose is false
      */
-    public static final Attribute[] VERBOSE_ONLY_FIELDS = { Attribute.TASK_RESOURCE_USAGES, Attribute.SOURCE, Attribute.PHASE_LATENCY_MAP };
+    public static final Attribute[] VERBOSE_ONLY_FIELDS = {
+        Attribute.TASK_RESOURCE_USAGES,
+        Attribute.SOURCE,
+        Attribute.PHASE_LATENCY_MAP,
+        Attribute.CHILD_SEARCHES };
 
     /**
      * Constructor of SearchQueryRecord
@@ -452,14 +445,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                     case QUERY_SOURCE:
                         attributes.put(Attribute.QUERY_SOURCE, parser.text());
                         break;
-                    case DERIVED_FROM:
-                        attributes.put(Attribute.DERIVED_FROM, parser.text());
-                        break;
-                    case PARENT_MARKER:
-                        attributes.put(Attribute.PARENT_MARKER, parser.text());
-                        break;
-                    case IS_CHILD:
-                        attributes.put(Attribute.IS_CHILD, parser.booleanValue());
+                    case CHILD_SEARCHES:
+                        attributes.put(Attribute.CHILD_SEARCHES, ChildSearches.fromXContent(parser));
                         break;
                     case TOP_N_QUERY:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);

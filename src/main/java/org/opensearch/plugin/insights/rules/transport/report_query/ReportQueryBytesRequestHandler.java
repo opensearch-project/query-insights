@@ -14,7 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.transport.TransportResponse;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
-import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
+import org.opensearch.plugin.insights.core.service.ChildSearchTracker;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.core.service.TopQueriesService;
@@ -32,8 +32,9 @@ import org.opensearch.transport.TransportRequestHandler;
 
 /**
  * Handles the SQL plugin's report of a finished SQL/PPL query (see {@link ReportQueryBytesAction}).
- * It turns the payload into a {@link SearchQueryRecord}, adds the cost of the searches the query ran,
- * and adds it to Top N and the finished queries cache like a DSL search.
+ * It turns the payload into a {@link SearchQueryRecord}, adds the searches the query ran (their cost,
+ * and the first of them as {@link Attribute#CHILD_SEARCHES}), and adds it to Top N and the finished
+ * queries cache like a DSL search.
  * <p>
  * Errors are logged, and the sender always gets an empty response, so reporting never fails a query.
  */
@@ -51,14 +52,15 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
     @Override
     public void messageReceived(final BytesTransportRequest request, final TransportChannel channel, final Task task) throws Exception {
         try {
-            final SearchQueryRecord record = deserialize(request);
-            if (record != null) {
-                // Its searches have all ended, so their cost is final.
-                addCostOfItsSearches(record);
+            final Reported reported = deserialize(request);
+            if (reported != null) {
+                final SearchQueryRecord record = reported.queryRecord();
+                // Its searches have all ended, so they're final.
+                addItsSearches(record, queryInsightsService.takeChildSearches(reported.marker()));
                 // Set the user now so the finished entry has it for filter_by_mode.
                 TopQueriesService.setUserInfo(record);
                 // Capture before addRecord hands the record to the drain thread, which changes it.
-                captureFinished(record);
+                captureFinished(record, reported.marker());
                 queryInsightsService.addRecord(record);
             }
         } catch (final Exception e) {
@@ -68,16 +70,17 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
         channel.sendResponse(TransportResponse.Empty.INSTANCE);
     }
 
-    /** Adds its searches' CPU and memory to the query's. Latency already covers the searches. */
-    private void addCostOfItsSearches(final SearchQueryRecord record) {
-        final ChildSearchCosts.Cost searches = queryInsightsService.takeChildSearchCosts(
-            (String) record.getAttributes().get(Attribute.PARENT_MARKER)
-        );
+    /**
+     * Adds its searches' CPU and memory to the query's, and lists them in its record, which keeps them
+     * if it makes Top N. Latency already covers the searches.
+     */
+    private static void addItsSearches(final SearchQueryRecord record, final ChildSearchTracker.Tracked searches) {
         if (searches == null) {
             return;
         }
         addTo(record, MetricType.CPU, searches.getCpuNanos());
         addTo(record, MetricType.MEMORY, searches.getMemoryBytes());
+        record.addAttribute(Attribute.CHILD_SEARCHES, searches.toChildSearches());
     }
 
     private static void addTo(final SearchQueryRecord record, final MetricType metricType, final long add) {
@@ -86,9 +89,9 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
     }
 
     /** Adds the query to finished queries under its Live Queries id, so the dashboard can follow it. */
-    private void captureFinished(final SearchQueryRecord record) {
+    private void captureFinished(final SearchQueryRecord record, final String marker) {
         final FinishedQueriesCache finishedQueries = queryInsightsService.getFinishedQueriesCache();
-        final String liveQueryId = liveQueryIdOf((String) record.getAttributes().get(Attribute.PARENT_MARKER));
+        final String liveQueryId = liveQueryIdOf(marker);
         if (finishedQueries != null && liveQueryId != null) {
             finishedQueries.capture(record, liveQueryId);
         }
@@ -117,14 +120,18 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
         return parts[1] + ":" + parts[2];
     }
 
+    /** A reported query's record, and the marker its searches carry. */
+    private record Reported(SearchQueryRecord queryRecord, String marker) {
+    }
+
     /**
      * Reads the payload into a {@link SearchQueryRecord}.
      *
      * @param request the request
-     * @return the record, or {@code null} for an unknown format version
+     * @return the record and the query's marker, or {@code null} for an unknown format version
      * @throws java.io.IOException if the payload is malformed
      */
-    private SearchQueryRecord deserialize(final BytesTransportRequest request) throws java.io.IOException {
+    private Reported deserialize(final BytesTransportRequest request) throws java.io.IOException {
         try (StreamInput in = request.bytes().streamInput()) {
             final int version = in.readVInt();
             if (version != ReportQueryBytesAction.FORMAT_VERSION) {
@@ -155,8 +162,6 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
             attributes.put(Attribute.FAILED, failed);
             // Set group_by as the search listener does; the dashboard shows records without it as aggregated.
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
-            // Its searches carry this marker as DERIVED_FROM.
-            attributes.put(Attribute.PARENT_MARKER, coordinatorId);
             // No INDICES: the SQL plugin doesn't resolve them. Each search's record has its own.
 
             // The user comes as a string, since the thread context doesn't cross the transport call.
@@ -177,7 +182,7 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
             if (queryText != null && queryText.isEmpty() == false) {
                 TopQueriesService.setQueryText(record, queryText, queryInsightsService.getMaxSourceLength());
             }
-            return record;
+            return new Reported(record, coordinatorId);
         }
     }
 }

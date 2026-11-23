@@ -377,36 +377,6 @@ public class TopQueriesService {
     }
 
     /**
-     * Reads the searches a SQL/PPL query ran from the local index, for its detail view. See
-     * {@link QueryInsightsReader#readChildren}.
-     *
-     * @param from start timestamp
-     * @param to end timestamp
-     * @param parentMarker the query's marker
-     * @param verbose whether to return full output
-     * @param listener called with the records
-     */
-    public void getChildrenFromIndex(
-        final String from,
-        final String to,
-        final String parentMarker,
-        final Boolean verbose,
-        final ActionListener<List<SearchQueryRecord>> listener
-    ) {
-        final QueryInsightsReader reader = queryInsightsReaderFactory.getReader(TOP_QUERIES_READER_ID);
-        if (reader == null) {
-            listener.onResponse(new ArrayList<>());
-            return;
-        }
-        try {
-            reader.readChildren(from, to, parentMarker, verbose, listener);
-        } catch (Exception e) {
-            logger.error("Failed to initiate child read from index: ", e);
-            listener.onFailure(e);
-        }
-    }
-
-    /**
      * Consume records to top queries stores
      *
      * @param records a list of {@link SearchQueryRecord}
