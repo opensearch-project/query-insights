@@ -117,9 +117,6 @@ public enum Attribute {
     /** On a search run by a SQL/PPL query: that query's marker, {@code <source>:<nodeId>:<taskId>}. */
     DERIVED_FROM,
 
-    /** Per-phase breakdown of a SQL/PPL query. */
-    PHASES,
-
     /** True on a search run by a SQL/PPL query. Kept out of the Top N overview, shown in the query's details. */
     IS_CHILD,
 

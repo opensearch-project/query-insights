@@ -53,7 +53,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Attribute.QUERY_SOURCE,
         Attribute.DERIVED_FROM,
         Attribute.PARENT_MARKER,
-        Attribute.PHASES,
         Attribute.IS_CHILD
     );
     private final long timestamp;
@@ -175,9 +174,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     /** Is-child flag field name. */
     public static final String IS_CHILD = "is_child";
-
-    /** Per-phase breakdown field name. */
-    public static final String PHASES = "phases";
 
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
@@ -464,9 +460,6 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case IS_CHILD:
                         attributes.put(Attribute.IS_CHILD, parser.booleanValue());
-                        break;
-                    case PHASES:
-                        attributes.put(Attribute.PHASES, parser.map());
                         break;
                     case TOP_N_QUERY:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);

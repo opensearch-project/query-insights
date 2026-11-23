@@ -48,18 +48,10 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         measurements.put(MetricType.CPU, new Measurement(683111000L, AggregationType.NONE));
         measurements.put(MetricType.MEMORY, new Measurement(266494392L, AggregationType.NONE));
 
-        java.util.Map<String, Object> phase = new java.util.HashMap<>();
-        phase.put("time_ms", 12.5d);
-        phase.put("cpu_time_ms", 3.25d);
-        phase.put("memory_bytes", 4096L);
-        java.util.Map<String, java.util.Map<String, Object>> phases = new java.util.LinkedHashMap<>();
-        phases.put("query", phase);
-
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
         attributes.put(Attribute.NODE_ID, "node-1");
         attributes.put(Attribute.PARENT_MARKER, "PPL:node-1:42");
-        attributes.put(Attribute.PHASES, phases);
 
         SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "PPL:node-1:42");
 
@@ -68,7 +60,6 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         assertEquals("PPL", after.get(Attribute.QUERY_SOURCE));
         assertEquals("node-1", after.get(Attribute.NODE_ID));
         assertEquals("PPL:node-1:42", after.get(Attribute.PARENT_MARKER));
-        assertNotNull("PHASES attribute lost on round-trip", after.get(Attribute.PHASES));
     }
 
     /**
@@ -298,7 +289,7 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         assertNotNull("Properties field missing in mapping", properties);
 
         // Attributes that are explicitly excluded from serialization and don't need mapping
-        Set<String> excludedAttributes = new HashSet<>(Arrays.asList("top_n_query", "description", "phases"));
+        Set<String> excludedAttributes = new HashSet<>(Arrays.asList("top_n_query", "description"));
 
         // Check ALL Attribute enum values are mapped (except excluded ones)
         List<String> missingAttributes = new ArrayList<>();

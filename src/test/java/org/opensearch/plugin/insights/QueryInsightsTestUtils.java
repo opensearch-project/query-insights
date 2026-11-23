@@ -486,10 +486,7 @@ final public class QueryInsightsTestUtils {
 
             Set<String> requiredFields = new HashSet<>();
             // Fields that are not Attributes or are explicitly excluded from serialization
-            // phases isn't compared in round trips, so generated records leave it out.
-            Set<String> excludedFields = new HashSet<>(
-                Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description", "phases")
-            );
+            Set<String> excludedFields = new HashSet<>(Arrays.asList("timestamp", "id", "measurements", "top_n_query", "description"));
 
             for (String fieldName : properties.keySet()) {
                 if (!excludedFields.contains(fieldName)) {

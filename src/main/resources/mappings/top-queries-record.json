@@ -111,10 +111,6 @@
     "is_child" : {
       "type" : "boolean"
     },
-    "phases" : {
-      "type" : "object",
-      "enabled" : true
-    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {
