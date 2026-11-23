@@ -759,7 +759,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         }
         // Older nodes fail on attribute names they don't know (see QUERY_SOURCE_ATTRIBUTES).
         final Map<Attribute, Object> attributesToWrite;
-        if (out.getVersion().onOrAfter(Version.V_3_10_0)) {
+        if (out.getVersion().onOrAfter(Version.V_3_11_0)) {
             attributesToWrite = attributes;
         } else {
             attributesToWrite = new HashMap<>(attributes);

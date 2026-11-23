@@ -120,7 +120,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             this.userRoles = List.of();
             this.backendRoles = List.of();
         }
-        this.finishedSearches = in.getVersion().onOrAfter(Version.V_3_10_0) ? in.readOptionalWriteable(FinishedSearches::new) : null;
+        this.finishedSearches = in.getVersion().onOrAfter(Version.V_3_11_0) ? in.readOptionalWriteable(FinishedSearches::new) : null;
     }
 
     @Override
@@ -139,7 +139,7 @@ public class LiveQueryRecord implements Writeable, ToXContentObject {
             out.writeOptionalStringCollection(userRoles.isEmpty() ? null : userRoles);
             out.writeOptionalStringCollection(backendRoles.isEmpty() ? null : backendRoles);
         }
-        if (out.getVersion().onOrAfter(Version.V_3_10_0)) {
+        if (out.getVersion().onOrAfter(Version.V_3_11_0)) {
             out.writeOptionalWriteable(finishedSearches);
         }
     }

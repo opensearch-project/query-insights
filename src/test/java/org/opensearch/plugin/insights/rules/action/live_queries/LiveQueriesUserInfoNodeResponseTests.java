@@ -51,8 +51,8 @@ public class LiveQueriesUserInfoNodeResponseTests extends OpenSearchTestCase {
         assertEquals(Map.of("node1:10", new FinishedSearches(604, 7_000_000L, 9_000L)), read.getFinishedSearchesByQueryId());
     }
 
-    public void testNodesBefore3_10GetOnlyTheUserInfo() throws IOException {
-        LiveQueriesUserInfoNodeResponse read = roundTrip(response(), Version.V_3_9_0);
+    public void testNodesBefore3_11GetOnlyTheUserInfo() throws IOException {
+        LiveQueriesUserInfoNodeResponse read = roundTrip(response(), Version.V_3_10_0);
 
         assertEquals("alice", read.getUserInfoByTaskKey().get("node1:11").getUsername());
         assertTrue(read.getFinishedSearchesByQueryId().isEmpty());

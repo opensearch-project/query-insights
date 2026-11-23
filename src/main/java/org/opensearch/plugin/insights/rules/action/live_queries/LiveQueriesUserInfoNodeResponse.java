@@ -31,7 +31,7 @@ public class LiveQueriesUserInfoNodeResponse extends BaseNodeResponse {
         this.userInfoByTaskKey = in.getVersion().onOrAfter(Version.V_3_8_0)
             ? in.readMap(StreamInput::readString, LiveQueryUserInfoDTO::new)
             : Map.of();
-        this.finishedSearchesByQueryId = in.getVersion().onOrAfter(Version.V_3_10_0)
+        this.finishedSearchesByQueryId = in.getVersion().onOrAfter(Version.V_3_11_0)
             ? in.readMap(StreamInput::readString, FinishedSearches::new)
             : Map.of();
     }
@@ -56,7 +56,7 @@ public class LiveQueriesUserInfoNodeResponse extends BaseNodeResponse {
         if (out.getVersion().onOrAfter(Version.V_3_8_0)) {
             out.writeMap(userInfoByTaskKey, StreamOutput::writeString, (o, v) -> v.writeTo(o));
         }
-        if (out.getVersion().onOrAfter(Version.V_3_10_0)) {
+        if (out.getVersion().onOrAfter(Version.V_3_11_0)) {
             out.writeMap(finishedSearchesByQueryId, StreamOutput::writeString, (o, v) -> v.writeTo(o));
         }
     }

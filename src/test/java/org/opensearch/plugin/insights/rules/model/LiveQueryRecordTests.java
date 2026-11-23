@@ -245,10 +245,10 @@ public class LiveQueryRecordTests extends OpenSearchTestCase {
         assertNull(roundTrip(pplQueryWithFinishedSearches(null), Version.CURRENT).getFinishedSearches());
     }
 
-    public void testFinishedSearchesAreNotSentToNodesBefore3_10() throws IOException {
+    public void testFinishedSearchesAreNotSentToNodesBefore3_11() throws IOException {
         LiveQueryRecord deserialized = roundTrip(
             pplQueryWithFinishedSearches(new FinishedSearches(604, 7_000_000L, 9_000L)),
-            Version.V_3_9_0
+            Version.V_3_10_0
         );
 
         assertNull(deserialized.getFinishedSearches());

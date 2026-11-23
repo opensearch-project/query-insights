@@ -37,8 +37,8 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
 
     public void testNewAttributesStrippedForOldNode() throws IOException {
         SearchQueryRecord record = recordWithQuerySourceAttributes();
-        // 3.9.0 is the last release without these attributes.
-        SearchQueryRecord out = roundTrip(record, Version.V_3_9_0);
+        // 3.10.0 is the last release without these attributes.
+        SearchQueryRecord out = roundTrip(record, Version.V_3_10_0);
 
         // NODE_ID is kept; the new attributes are dropped.
         assertEquals("node-1", out.getAttributes().get(Attribute.NODE_ID));
@@ -51,7 +51,7 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
     public void testNewAttributesPreservedForCurrentNode() throws IOException {
         SearchQueryRecord record = recordWithQuerySourceAttributes();
 
-        SearchQueryRecord out = roundTrip(record, Version.V_3_10_0);
+        SearchQueryRecord out = roundTrip(record, Version.V_3_11_0);
 
         assertEquals("PPL", out.getAttributes().get(Attribute.QUERY_SOURCE));
         assertEquals("PPL:node-1:42", out.getAttributes().get(Attribute.DERIVED_FROM));
