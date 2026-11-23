@@ -140,12 +140,12 @@ public class QueryInsightsSettings {
     public static final String TOP_N_MEMORY_QUERIES_PREFIX = TOP_N_QUERIES_SETTING_PREFIX + ".memory";
 
     /**
-     * Whether the SQL plugin reports PPL queries to Top N. Off by default. The SQL plugin reads it by
-     * key, since the plugins share no classes.
+     * Whether the SQL plugin reports PPL queries to Top N. On by default: a cluster without PPL queries
+     * sees no change. The SQL plugin reads it by key, since the plugins share no classes.
      */
     public static final Setting<Boolean> TOP_N_PPL_QUERIES_ENABLED = Setting.boolSetting(
         TOP_N_QUERIES_SETTING_PREFIX + ".ppl.enabled",
-        false,
+        true,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     );
