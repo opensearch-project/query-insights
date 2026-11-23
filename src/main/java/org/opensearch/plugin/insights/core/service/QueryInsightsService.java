@@ -308,6 +308,13 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * @return the most characters of a query's source that are kept
+     */
+    public int getMaxSourceLength() {
+        return maxSourceLength;
+    }
+
+    /**
      * Drain the queryRecordsQueue into internal stores and services
      */
     public void drainRecords() {

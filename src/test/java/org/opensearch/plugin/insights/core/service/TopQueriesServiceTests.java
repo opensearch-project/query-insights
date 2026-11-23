@@ -1032,6 +1032,36 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
         assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
+    public void testQueryTextIsTruncatedLikeADslSource() {
+        String text = "source=logs | head 5";
+
+        SearchQueryRecord hidden = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-hidden");
+        TopQueriesService.setQueryText(hidden, text, 0);
+        assertEquals("", ((SourceString) hidden.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, hidden.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+
+        SearchQueryRecord cut = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-cut");
+        TopQueriesService.setQueryText(cut, text, 11);
+        assertEquals("source=logs", ((SourceString) cut.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, cut.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+
+        SearchQueryRecord whole = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-whole");
+        TopQueriesService.setQueryText(whole, text, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
+        assertEquals(text, ((SourceString) whole.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(false, whole.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testSetSourceAndTruncationKeepsAQueryTextSource() {
+        SearchQueryRecord record = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-1");
+        TopQueriesService.setQueryText(record, "source=logs | head 5", 11);
+
+        // The grouping path calls this for every record; the truncated text stays as it was set.
+        TopQueriesService.setSourceAndTruncation(record, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
+
+        assertEquals("source=logs", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
     public void testUnserializableSourceDoesNotBlockSubsequentConsumeRecords() {
         SearchSourceBuilder unserializableSource = new SearchSourceBuilder().size(5).ext(List.of(new BareValueExtBuilder()));
         SearchQueryRecord badRecord = createRecordWithSource(unserializableSource, System.currentTimeMillis(), 500L, "bad-id");

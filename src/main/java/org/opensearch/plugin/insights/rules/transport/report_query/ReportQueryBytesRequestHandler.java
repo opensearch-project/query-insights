@@ -24,7 +24,6 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.tasks.Task;
 import org.opensearch.transport.BytesTransportRequest;
@@ -154,10 +153,6 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
             attributes.put(Attribute.QUERY_SOURCE, querySource);
             attributes.put(Attribute.NODE_ID, nodeId);
             attributes.put(Attribute.FAILED, failed);
-            // A SQL/PPL query has no SearchSourceBuilder, so its text is the source.
-            if (queryText != null && queryText.isEmpty() == false) {
-                attributes.put(Attribute.SOURCE, new SourceString(queryText));
-            }
             // Set group_by as the search listener does; the dashboard shows records without it as aggregated.
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
             // Its searches carry this marker as DERIVED_FROM.
@@ -170,7 +165,19 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
                 : UserPrincipalContext.fromUserString(userInfo);
 
             // A null id gets a random UUID, as a DSL search's record does.
-            return new SearchQueryRecord(timestampMillis, measurements, attributes, null, userPrincipalContext, null);
+            final SearchQueryRecord record = new SearchQueryRecord(
+                timestampMillis,
+                measurements,
+                attributes,
+                null,
+                userPrincipalContext,
+                null
+            );
+            // A SQL/PPL query has no SearchSourceBuilder, so its text is the source, cut to max_source_length.
+            if (queryText != null && queryText.isEmpty() == false) {
+                TopQueriesService.setQueryText(record, queryText, queryInsightsService.getMaxSourceLength());
+            }
+            return record;
         }
     }
 }

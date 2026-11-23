@@ -16,10 +16,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.service.ChildSearchCosts;
 import org.opensearch.plugin.insights.core.service.FinishedQueriesCache;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -27,7 +29,11 @@ import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytes
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
+import org.opensearch.plugin.insights.rules.model.SourceString;
+import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.tasks.Task;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.transport.BytesTransportRequest;
 import org.opensearch.transport.TransportChannel;
@@ -35,8 +41,21 @@ import org.opensearch.transport.TransportChannel;
 /** Tests for {@link ReportQueryBytesRequestHandler}: the payload the SQL plugin sends becomes the expected record. */
 public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
 
+    @Before
+    public void initializeMetrics() {
+        // Truncating a query's text counts it.
+        final MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Counter.class));
+        OperationalMetricsCounter.initialize("cluster", metricsRegistry);
+    }
+
     private SearchQueryRecord ingestRecordFor(final boolean failed) throws Exception {
+        return ingestRecordFor(failed, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
+    }
+
+    private SearchQueryRecord ingestRecordFor(final boolean failed, final int maxSourceLength) throws Exception {
         final QueryInsightsService service = mock(QueryInsightsService.class);
+        when(service.getMaxSourceLength()).thenReturn(maxSourceLength);
         final ReportQueryBytesRequestHandler handler = new ReportQueryBytesRequestHandler(service);
 
         final BytesTransportRequest request = new BytesTransportRequest(serializePayload(failed), Version.CURRENT);
@@ -78,6 +97,24 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
     public void testFailedFlagFalseSetsFailedAttribute() throws Exception {
         final SearchQueryRecord record = ingestRecordFor(false);
         assertEquals(false, record.getAttributes().get(Attribute.FAILED));
+    }
+
+    public void testTheQueryTextIsItsSource() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false);
+        assertEquals("source=my_index | head 10", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testTheQueryTextIsCutToMaxSourceLength() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false, 15);
+        assertEquals("source=my_index", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testAMaxSourceLengthOfZeroHidesTheQueryText() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false, 0);
+        assertEquals("", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
     public void testRecordsTheFinishedQueryUnderItsLiveQueryId() throws Exception {
