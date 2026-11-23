@@ -716,6 +716,50 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         assertEquals(0, healthStats.getQueryGroupHeapSize());
     }
 
+    public void testEachPplQueryIsAGroupOfItsOwn() {
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 10);
+        // Two runs of the same PPL text stay two entries: there's no query shape to group them by.
+        SearchQueryRecord first = pplQuery("ppl-1", 1000L);
+        SearchQueryRecord second = pplQuery("ppl-2", 2000L);
+
+        assertSame(first, minMaxHeapQueryGrouper.add(first));
+        assertSame(second, minMaxHeapQueryGrouper.add(second));
+
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfTopGroups());
+        // Each is still a single query, not an average over a group.
+        assertEquals(new Measurement(1000L, AggregationType.NONE), first.getMeasurements().get(MetricType.LATENCY));
+        assertEquals(new Measurement(2000L, AggregationType.NONE), second.getMeasurements().get(MetricType.LATENCY));
+        for (SearchQueryRecord record : topQueriesStore) {
+            assertEquals(GroupingType.NONE, record.getAttributes().get(Attribute.GROUP_BY));
+            assertEquals("source=logs | head 5", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        }
+    }
+
+    public void testAPplQueryCompetesWithQueryGroupsForTopN() {
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
+        SearchQueryRecord dsl = QueryInsightsTestUtils.generateQueryInsightRecords(1).get(0);
+        dsl.getMeasurements().get(MetricType.LATENCY).setMeasurement(1500L);
+        minMaxHeapQueryGrouper.add(dsl);
+
+        minMaxHeapQueryGrouper.add(pplQuery("ppl-1", 2000L));
+        minMaxHeapQueryGrouper.add(pplQuery("ppl-2", 1000L));
+
+        assertEquals(3, minMaxHeapQueryGrouper.numberOfGroups());
+        assertEquals(1, minMaxHeapQueryGrouper.numberOfTopGroups());
+        assertEquals("ppl-1", topQueriesStore.peek().getId());
+    }
+
+    /** A reported PPL query's record. It has no SearchSourceBuilder, so no query shape. */
+    private static SearchQueryRecord pplQuery(String id, long latency) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latency));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.SOURCE, new SourceString("source=logs | head 5"));
+        attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, null, null, id);
+    }
+
     private MinMaxHeapQueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
         return new MinMaxHeapQueryGrouper(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
     }

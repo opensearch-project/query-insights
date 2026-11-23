@@ -139,8 +139,11 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             }
             aggregateSearchQueryRecord = searchQueryRecord;
             aggregateSearchQueryRecord.setGroupingId(groupId);
-            aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
-            aggregateSearchQueryRecord.addAttribute(Attribute.GROUP_BY, groupingType);
+            // A SQL/PPL query is a group of its own (see getGroupingId), so it stays a single query.
+            if (!hasNoQueryShape(searchQueryRecord)) {
+                aggregateSearchQueryRecord.setMeasurementAggregation(metricType, aggregationType);
+                aggregateSearchQueryRecord.addAttribute(Attribute.GROUP_BY, groupingType);
+            }
             TopQueriesService.setSourceAndTruncation(aggregateSearchQueryRecord, maxSourceLength);
             TopQueriesService.setUserInfo(aggregateSearchQueryRecord);
 
@@ -288,12 +291,11 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         try {
             switch (groupingType) {
                 case SIMILARITY:
-                    // SQL/PPL records have no query shape, so no hashcode. Leave them ungrouped.
-                    final Object hashcode = searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE);
-                    if (hashcode == null) {
-                        return null;
+                    // Nothing else shares a SQL/PPL query's id, so it gets a group of its own.
+                    if (hasNoQueryShape(searchQueryRecord)) {
+                        return searchQueryRecord.getId();
                     }
-                    return hashcode.toString();
+                    return searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE).toString();
                 case NONE:
                     throw new IllegalArgumentException("Should not try to group queries if grouping type is NONE");
                 default:
@@ -303,6 +305,12 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             log.error("Error when setting group id", e);
             return null;
         }
+    }
+
+    /** A SQL/PPL query has no DSL body, so it has no query shape for similarity to group it by. */
+    private static boolean hasNoQueryShape(final SearchQueryRecord searchQueryRecord) {
+        return searchQueryRecord.getSearchSourceBuilder() == null
+            && searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE) == null;
     }
 
     /**
