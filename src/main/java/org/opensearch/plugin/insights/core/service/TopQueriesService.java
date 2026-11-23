@@ -89,7 +89,7 @@ public class TopQueriesService {
     /**
      * Logger of the local index exporter
      */
-    private final Logger logger = LogManager.getLogger();
+    private static final Logger logger = LogManager.getLogger(TopQueriesService.class);
     private boolean enabled;
     private final Client client;
     /**
@@ -433,12 +433,25 @@ public class TopQueriesService {
 
     // Add Source and Source Truncated attributes to record
     public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
-        String sourceString = record.getSearchSourceBuilder().toString();
         if (maxSourceLength == 0) {
             record.addAttribute(Attribute.SOURCE, new SourceString(""));
             record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
-        } else if (sourceString.length() > maxSourceLength) {
+            return;
+        }
+        final String sourceString;
+        try {
+            sourceString = record.getSearchSourceBuilder().toString();
+        } catch (Exception e) {
+            // A source that cannot be serialized (e.g. a plugin SearchExtBuilder with a broken toXContent) must still get
+            // a SOURCE attribute. Leaving it unset would make every subsequent drain retry the serialization and fail again.
+            // Mark it truncated so consumers treat the empty value as unavailable rather than as JSON.
+            logger.debug("Failed to serialize source of query record [{}]", record.getId(), e);
+            record.addAttribute(Attribute.SOURCE, new SourceString(""));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            return;
+        }
+        if (sourceString.length() > maxSourceLength) {
             record.addAttribute(Attribute.SOURCE, new SourceString(sourceString.substring(0, maxSourceLength)));
             record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);

@@ -295,8 +295,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
         for (MetricType metricType : MetricType.allMetricTypes()) {
             if (enableCollect.get(metricType)) {
-                // ingest the records into topQueriesService
-                topQueriesServices.get(metricType).consumeRecords(records);
+                // ingest the records into topQueriesService, isolating failures so one metric type cannot block the others
+                try {
+                    topQueriesServices.get(metricType).consumeRecords(records);
+                } catch (Exception e) {
+                    logger.error("Error while consuming records for top queries by [{}]", metricType, e);
+                }
             }
         }
 
