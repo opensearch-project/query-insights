@@ -744,6 +744,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         } else {
             attributesToWrite = new HashMap<>(attributes);
             attributesToWrite.keySet().removeAll(QUERY_SOURCE_ATTRIBUTES);
+            // Without QUERY_SOURCE, an older node writes a finished query's source as JSON unless it's
+            // marked truncated. A SQL/PPL query's text isn't JSON, so it's marked.
+            if (!isDsl() && attributesToWrite.containsKey(Attribute.SOURCE)) {
+                attributesToWrite.put(Attribute.SOURCE_TRUNCATED, true);
+            }
         }
         out.writeMap(
             attributesToWrite,
@@ -810,6 +815,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public void setStreaming(boolean streaming) {
         this.streaming = streaming;
+    }
+
+    /** Whether this is a DSL search. Records without a query source are DSL searches. */
+    boolean isDsl() {
+        final Object querySource = attributes.get(Attribute.QUERY_SOURCE);
+        return querySource == null || "DSL".equals(querySource);
     }
 
     public boolean isCancelled() {

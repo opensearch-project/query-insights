@@ -59,6 +59,29 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
         assertEquals(CHILD_SEARCHES, out.getAttributes().get(Attribute.CHILD_SEARCHES));
     }
 
+    public void testOldNodesReadAPplQuerysTextAsTextNotJson() throws IOException {
+        SearchQueryRecord ppl = recordWithQuerySourceAttributes();
+        ppl.addAttribute(Attribute.SOURCE, new SourceString("source=logs | head 5"));
+        ppl.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+
+        // Without query_source, a 3.10 node would write the text as JSON unless it's marked truncated.
+        SearchQueryRecord toOldNode = roundTrip(ppl, Version.V_3_10_0);
+        assertEquals("source=logs | head 5", ((SourceString) toOldNode.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(true, toOldNode.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+
+        assertEquals(false, roundTrip(ppl, Version.V_3_11_0).getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertEquals(false, ppl.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    public void testOldNodesGetADslSourceAsItIs() throws IOException {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.SOURCE, new SourceString("{\"size\":5}"));
+        attributes.put(Attribute.SOURCE_TRUNCATED, false);
+        SearchQueryRecord dsl = new SearchQueryRecord(System.currentTimeMillis(), new HashMap<>(), attributes, "id-2");
+
+        assertEquals(false, roundTrip(dsl, Version.V_3_10_0).getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
     private static SearchQueryRecord roundTrip(SearchQueryRecord record, Version version) throws IOException {
         try (BytesStreamOutput out = new BytesStreamOutput()) {
             out.setVersion(version);
