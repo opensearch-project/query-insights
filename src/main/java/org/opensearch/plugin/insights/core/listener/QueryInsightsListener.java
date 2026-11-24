@@ -358,9 +358,18 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         return marker == null || marker.isEmpty() ? null : marker;
     }
 
-    /** Creating a point in time goes through the search phases but isn't a query, so it isn't recorded. */
-    private static boolean isPointInTimeCreation(final SearchPhaseContext context) {
-        return context != null && context.getTask() != null && CreatePitAction.NAME.equals(context.getTask().getAction());
+    /**
+     * A SQL/PPL query opens a point in time for each index it reads in batches. Creating one goes
+     * through the search phases but isn't one of the query's searches, so it isn't recorded. Its task
+     * carries no headers, so the query's marker is read from the thread context. A point in time
+     * created on its own is recorded as before.
+     */
+    private boolean isPointInTimeCreationOfAQuery(final SearchPhaseContext context) {
+        if (context == null || context.getTask() == null || !CreatePitAction.NAME.equals(context.getTask().getAction())) {
+            return false;
+        }
+        final String marker = threadPool == null ? null : threadPool.getThreadContext().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+        return marker != null && !marker.isEmpty();
     }
 
     private boolean matchedExcludedIndices(String indexName) {
@@ -376,7 +385,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final String recordId,
         final boolean failed
     ) {
-        if (skipSearchRequest(searchRequestContext) || isPointInTimeCreation(context)) {
+        if (skipSearchRequest(searchRequestContext) || isPointInTimeCreationOfAQuery(context)) {
             return null;
         }
         final String parentMarker = parentMarkerOf(context);

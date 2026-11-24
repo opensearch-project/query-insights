@@ -160,8 +160,8 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         assertEquals(false, generatedRecord.getAttributes().get(Attribute.FAILED));
     }
 
-    public void testCreatingAPointInTimeIsNotRecorded() {
-        // A SQL/PPL query opens one for each index it reads in batches; it runs the create_pit phase only.
+    /** Stubs the search phase context for creating a point in time on one index. */
+    private void createPointInTimeContext() {
         SearchTask task = new SearchTask(7, "transport", CreatePitAction.NAME, () -> "create pit", TaskId.EMPTY_TASK_ID, Map.of());
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
         when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
@@ -171,15 +171,34 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
         when(searchPhaseContext.getNumShards()).thenReturn(1);
         when(searchPhaseContext.getTask()).thenReturn(task);
+    }
+
+    public void testAPointInTimeAPplQueryCreatesIsNotRecorded() {
+        // A SQL/PPL query opens one for each index it reads in batches; it runs the create_pit phase only.
+        createPointInTimeContext();
         QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
 
-        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
-        queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+        try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+            // The point in time's task has no headers; the query's marker is in the thread context.
+            threadPool.getThreadContext().putHeader(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42");
+            queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+            queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
+        }
 
         verify(queryInsightsService, never()).addRecord(any());
+        verify(queryInsightsService, never()).addChildSearch(any(), any());
         // Its identity, captured as for any search, is still let go.
         String taskKey = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), 7);
         verify(queryInsightsService, times(2)).removeLiveQueryUserInfo(taskKey);
+    }
+
+    public void testAPointInTimeCreatedOnItsOwnIsRecorded() {
+        createPointInTimeContext();
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+
+        queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        verify(queryInsightsService, times(1)).addRecord(any());
     }
 
     public void testSearchOfAPplQueryGoesToItsQuery() {
