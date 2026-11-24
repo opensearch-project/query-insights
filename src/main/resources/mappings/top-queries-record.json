@@ -103,8 +103,8 @@
       "type" : "keyword"
     },
     "child_searches" : {
-      "type" : "object",
-      "enabled" : false
+      "type" : "match_only_text",
+      "index" : false
     },
     "task_resource_usages" : {
       "properties" : {

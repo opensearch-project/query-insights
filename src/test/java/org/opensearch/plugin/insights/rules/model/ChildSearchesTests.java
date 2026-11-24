@@ -56,6 +56,19 @@ public class ChildSearchesTests extends OpenSearchTestCase {
         }
     }
 
+    public void testTheyReadBackFromTheJsonStringADocumentStores() throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder().startObject().field("child_searches", searches().toJson()).endObject();
+        String document = BytesReference.bytes(builder).utf8ToString();
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            parser.nextToken(); // the document
+            parser.nextToken(); // its field name
+            parser.nextToken(); // the string
+            assertEquals(XContentParser.Token.VALUE_STRING, parser.currentToken());
+            assertEquals(searches(), ChildSearches.fromXContent(parser));
+        }
+    }
+
     public void testTheDocumentNamesEachField() {
         String json = Strings.toString(MediaTypeRegistry.JSON, searches());
 

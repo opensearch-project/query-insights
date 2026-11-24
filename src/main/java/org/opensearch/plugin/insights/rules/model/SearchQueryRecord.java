@@ -459,6 +459,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.TOP_N_QUERY, metricTypeMap);
                         break;
                     default:
+                        // A field this version doesn't know: skip its whole value, so an object's
+                        // fields aren't taken for the record's own.
+                        parser.skipChildren();
                         break;
                 }
             } catch (Exception e) {
@@ -705,6 +708,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.SOURCE && useObjectSource) {
                 builder.field(entry.getKey().toString(), searchSourceBuilder);
+            } else if (entry.getValue() instanceof ChildSearches childSearches) {
+                // Stored as a string, which readers before 3.11 skip (see ChildSearches#toJson).
+                builder.field(entry.getKey().toString(), childSearches.toJson());
             } else {
                 builder.field(entry.getKey().toString(), entry.getValue());
             }

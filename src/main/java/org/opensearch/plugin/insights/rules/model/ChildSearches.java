@@ -14,9 +14,14 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import org.opensearch.common.xcontent.LoggingDeprecationHandler;
+import org.opensearch.common.xcontent.XContentType;
+import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
@@ -24,7 +29,8 @@ import org.opensearch.core.xcontent.XContentParserUtils;
 
 /**
  * The searches a SQL/PPL query ran, kept in the query's record: how many there were, and the first
- * {@link #MAX_SEARCHES} with the fields its detail view shows. It's indexed with the record, unmapped.
+ * {@link #MAX_SEARCHES} with the fields its detail view shows. Responses carry it as an object. The
+ * record's document stores it as a JSON string (see {@link #toJson()}), unindexed.
  */
 public final class ChildSearches implements Writeable, ToXContentObject {
 
@@ -74,13 +80,32 @@ public final class ChildSearches implements Writeable, ToXContentObject {
     }
 
     /**
-     * Reads what {@link #toXContent} wrote, as stored in the record's document.
+     * The JSON a record's document stores. A reader before 3.11 skips an unknown string field, but
+     * would walk into an unknown object and take its fields for the record's own.
      *
-     * @param parser positioned on the object's start
+     * @return the searches as a JSON string
+     */
+    public String toJson() {
+        return Strings.toString(MediaTypeRegistry.JSON, this);
+    }
+
+    /**
+     * Reads what {@link #toXContent} wrote, as an object or as the JSON string of {@link #toJson()}.
+     *
+     * @param parser positioned on the object's start or on the string
      * @return the searches
      * @throws IOException if parsing fails
      */
     public static ChildSearches fromXContent(final XContentParser parser) throws IOException {
+        if (parser.currentToken() == XContentParser.Token.VALUE_STRING) {
+            try (
+                XContentParser stored = XContentType.JSON.xContent()
+                    .createParser(NamedXContentRegistry.EMPTY, LoggingDeprecationHandler.INSTANCE, parser.text())
+            ) {
+                stored.nextToken();
+                return fromXContent(stored);
+            }
+        }
         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
         int count = 0;
         final List<Search> searches = new ArrayList<>();

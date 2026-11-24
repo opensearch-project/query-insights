@@ -71,12 +71,45 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
         XContentBuilder builder = XContentFactory.jsonBuilder();
         record.toXContentForExport(builder, ToXContent.EMPTY_PARAMS);
+        String document = BytesReference.bytes(builder).utf8ToString();
 
-        try (XContentParser parser = createParser(JsonXContent.jsonXContent, BytesReference.bytes(builder).utf8ToString())) {
+        // Stored as a JSON string, which a reader before 3.11 skips; it would walk into an object.
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            assertEquals(childSearches().toJson(), parser.map().get("child_searches"));
+        }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
             SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
 
             assertEquals(childSearches(), read.getAttributes().get(Attribute.CHILD_SEARCHES));
             assertEquals("PPL", read.getAttributes().get(Attribute.QUERY_SOURCE));
+        }
+    }
+
+    /** A response carries the searches as an object; only the stored document has the string. */
+    public void testChildSearchesAreAnObjectInAResponse() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            assertEquals(3, ((Map<?, ?>) parser.map().get("child_searches")).get("count"));
+        }
+    }
+
+    public void testAFieldThisVersionDoesNotKnowIsSkippedWhole() throws Exception {
+        // A later version's nested field, ahead of fields this version reads.
+        String document = "{\"timestamp\":5,\"id\":\"a\","
+            + "\"later_field\":{\"timestamp\":9,\"indices\":[\"other\"],\"nested\":{\"failed\":true}},"
+            + "\"indices\":[\"logs\"],"
+            + "\"measurements\":{\"latency\":{\"number\":7,\"count\":1,\"aggregationType\":\"NONE\"}}}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
+
+            assertEquals(5L, read.getTimestamp());
+            assertArrayEquals(new Object[] { "logs" }, (Object[]) read.getAttributes().get(Attribute.INDICES));
+            assertNull(read.getAttributes().get(Attribute.FAILED));
+            assertEquals(7L, read.getMeasurement(MetricType.LATENCY).longValue());
         }
     }
 
