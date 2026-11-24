@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -77,6 +78,11 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
     }
 
     private org.opensearch.core.common.bytes.BytesReference serializePayload(final String marker, final boolean failed) throws Exception {
+        return serializePayload(marker, failed, "");
+    }
+
+    private org.opensearch.core.common.bytes.BytesReference serializePayload(final String marker, final boolean failed, final String user)
+        throws Exception {
         final BytesStreamOutput out = new BytesStreamOutput();
         out.writeVInt(ReportQueryBytesAction.FORMAT_VERSION);
         out.writeString("PPL");
@@ -87,7 +93,7 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         out.writeVLong(15L);
         out.writeVLong(1_000L);
         out.writeVLong(2_048L);
-        out.writeString("");
+        out.writeString(user);
         out.writeBoolean(failed);
         return out.bytes();
     }
@@ -193,6 +199,27 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
 
         assertNull(record.getAttributes().get(Attribute.CHILD_SEARCHES));
         assertEquals(1_000L, record.getMeasurement(MetricType.CPU).longValue());
+    }
+
+    public void testTheFinishedEntryCarriesTheUserWhoRanTheQuery() throws Exception {
+        final QueryInsightsService service = mock(QueryInsightsService.class);
+        final FinishedQueriesCache finishedQueries = mock(FinishedQueriesCache.class);
+        when(service.getFinishedQueriesCache()).thenReturn(finishedQueries);
+
+        // The security plugin's user string: name|backend roles|roles|tenant|...
+        new ReportQueryBytesRequestHandler(service).messageReceived(
+            new BytesTransportRequest(serializePayload("PPL:node-1:42", false, "alice|team-a,team-b|analyst|tenant-1|"), Version.CURRENT),
+            mock(TransportChannel.class),
+            mock(Task.class)
+        );
+
+        // filter_by_mode username and backend_roles read these, so a user sees their own finished queries.
+        final ArgumentCaptor<SearchQueryRecord> finished = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        verify(finishedQueries).capture(finished.capture(), eq("node-1:42"));
+        final Map<Attribute, Object> attributes = finished.getValue().getAttributes();
+        assertEquals("alice", attributes.get(Attribute.USERNAME));
+        assertArrayEquals(new String[] { "team-a", "team-b" }, (String[]) attributes.get(Attribute.BACKEND_ROLES));
+        assertArrayEquals(new String[] { "analyst" }, (String[]) attributes.get(Attribute.USER_ROLES));
     }
 
     public void testMarkerWithoutATaskIdRecordsNoFinishedQuery() throws Exception {
