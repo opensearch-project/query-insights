@@ -83,4 +83,22 @@ public class UserPrincipalContextTests extends OpenSearchTestCase {
         assertEquals(List.of(), userInfo.getBackendRoles());
         assertEquals(List.of("admin", "user"), userInfo.getRoles());
     }
+
+    public void testFromUserStringParsesSameAsThreadContext() {
+        // Records the SQL plugin reports build the context from a string; it must parse the same.
+        UserPrincipalContext userPrincipalContext = UserPrincipalContext.fromUserString("testuser|role1,role2|admin,user|tenant1|access1");
+
+        assertEquals("testuser|role1,role2|admin,user|tenant1|access1", userPrincipalContext.getUserString());
+
+        UserPrincipalInfo userInfo = userPrincipalContext.extractUserInfo();
+        assertNotNull(userInfo);
+        assertEquals("testuser", userInfo.getUserName());
+        assertEquals(List.of("role1", "role2"), userInfo.getBackendRoles());
+        assertEquals(List.of("admin", "user"), userInfo.getRoles());
+    }
+
+    public void testFromUserStringNullYieldsNoUserInfo() {
+        assertNull(UserPrincipalContext.fromUserString(null).getUserString());
+        assertNull(UserPrincipalContext.fromUserString(null).extractUserInfo());
+    }
 }

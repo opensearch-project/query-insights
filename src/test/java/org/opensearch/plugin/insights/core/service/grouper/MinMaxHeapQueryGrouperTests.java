@@ -716,6 +716,86 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         assertEquals(0, healthStats.getQueryGroupHeapSize());
     }
 
+    public void testAPplQueryTakesATopNSlotOnlyIfItBeatsTheSmallestEntry() {
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 2);
+        List<SearchQueryRecord> dsl = dslGroups(1500L, 1000L);
+        minMaxHeapQueryGrouper.add(dsl.get(0));
+        minMaxHeapQueryGrouper.add(dsl.get(1));
+
+        assertNull(minMaxHeapQueryGrouper.add(pplQuery("cheap", 500L)));
+        SearchQueryRecord expensive = pplQuery("expensive", 2000L);
+        assertSame(expensive, minMaxHeapQueryGrouper.add(expensive));
+
+        assertEquals(Set.of(1500L, 2000L), latenciesInTopN());
+        // The DSL group it pushed out waits in the overflow heap, as before.
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfGroups());
+        // It stays a single query, not an average over a group.
+        assertEquals(GroupingType.NONE, expensive.getAttributes().get(Attribute.GROUP_BY));
+        assertEquals(new Measurement(2000L, AggregationType.NONE), expensive.getMeasurements().get(MetricType.LATENCY));
+        assertEquals("source=logs | head 5", expensive.getAttributes().get(Attribute.QUERY_TEXT));
+        assertNull(expensive.getAttributes().get(Attribute.SOURCE));
+    }
+
+    public void testAPplQueryPushedOutOfTopNIsDropped() {
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
+        minMaxHeapQueryGrouper.add(pplQuery("ppl-1", 1000L));
+        SearchQueryRecord dsl = dslGroups(1500L).get(0);
+
+        minMaxHeapQueryGrouper.add(dsl);
+
+        assertEquals(Set.of(1500L), latenciesInTopN());
+        assertEquals(1, minMaxHeapQueryGrouper.numberOfGroups());
+    }
+
+    public void testPplQueriesHoldNoneOfMaxGroups() {
+        minMaxHeapQueryGrouper = getQueryGroupingService(AggregationType.AVERAGE, 1);
+        minMaxHeapQueryGrouper.setMaxGroups(1);
+        List<SearchQueryRecord> dsl = dslGroups(1500L, 1000L);
+        minMaxHeapQueryGrouper.add(dsl.get(0));
+        // A burst of cheap PPL queries takes neither a Top N slot nor a group.
+        for (int i = 0; i < 5; i++) {
+            assertNull(minMaxHeapQueryGrouper.add(pplQuery("ppl-" + i, 100L)));
+        }
+
+        // So a new DSL shape still gets the one group allowed beyond Top N.
+        minMaxHeapQueryGrouper.add(dsl.get(1));
+
+        assertEquals(2, minMaxHeapQueryGrouper.numberOfGroups());
+        assertEquals(Set.of(1500L), latenciesInTopN());
+    }
+
+    /** DSL records of distinct query shapes, with these latencies. */
+    private static List<SearchQueryRecord> dslGroups(Long... latencies) {
+        List<SearchQueryRecord> records = QueryInsightsTestUtils.generateQueryInsightRecords(
+            latencies.length,
+            latencies.length,
+            System.currentTimeMillis(),
+            0
+        );
+        for (int i = 0; i < latencies.length; i++) {
+            records.get(i).getMeasurements().get(MetricType.LATENCY).setMeasurement(latencies[i]);
+        }
+        return records;
+    }
+
+    /** The fixture gives every DSL record the same id, so entries are told apart by latency. */
+    private Set<Long> latenciesInTopN() {
+        Set<Long> latencies = new HashSet<>();
+        topQueriesStore.forEach(record -> latencies.add(record.getMeasurement(MetricType.LATENCY).longValue()));
+        return latencies;
+    }
+
+    /** A reported PPL query's record. It has no SearchSourceBuilder, so no query shape. */
+    private static SearchQueryRecord pplQuery(String id, long latency) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(latency));
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | head 5");
+        attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, null, null, id);
+    }
+
     private MinMaxHeapQueryGrouper getQueryGroupingService(AggregationType aggregationType, int topNSize) {
         return new MinMaxHeapQueryGrouper(MetricType.LATENCY, GroupingType.SIMILARITY, aggregationType, topQueriesStore, topNSize);
     }

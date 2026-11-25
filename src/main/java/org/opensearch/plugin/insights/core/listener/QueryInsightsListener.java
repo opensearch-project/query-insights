@@ -33,6 +33,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.search.CreatePitAction;
 import org.opensearch.action.search.SearchPhaseContext;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchRequestContext;
@@ -66,6 +67,12 @@ import org.opensearch.threadpool.ThreadPool;
 public final class QueryInsightsListener extends SearchRequestOperationsListener {
 
     private static final Logger log = LogManager.getLogger(QueryInsightsListener.class);
+
+    /**
+     * Header the SQL plugin sets on each search a SQL/PPL query runs: {@code <source>:<nodeId>:<taskId>}.
+     * The plugins share no classes, so it must match the SQL plugin's name.
+     */
+    static final String QUERY_INSIGHTS_PARENT_HEADER = "X-Query-Insights-Parent";
 
     private final QueryInsightsService queryInsightsService;
     private final ClusterService clusterService;
@@ -328,7 +335,11 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             && Arrays.stream(searchIndices).allMatch(index -> index.contains(QueryInsightsSettings.TOP_QUERIES_INDEX_PREFIX))) {
             return true;
         }
+        return false;
+    }
 
+    /** Whether the search read an index that {@code excluded_indices} names. */
+    private boolean readsExcludedIndex(final SearchRequestContext searchRequestContext) {
         if (excludedIndicesPattern.isEmpty()) {
             return false;
         }
@@ -337,6 +348,44 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .map(SearchRequestContext::getSuccessfulSearchShardIndices)
             .map(indices -> indices.stream().map(Index::getName).anyMatch(this::matchedExcludedIndices))
             .orElse(false);
+    }
+
+    /**
+     * The marker of the SQL/PPL query on this node that ran this search, or {@code null} if no such
+     * query did. Without the security plugin, the header travels with a cross-cluster search, so the
+     * remote cluster sees another cluster's marker. That search is recorded there as a DSL search.
+     */
+    private String parentMarkerOf(final SearchPhaseContext context) {
+        final String marker = context == null || context.getTask() == null
+            ? null
+            : context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+        return isOfAQueryOnThisNode(marker) ? marker : null;
+    }
+
+    /**
+     * Whether a marker, {@code <source>:<nodeId>:<taskId>}, names a query this node runs. The query's
+     * searches are coordinated on its node, which reports it to this one.
+     */
+    private boolean isOfAQueryOnThisNode(final String marker) {
+        if (marker == null || marker.isEmpty()) {
+            return false;
+        }
+        final String[] parts = marker.split(":", -1);
+        return parts.length == 3 && parts[1].equals(clusterService.localNode().getId());
+    }
+
+    /**
+     * A SQL/PPL query opens a point in time for each index it reads in batches. Creating one goes
+     * through the search phases but isn't one of the query's searches, so it isn't recorded. Its task
+     * carries no headers, so the query's marker is read from the thread context. A point in time
+     * created on its own is recorded as before.
+     */
+    private boolean isPointInTimeCreationOfAQuery(final SearchPhaseContext context) {
+        if (context == null || context.getTask() == null || !CreatePitAction.NAME.equals(context.getTask().getAction())) {
+            return false;
+        }
+        final String marker = threadPool == null ? null : threadPool.getThreadContext().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
+        return isOfAQueryOnThisNode(marker);
     }
 
     private boolean matchedExcludedIndices(String indexName) {
@@ -352,7 +401,15 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
         final String recordId,
         final boolean failed
     ) {
-        if (skipSearchRequest(searchRequestContext)) {
+        if (skipSearchRequest(searchRequestContext) || isPointInTimeCreationOfAQuery(context)) {
+            return null;
+        }
+        final String parentMarker = parentMarkerOf(context);
+        if (readsExcludedIndex(searchRequestContext)) {
+            // A SQL/PPL query that reads an excluded index is left out as a whole, as a DSL search is.
+            if (parentMarker != null) {
+                queryInsightsService.excludeQuery(parentMarker);
+            }
             return null;
         }
 
@@ -441,6 +498,12 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
                 recordId
             );
             record.setStreaming(searchRequestContext.isStreamingRequest());
+            // A search run by a SQL/PPL query goes into that query's record, by its marker. It isn't
+            // ranked or listed as a finished query on its own.
+            if (parentMarker != null) {
+                queryInsightsService.addChildSearch(parentMarker, record);
+                return null;
+            }
             queryInsightsService.addRecord(record);
             return record;
         } catch (Exception e) {

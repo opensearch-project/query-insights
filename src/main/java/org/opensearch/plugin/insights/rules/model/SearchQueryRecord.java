@@ -12,11 +12,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
@@ -45,6 +47,13 @@ import reactor.util.annotation.NonNull;
  */
 public class SearchQueryRecord implements ToXContentObject, Writeable {
     private static final Logger log = LogManager.getLogger(SearchQueryRecord.class);
+
+    /** Attributes added for SQL/PPL queries. Older nodes fail on unknown attribute names, so they don't get these. */
+    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(
+        Attribute.QUERY_SOURCE,
+        Attribute.QUERY_TEXT,
+        Attribute.CHILD_SEARCHES
+    );
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
@@ -153,13 +162,27 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
      */
     public static final String FAILED = "failed";
 
+    /** Query source field name (DSL/SQL/PPL). */
+    public static final String QUERY_SOURCE = "query_source";
+
+    /** SQL/PPL query text field name. */
+    public static final String QUERY_TEXT = "query_text";
+
+    /** Child searches field name. */
+    public static final String CHILD_SEARCHES = "child_searches";
+
     public static final String MEASUREMENTS = "measurements";
     private String groupingId;
 
     /**
      * Array of search query record {@link Attribute} to ignore when verbose is false
      */
-    public static final Attribute[] VERBOSE_ONLY_FIELDS = { Attribute.TASK_RESOURCE_USAGES, Attribute.SOURCE, Attribute.PHASE_LATENCY_MAP };
+    public static final Attribute[] VERBOSE_ONLY_FIELDS = {
+        Attribute.TASK_RESOURCE_USAGES,
+        Attribute.SOURCE,
+        Attribute.PHASE_LATENCY_MAP,
+        Attribute.QUERY_TEXT,
+        Attribute.CHILD_SEARCHES };
 
     /**
      * Constructor of SearchQueryRecord
@@ -291,6 +314,20 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         MetricType metric = MetricType.fromString(fieldName);
                         measurements.put(metric, Measurement.fromXContent(parser));
                         break;
+                    case MEASUREMENTS:
+                        // Exported as "measurements": {"latency": {...}, "cpu": {...}, "memory": {...}}.
+                        XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
+                        while (parser.nextToken() != XContentParser.Token.END_OBJECT) {
+                            String metricName = parser.currentName();
+                            parser.nextToken();
+                            try {
+                                measurements.put(MetricType.fromString(metricName), Measurement.fromXContent(parser));
+                            } catch (Exception ex) {
+                                // Unknown metric; skip it.
+                                log.debug("Skipping unrecognized measurement [{}] during parse", metricName);
+                            }
+                        }
+                        break;
                     case SEARCH_TYPE:
                         attributes.put(Attribute.SEARCH_TYPE, parser.text());
                         break;
@@ -413,6 +450,15 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         }
                         attributes.put(Attribute.LABELS, labels);
                         break;
+                    case QUERY_SOURCE:
+                        attributes.put(Attribute.QUERY_SOURCE, parser.text());
+                        break;
+                    case QUERY_TEXT:
+                        attributes.put(Attribute.QUERY_TEXT, parser.text());
+                        break;
+                    case CHILD_SEARCHES:
+                        attributes.put(Attribute.CHILD_SEARCHES, ChildSearches.fromXContent(parser));
+                        break;
                     case TOP_N_QUERY:
                         XContentParserUtils.ensureExpectedToken(XContentParser.Token.START_OBJECT, parser.currentToken(), parser);
                         Map<String, Boolean> metricTypeMap = new HashMap<>();
@@ -424,6 +470,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         attributes.put(Attribute.TOP_N_QUERY, metricTypeMap);
                         break;
                     default:
+                        // A field this version doesn't know: skip its whole value, so an object's
+                        // fields aren't taken for the record's own.
+                        parser.skipChildren();
                         break;
                 }
             } catch (Exception e) {
@@ -624,6 +673,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             }
             builder.field(entry.getKey().toString(), entry.getValue());
         }
+        // A SQL/PPL query has no source; its text is in query_text. Dashboards 3.0 to 3.4 run
+        // JSON.parse(JSON.stringify(source)), which fails when the field is missing but not on null.
+        // Its document still has no source (see toXContentForExport).
+        if (!isDsl() && !attributes.containsKey(Attribute.SOURCE)) {
+            builder.nullField(SOURCE);
+        }
         builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
             builder.field(entry.getKey().toString());
@@ -670,6 +725,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         for (Map.Entry<Attribute, Object> entry : attributes.entrySet()) {
             if (entry.getKey() == Attribute.SOURCE && useObjectSource) {
                 builder.field(entry.getKey().toString(), searchSourceBuilder);
+            } else if (entry.getValue() instanceof ChildSearches childSearches) {
+                // Stored as a string, which readers before 3.11 skip (see ChildSearches#toJson).
+                builder.field(entry.getKey().toString(), childSearches.toJson());
             } else {
                 builder.field(entry.getKey().toString(), entry.getValue());
             }
@@ -702,8 +760,17 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         } else {
             out.writeMap(measurements, (stream, metricType) -> MetricType.writeTo(out, metricType), StreamOutput::writeGenericValue);
         }
+        // Older nodes fail on attribute names they don't know (see QUERY_SOURCE_ATTRIBUTES).
+        final Map<Attribute, Object> attributesToWrite;
+        if (out.getVersion().onOrAfter(Version.V_3_11_0)) {
+            attributesToWrite = attributes;
+        } else {
+            attributesToWrite = new HashMap<>(attributes);
+            // A SQL/PPL query's text is in QUERY_TEXT, so an older node gets its record without it.
+            attributesToWrite.keySet().removeAll(QUERY_SOURCE_ATTRIBUTES);
+        }
         out.writeMap(
-            attributes,
+            attributesToWrite,
             (stream, attribute) -> Attribute.writeTo(out, attribute),
             (stream, attributeValue) -> Attribute.writeValueTo(out, attributeValue)
         );
@@ -767,6 +834,16 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
 
     public void setStreaming(boolean streaming) {
         this.streaming = streaming;
+    }
+
+    /**
+     * Whether this is a DSL search. Records without a query source are DSL searches.
+     *
+     * @return {@code false} for a SQL/PPL query, which has no DSL body
+     */
+    public boolean isDsl() {
+        final Object querySource = attributes.get(Attribute.QUERY_SOURCE);
+        return querySource == null || "DSL".equals(querySource);
     }
 
     public boolean isCancelled() {

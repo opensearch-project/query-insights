@@ -9,9 +9,12 @@
 package org.opensearch.plugin.insights;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.security.Principal;
@@ -24,6 +27,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.search.SearchAction;
+import org.opensearch.action.support.ActionFilter;
+import org.opensearch.action.support.ActionFilterChain;
+import org.opensearch.action.support.ActionRequestMetadata;
+import org.opensearch.action.support.replication.ClusterStateCreationUtils;
+import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.CheckedRunnable;
 import org.opensearch.common.settings.ClusterSettings;
@@ -33,6 +41,7 @@ import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.identity.PluginSubject;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -40,6 +49,7 @@ import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsActio
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -49,12 +59,15 @@ import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQue
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.PplQueryUserFilter;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.report_query.ReportQueryBytesRequestHandler;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestHandler;
+import org.opensearch.tasks.Task;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
@@ -63,6 +76,7 @@ import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.ClusterAdminClient;
@@ -117,6 +131,7 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_SIZE,
                 QueryInsightsSettings.TOP_N_MEMORY_QUERIES_WINDOW_SIZE,
+                QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUP_BY,
                 QueryInsightsSettings.TOP_N_QUERIES_MAX_GROUPS_EXCLUDING_N,
                 QueryInsightsSettings.TOP_N_QUERIES_GROUPING_FIELD_NAME,
@@ -247,6 +262,85 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
         List<RestHandler> restHandlers = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
         boolean hasLiveQueriesRestHandler = restHandlers.stream().anyMatch(handler -> handler instanceof RestLiveQueriesAction);
         assertTrue("Plugin should register RestLiveQueriesAction", hasLiveQueriesRestHandler);
+    }
+
+    /** The transport service and the Query Insights service arrive in different callbacks, in no fixed order. */
+    public void testTheReportHandlerIsRegisteredWhenTheTransportServiceComesFirst() {
+        TransportService transportService = mock(TransportService.class);
+
+        queryInsightsPlugin.getSeedHostProviders(transportService, null);
+        createComponents();
+
+        verifyReportHandlerRegistered(transportService);
+    }
+
+    public void testTheReportHandlerIsRegisteredWhenTheComponentsComeFirst() {
+        TransportService transportService = mock(TransportService.class);
+
+        createComponents();
+        queryInsightsPlugin.getSeedHostProviders(transportService, null);
+
+        verifyReportHandlerRegistered(transportService);
+    }
+
+    private static void verifyReportHandlerRegistered(TransportService transportService) {
+        verify(transportService, times(1)).registerRequestHandler(
+            eq(ReportQueryBytesAction.NAME),
+            eq(ThreadPool.Names.GENERIC),
+            any(),
+            any(ReportQueryBytesRequestHandler.class)
+        );
+    }
+
+    public void testThePplQueryUserFilterIsAnActionFilter() {
+        assertTrue(queryInsightsPlugin.getActionFilters().stream().anyMatch(PplQueryUserFilter.class::isInstance));
+    }
+
+    /** The plugin hands its filter the service it creates, so a running PPL query's user is kept there. */
+    @SuppressWarnings("unchecked")
+    public void testThePplQueryUserFilterKeepsTheUserInThePluginsService() {
+        // The filter names the query by the local node, so this cluster service has one.
+        ClusterSettings clusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
+        ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary("test", true, 1, 0);
+        clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
+        try {
+            assertPplQueryUserKept();
+        } finally {
+            clusterService.close();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertPplQueryUserKept() {
+        QueryInsightsService service = (QueryInsightsService) createComponents().get(0);
+        ActionFilter filter = queryInsightsPlugin.getActionFilters().get(0);
+        Task task = mock(Task.class);
+        when(task.getId()).thenReturn(42L);
+        String liveQueryId = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), 42L);
+        AtomicReference<UserPrincipalContext.UserPrincipalInfo> whileRunning = new AtomicReference<>();
+        ActionFilterChain<ActionRequest, ActionResponse> chain = mock(ActionFilterChain.class);
+        doAnswer(invocation -> {
+            whileRunning.set(service.getLiveQueryUserInfo(liveQueryId));
+            return null;
+        }).when(chain).proceed(any(), anyString(), any(), any());
+
+        try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+            threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "alice|backend1|role1|tenant1");
+            filter.apply(
+                task,
+                // The SQL plugin's PPL query action.
+                "cluster:admin/opensearch/ppl",
+                mock(ActionRequest.class),
+                ActionRequestMetadata.empty(),
+                mock(ActionListener.class),
+                chain
+            );
+        }
+
+        assertNotNull("the user wasn't kept while the query ran", whileRunning.get());
+        assertEquals("alice", whileRunning.get().getUserName());
     }
 
 }

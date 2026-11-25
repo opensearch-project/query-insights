@@ -10,6 +10,7 @@ package org.opensearch.plugin.insights.rules.transport.live_queries;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,8 +43,10 @@ import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserI
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueryUserInfoDTO;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedQueryRecord;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.plugin.insights.rules.model.LiveQueryRecord;
 import org.opensearch.plugin.insights.rules.model.Measurement;
+import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.TaskDetails;
 import org.opensearch.tasks.Task;
@@ -58,7 +61,8 @@ import org.opensearch.wlm.WorkloadGroupTask;
  *
  * <p>A live query is a root task group: a DSL search's coordinator task, or a PPL query's task. The
  * searches a PPL query issues with its task as their parent nest under that task, so they and their
- * shard tasks are reported as part of the one PPL query rather than as separate searches.
+ * shard tasks are reported as part of the one PPL query rather than as separate searches. The node
+ * running the query reports the searches it has finished, through the user info fan-out.
  *
  * <p>An async PPL query ({@code wait_for_completion_timeout} or {@code keep_alive}) that is still running
  * when its wait time passes is the exception: its PPL task ends when it answers RUNNING while the query
@@ -115,6 +119,7 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     // Task keys of each PPL query's child searches, by PPL query id. The search
                     // listener captures identity per search task, never for the PPL task itself.
                     Map<String, List<String>> childSearchKeysByQueryId = new HashMap<>();
+                    Set<String> pplQueryIds = new HashSet<>();
 
                     for (TaskGroup taskGroup : taskResponse.getTaskGroups()) {
                         TaskInfo coordinatorInfo = taskGroup.getTaskInfo();
@@ -201,25 +206,25 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                         );
 
                         allRecords.add(record);
+                        if (isPpl) {
+                            pplQueryIds.add(queryId);
+                        }
                         if (!childSearches.isEmpty()) {
                             childSearchKeysByQueryId.put(queryId, childSearches.stream().map(TransportLiveQueriesAction::taskKey).toList());
                         }
                     }
 
-                    List<LiveQueryRecord> sortedRecords = allRecords.stream().sorted((a, b) -> {
-                        switch (request.getSortBy()) {
-                            case CPU:
-                                return Long.compare(b.getTotalCpu(), a.getTotalCpu());
-                            case MEMORY:
-                                return Long.compare(b.getTotalMemory(), a.getTotalMemory());
-                            default:
-                                return Long.compare(b.getTotalLatency(), a.getTotalLatency());
-                        }
-                    }).limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize()).toList();
-
                     // Fan out to all nodes to resolve user identity captured on the coordinating node of
-                    // each search, then continue with finished-queries handling (if requested).
-                    resolveUserInfoAndRespond(sortedRecords, childSearchKeysByQueryId, request, listener);
+                    // each search, then continue with finished-queries handling (if requested). The size
+                    // limit is applied after the fan-out, which adds each PPL query's finished searches to
+                    // its totals. A DSL search's totals don't change, so only the largest DSL searches up to
+                    // the limit can make it; the rest are left out of the fan-out.
+                    resolveUserInfoAndRespond(
+                        topDslSearchesAndEveryPplQuery(allRecords, pplQueryIds, request),
+                        childSearchKeysByQueryId,
+                        request,
+                        listener
+                    );
                 } catch (Exception ex) {
                     logger.error("Failed to process live queries response", ex);
                     listener.onFailure(ex);
@@ -272,34 +277,35 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
             LiveQueriesUserInfoAction.INSTANCE,
             new LiveQueriesUserInfoRequest(taskKeys, targetNodeIds),
             ActionListener.wrap(userInfoResponse -> {
-                List<LiveQueryRecord> enrichedRecords = enrichWithUserInfo(
+                List<LiveQueryRecord> enrichedRecords = enrich(
                     records,
                     userInfoResponse.getAllUserInfo(),
+                    userInfoResponse.getAllFinishedSearches(),
                     childSearchKeysByQueryId
                 );
-                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(enrichedRecords);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(largest(enrichedRecords, request));
                 respondWithFinishedQueries(filteredRecords, request, listener);
             }, ex -> {
                 // User info is best-effort — on failure, fall back to records without identity
                 logger.error("Failed to resolve live query user info from nodes", ex);
-                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(records);
+                List<LiveQueryRecord> filteredRecords = filterLiveRecordsByMode(largest(records, request));
                 respondWithFinishedQueries(filteredRecords, request, listener);
             })
         );
     }
 
-    private List<LiveQueryRecord> enrichWithUserInfo(
+    /** Adds each record's user and, for a running PPL query, the cost of the searches it has finished. */
+    private List<LiveQueryRecord> enrich(
         final List<LiveQueryRecord> records,
         final Map<String, LiveQueryUserInfoDTO> userInfoByTaskKey,
+        final Map<String, FinishedSearches> finishedSearchesByQueryId,
         final Map<String, List<String>> childSearchKeysByQueryId
     ) {
-        if (userInfoByTaskKey.isEmpty()) {
-            return records;
-        }
         List<LiveQueryRecord> enriched = new ArrayList<>(records.size());
         for (LiveQueryRecord record : records) {
             LiveQueryUserInfoDTO userInfo = userInfoFor(record.getQueryId(), userInfoByTaskKey, childSearchKeysByQueryId);
-            if (userInfo == null) {
+            FinishedSearches finished = finishedSearchesByQueryId.get(record.getQueryId());
+            if (userInfo == null && finished == null) {
                 enriched.add(record);
                 continue;
             }
@@ -310,17 +316,61 @@ public class TransportLiveQueriesAction extends HandledTransportAction<LiveQueri
                     record.getStartTime(),
                     record.getWlmGroupId(),
                     record.getTotalLatency(),
-                    record.getTotalCpu(),
-                    record.getTotalMemory(),
+                    record.getTotalCpu() + (finished == null ? 0L : finished.getCpuNanos()),
+                    record.getTotalMemory() + (finished == null ? 0L : finished.getMemoryBytes()),
                     record.getCoordinatorTask(),
                     record.getShardTasks(),
-                    userInfo.getUsername(),
-                    userInfo.getRoles(),
-                    userInfo.getBackendRoles()
+                    userInfo == null ? record.getUsername() : userInfo.getUsername(),
+                    userInfo == null ? record.getUserRoles() : userInfo.getRoles(),
+                    userInfo == null ? record.getBackendRoles() : userInfo.getBackendRoles(),
+                    finished
                 )
             );
         }
         return enriched;
+    }
+
+    /** The requested number of records, largest first by the requested metric. */
+    private static List<LiveQueryRecord> largest(final List<LiveQueryRecord> records, final LiveQueriesRequest request) {
+        return records.stream()
+            .sorted(largestFirst(request.getSortBy()))
+            .limit(request.getSize() < 0 ? Long.MAX_VALUE : request.getSize())
+            .toList();
+    }
+
+    /**
+     * The records that can still make the size limit once PPL queries' finished searches are added: every
+     * PPL query, and the largest DSL searches up to the limit.
+     */
+    private static List<LiveQueryRecord> topDslSearchesAndEveryPplQuery(
+        final List<LiveQueryRecord> records,
+        final Set<String> pplQueryIds,
+        final LiveQueriesRequest request
+    ) {
+        final long size = request.getSize() < 0 ? Long.MAX_VALUE : request.getSize();
+        final List<LiveQueryRecord> candidates = new ArrayList<>();
+        long dslSearches = 0;
+        for (LiveQueryRecord record : records.stream().sorted(largestFirst(request.getSortBy())).toList()) {
+            if (pplQueryIds.contains(record.getQueryId())) {
+                candidates.add(record);
+            } else if (dslSearches < size) {
+                candidates.add(record);
+                dslSearches++;
+            }
+        }
+        return candidates;
+    }
+
+    /** Orders live queries by the requested metric, largest first. */
+    private static Comparator<LiveQueryRecord> largestFirst(final MetricType sortBy) {
+        switch (sortBy) {
+            case CPU:
+                return Comparator.comparingLong(LiveQueryRecord::getTotalCpu).reversed();
+            case MEMORY:
+                return Comparator.comparingLong(LiveQueryRecord::getTotalMemory).reversed();
+            default:
+                return Comparator.comparingLong(LiveQueryRecord::getTotalLatency).reversed();
+        }
     }
 
     private void respondWithFinishedQueries(

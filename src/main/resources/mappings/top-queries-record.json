@@ -99,6 +99,17 @@
     "failed" : {
       "type" : "boolean"
     },
+    "query_source" : {
+      "type" : "keyword"
+    },
+    "query_text" : {
+      "type" : "match_only_text",
+      "index" : false
+    },
+    "child_searches" : {
+      "type" : "match_only_text",
+      "index" : false
+    },
     "task_resource_usages" : {
       "properties" : {
         "action" : {

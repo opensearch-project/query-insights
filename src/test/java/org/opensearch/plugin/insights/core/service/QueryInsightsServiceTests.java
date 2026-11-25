@@ -45,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -59,12 +60,14 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
@@ -77,23 +80,35 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
+import org.opensearch.plugin.insights.rules.transport.report_query.ReportQueryBytesRequestHandler;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
+import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.tasks.Task;
 import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.noop.NoopMetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.ClusterServiceUtils;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.BytesTransportRequest;
+import org.opensearch.transport.TransportChannel;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.ClusterAdminClient;
@@ -230,6 +245,204 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
             2,
             queryInsightsService.getTopQueriesService(MetricType.MEMORY).getTopQueriesRecords(false, null, null, null, null).size()
         );
+    }
+
+    public void testCategorizingSkipsPplRecordsAndKeepsTheRestOfTheBatch() {
+        queryInsightsService.getSearchQueryCategorizer().reset();
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Counter.class));
+        when(metricsRegistry.createHistogram(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Histogram.class));
+        QueryInsightsService service = new QueryInsightsService(
+            clusterService,
+            threadPool,
+            client,
+            metricsRegistry,
+            namedXContentRegistry,
+            queryInsightsExporterFactory,
+            queryInsightsReaderFactory
+        );
+        try {
+            service.enableSearchQueryMetricsFeature(true);
+            long now = System.currentTimeMillis();
+            // The PPL record sorts first, so a failure on it would stop the DSL search after it.
+            assertTrue(service.addRecord(pplQuery(now)));
+            SearchSourceBuilder source = new SearchSourceBuilder().aggregation(new TermsAggregationBuilder("by_user").field("user"));
+            assertTrue(service.addRecord(new SearchQueryRecord(now + 1, measurements(1L, 10L), new HashMap<>(), source, null, "dsl-1")));
+
+            service.drainRecords();
+
+            verify(service.getSearchQueryCategorizer().getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
+        } finally {
+            service.getSearchQueryCategorizer().reset();
+        }
+    }
+
+    public void testSearchesOfAQueryAreHeldForItsRecordAndNotRanked() {
+        // More than Top N keeps: none of them is ranked on its own.
+        int searches = QueryInsightsSettings.DEFAULT_TOP_N_SIZE * 3;
+        for (int i = 0; i < searches; i++) {
+            queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(1L, 10L));
+        }
+
+        queryInsightsService.drainRecords();
+
+        for (MetricType metricType : MetricType.allMetricTypes()) {
+            assertTrue(queryInsightsService.getTopQueriesService(metricType).getTopQueriesRecords(false, null, null, null, null).isEmpty());
+        }
+        ChildSearches held = queryInsightsService.takeChildSearches("PPL:node-1:42").toChildSearches();
+        assertEquals(searches, held.getCount());
+        assertEquals(searches, held.getSearches().size());
+    }
+
+    public void testAQueryTakesItsSearchesOnce() {
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(20L, 200L));
+        queryInsightsService.addChildSearch("PPL:node-1:43", searchOfQuery(5L, 50L));
+
+        ChildSearchTracker.Tracked taken = queryInsightsService.takeChildSearches("PPL:node-1:42");
+
+        assertEquals(30L, taken.getCpuNanos());
+        assertEquals(300L, taken.getMemoryBytes());
+        assertEquals(2, taken.toChildSearches().getCount());
+        assertNull(queryInsightsService.takeChildSearches("PPL:node-1:42"));
+        assertNull(queryInsightsService.takeChildSearches(null));
+    }
+
+    public void testAQueryGetsItsSearchesIndicesShardsAndType() {
+        SearchQueryRecord search = searchOfQuery(10L, 100L);
+        search.addAttribute(Attribute.SEARCH_TYPE, "dfs_query_then_fetch");
+        queryInsightsService.addChildSearch("PPL:node-1:42", search);
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(20L, 200L));
+
+        ChildSearchTracker.Tracked taken = queryInsightsService.takeChildSearches("PPL:node-1:42");
+
+        assertArrayEquals(new String[] { "logs" }, taken.getIndices());
+        assertEquals(2, taken.getTotalShards());
+        assertEquals("dfs_query_then_fetch", taken.getSearchType());
+    }
+
+    /** The service's max_source_length reaches a reported PPL query's text, as it does a DSL source. */
+    public void testAMaxSourceLengthOfZeroHidesAReportedPplQuerysText() throws Exception {
+        queryInsightsService.setMaxSourceLength(0);
+
+        // Ahead of now, so the record stays in the current window even if a window ends mid-test.
+        new ReportQueryBytesRequestHandler(queryInsightsService).messageReceived(
+            new BytesTransportRequest(pplReport("source=logs | head 5", System.currentTimeMillis() + 60_000), Version.CURRENT),
+            mock(TransportChannel.class),
+            mock(Task.class)
+        );
+        queryInsightsService.drainRecords();
+
+        List<SearchQueryRecord> topN = queryInsightsService.getTopQueriesService(MetricType.LATENCY)
+            .getTopQueriesRecords(false, null, null, null, null);
+        assertEquals(1, topN.size());
+        assertEquals("", topN.get(0).getAttributes().get(Attribute.QUERY_TEXT));
+        assertEquals(true, topN.get(0).getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertNull("draining gives it no source", topN.get(0).getAttributes().get(Attribute.SOURCE));
+    }
+
+    /** A PPL query's report, in the field order the SQL plugin writes it. */
+    private static BytesReference pplReport(String queryText, long startMillis) throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.writeVInt(ReportQueryBytesAction.FORMAT_VERSION);
+        out.writeString("PPL");
+        out.writeString("PPL:node-1:42");
+        out.writeString("node-1");
+        out.writeString(queryText);
+        out.writeVLong(startMillis);
+        out.writeVLong(15L);
+        out.writeVLong(1_000L);
+        out.writeVLong(2_048L);
+        out.writeString("");
+        out.writeBoolean(false);
+        return out.bytes();
+    }
+
+    public void testAQueryGetsTheOpaqueIdItsSearchesCarry() {
+        // The listener keeps a search's X-Opaque-Id, which it has from the query's request, in its labels.
+        SearchQueryRecord search = searchOfQuery(10L, 100L);
+        search.addAttribute(Attribute.LABELS, new HashMap<>(Map.of(Task.X_OPAQUE_ID, "dashboards-app")));
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(5L, 50L));
+        queryInsightsService.addChildSearch("PPL:node-1:42", search);
+
+        assertEquals("dashboards-app", queryInsightsService.takeChildSearches("PPL:node-1:42").getOpaqueId());
+    }
+
+    public void testAQueryWithASearchOnAnExcludedIndexIsLeftOut() {
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
+        queryInsightsService.excludeQuery("PPL:node-1:42");
+
+        assertTrue(queryInsightsService.takeChildSearches("PPL:node-1:42").isExcluded());
+    }
+
+    public void testARunningPplQuerysFinishedSearchesAreReadByItsLiveId() {
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(20L, 200L));
+        queryInsightsService.addChildSearch("PPL:node-1:43", searchOfQuery(5L, 50L));
+
+        Map<String, FinishedSearches> finished = queryInsightsService.getFinishedSearchesOfPplQueries(
+            List.of("node-1:42", "node-1:44", "node-2:42")
+        );
+
+        assertEquals(Map.of("node-1:42", new FinishedSearches(2, 30L, 300L)), finished);
+        // Reading them leaves them for the query's own record.
+        assertEquals(2, queryInsightsService.takeChildSearches("PPL:node-1:42").toChildSearches().getCount());
+        assertTrue(queryInsightsService.getFinishedSearchesOfPplQueries(List.of("node-1:42")).isEmpty());
+        assertTrue(queryInsightsService.getFinishedSearchesOfPplQueries(null).isEmpty());
+    }
+
+    public void testSearchesOfAQueryAreCategorized() {
+        queryInsightsService.getSearchQueryCategorizer().reset();
+        MetricsRegistry metricsRegistry = mock(MetricsRegistry.class);
+        when(metricsRegistry.createCounter(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Counter.class));
+        when(metricsRegistry.createHistogram(anyString(), anyString(), anyString())).thenAnswer(invocation -> mock(Histogram.class));
+        QueryInsightsService service = new QueryInsightsService(
+            clusterService,
+            threadPool,
+            client,
+            metricsRegistry,
+            namedXContentRegistry,
+            queryInsightsExporterFactory,
+            queryInsightsReaderFactory
+        );
+        try {
+            service.enableSearchQueryMetricsFeature(true);
+            SearchSourceBuilder source = new SearchSourceBuilder().aggregation(new TermsAggregationBuilder("by_user").field("user"));
+            service.addChildSearch(
+                "PPL:node-1:42",
+                new SearchQueryRecord(System.currentTimeMillis(), measurements(1L, 10L), new HashMap<>(), source, null, "search-1")
+            );
+
+            service.drainRecords();
+
+            verify(service.getSearchQueryCategorizer().getSearchQueryCounters().getAggCounter()).add(eq(1.0d), any(Tags.class));
+        } finally {
+            service.getSearchQueryCategorizer().reset();
+        }
+    }
+
+    /** A search a PPL query ran, as the search listener records it. */
+    private static SearchQueryRecord searchOfQuery(long cpu, long memory) {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.INDICES, new String[] { "logs" });
+        attributes.put(Attribute.TOTAL_SHARDS, 1);
+        return new SearchQueryRecord(System.currentTimeMillis(), measurements(cpu, memory), attributes, UUID.randomUUID().toString());
+    }
+
+    private static Map<MetricType, Measurement> measurements(long cpu, long memory) {
+        Map<MetricType, Measurement> measurements = new HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(5L));
+        measurements.put(MetricType.CPU, new Measurement(cpu));
+        measurements.put(MetricType.MEMORY, new Measurement(memory));
+        return measurements;
+    }
+
+    /** A reported PPL query's record: its text is in query_text, and it has no SearchSourceBuilder. */
+    private static SearchQueryRecord pplQuery(long timestamp) {
+        Map<Attribute, Object> attributes = new HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | stats count()");
+        return new SearchQueryRecord(timestamp, measurements(100L, 1000L), attributes, null, null, UUID.randomUUID().toString());
     }
 
     public void testDoStart() throws IOException {

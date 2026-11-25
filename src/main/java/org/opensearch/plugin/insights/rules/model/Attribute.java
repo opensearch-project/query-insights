@@ -109,7 +109,19 @@ public enum Attribute {
     /**
      * Indicates if the search request failed during execution.
      */
-    FAILED;
+    FAILED,
+
+    /** Query language: DSL, SQL or PPL. */
+    QUERY_SOURCE,
+
+    /**
+     * On a SQL/PPL query's record: the query as written, cut to max_source_length. It's kept out of
+     * {@link #SOURCE}, which readers parse as a DSL body.
+     */
+    QUERY_TEXT,
+
+    /** On a SQL/PPL query's record: the searches it ran, as {@link ChildSearches}. */
+    CHILD_SEARCHES;
 
     /**
      * Read an Attribute from a StreamInput
@@ -160,6 +172,8 @@ public enum Attribute {
             ((SearchSourceBuilder) attributeValue).writeTo(out);
         } else if (attributeValue instanceof GroupingType) {
             out.writeString(((GroupingType) attributeValue).getValue());
+        } else if (attributeValue instanceof ChildSearches) {
+            ((ChildSearches) attributeValue).writeTo(out);
         } else {
             out.writeGenericValue(attributeValue);
         }
@@ -184,6 +198,8 @@ public enum Attribute {
             }
         } else if (attribute == Attribute.GROUP_BY) {
             return GroupingType.valueOf(in.readString().toUpperCase(Locale.ROOT));
+        } else if (attribute == Attribute.CHILD_SEARCHES) {
+            return new ChildSearches(in);
         } else {
             return in.readGenericValue();
         }

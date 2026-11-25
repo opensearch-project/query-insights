@@ -20,6 +20,7 @@ import org.opensearch.action.search.SearchPhaseName;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.xcontent.DeprecationHandler;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -40,6 +41,142 @@ import org.opensearch.threadpool.ThreadPool;
 public class SearchQueryRecordTests extends OpenSearchTestCase {
 
     private final ThreadPool threadPool = QueryInsightsTestUtils.createMockThreadPool();
+
+    /** A reported SQL/PPL record, with no SearchSourceBuilder, survives the transport round trip. */
+    public void testReportQueryRecordAttributesSurviveRoundTrip() throws Exception {
+        java.util.Map<MetricType, Measurement> measurements = new java.util.HashMap<>();
+        measurements.put(MetricType.LATENCY, new Measurement(1559L, AggregationType.NONE));
+        measurements.put(MetricType.CPU, new Measurement(683111000L, AggregationType.NONE));
+        measurements.put(MetricType.MEMORY, new Measurement(266494392L, AggregationType.NONE));
+
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.NODE_ID, "node-1");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+
+        SearchQueryRecord record = new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, "PPL:node-1:42");
+
+        SearchQueryRecord roundTripped = roundTripRecord(record);
+        Map<Attribute, Object> after = roundTripped.getAttributes();
+        assertEquals("PPL", after.get(Attribute.QUERY_SOURCE));
+        assertEquals("node-1", after.get(Attribute.NODE_ID));
+        assertEquals(childSearches(), after.get(Attribute.CHILD_SEARCHES));
+    }
+
+    /** A SQL/PPL record read back from its document, as the detail view reads it, keeps its searches. */
+    public void testChildSearchesReadBackFromTheRecordsDocument() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentForExport(builder, ToXContent.EMPTY_PARAMS);
+        String document = BytesReference.bytes(builder).utf8ToString();
+
+        // Stored as a JSON string, which a reader before 3.11 skips; it would walk into an object.
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            assertEquals(childSearches().toJson(), parser.map().get("child_searches"));
+        }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
+
+            assertEquals(childSearches(), read.getAttributes().get(Attribute.CHILD_SEARCHES));
+            assertEquals("PPL", read.getAttributes().get(Attribute.QUERY_SOURCE));
+        }
+    }
+
+    /** A response carries the searches as an object; only the stored document has the string. */
+    public void testChildSearchesAreAnObjectInAResponse() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            assertEquals(3, ((Map<?, ?>) parser.map().get("child_searches")).get("count"));
+        }
+    }
+
+    public void testAFieldThisVersionDoesNotKnowIsSkippedWhole() throws Exception {
+        // A later version's nested field, ahead of fields this version reads.
+        String document = "{\"timestamp\":5,\"id\":\"a\","
+            + "\"later_field\":{\"timestamp\":9,\"indices\":[\"other\"],\"nested\":{\"failed\":true}},"
+            + "\"indices\":[\"logs\"],"
+            + "\"measurements\":{\"latency\":{\"number\":7,\"count\":1,\"aggregationType\":\"NONE\"}}}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
+
+            assertEquals(5L, read.getTimestamp());
+            assertArrayEquals(new Object[] { "logs" }, (Object[]) read.getAttributes().get(Attribute.INDICES));
+            assertNull(read.getAttributes().get(Attribute.FAILED));
+            assertEquals(7L, read.getMeasurement(MetricType.LATENCY).longValue());
+        }
+    }
+
+    /** Only a SQL/PPL record gets a null source; a DSL record without one is written as before. */
+    public void testADslRecordWithoutASourceGetsNoNullSource() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.NODE_ID, "node-1");
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "dsl-1");
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            assertFalse(parser.map().containsKey("source"));
+        }
+    }
+
+    public void testChildSearchesAreLeftOutOfANonVerboseRecord() {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.CHILD_SEARCHES, childSearches());
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+
+        assertNull(record.copyAndSimplifyRecord().getAttributes().get(Attribute.CHILD_SEARCHES));
+        assertEquals(childSearches(), record.getAttributes().get(Attribute.CHILD_SEARCHES));
+    }
+
+    /**
+     * A SQL/PPL query's text is query_text in responses and documents. A response has source as null,
+     * which Dashboards 3.0 to 3.4 parse without failing; the document has no source.
+     */
+    public void testAPplQuerysTextIsQueryTextNotSource() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | head 5");
+        attributes.put(Attribute.SOURCE_TRUNCATED, false);
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "ppl-1");
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        record.toXContentForExport(builder, ToXContent.EMPTY_PARAMS);
+        String document = BytesReference.bytes(builder).utf8ToString();
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            Map<String, Object> response = parser.map();
+            assertEquals("source=logs | head 5", response.get("query_text"));
+            assertTrue("a response has source, as null", response.containsKey("source"));
+            assertNull(response.get("source"));
+        }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            Map<String, Object> stored = parser.map();
+            assertEquals("source=logs | head 5", stored.get("query_text"));
+            assertFalse(stored.containsKey("source"));
+        }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
+            assertEquals("source=logs | head 5", read.getAttributes().get(Attribute.QUERY_TEXT));
+            assertNull(read.getAttributes().get(Attribute.SOURCE));
+        }
+        // Like a DSL source, it's left out of the overview.
+        assertNull(record.copyAndSimplifyRecord().getAttributes().get(Attribute.QUERY_TEXT));
+    }
+
+    private static ChildSearches childSearches() {
+        return new ChildSearches(
+            3,
+            List.of(
+                new ChildSearches.Search(1_700_000_000_000L, List.of("logs"), 2, 12L, 4_000_000L, 2_048L, false, "analytics"),
+                new ChildSearches.Search(1_700_000_000_100L, List.of("logs"), 2, 7L, 1_000_000L, 512L, true, null)
+            )
+        );
+    }
 
     /**
      * Check that if the serialization, deserialization and equals functions are working as expected

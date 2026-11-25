@@ -433,6 +433,11 @@ public class TopQueriesService {
 
     // Add Source and Source Truncated attributes to record
     public static void setSourceAndTruncation(final SearchQueryRecord record, final int maxSourceLength) {
+        // A SQL/PPL query has no DSL body. Its text went in query_text when it was reported (see
+        // setQueryText), and it gets no source, though the grouping path calls this for every record.
+        if (!record.isDsl() && record.getSearchSourceBuilder() == null) {
+            return;
+        }
         if (maxSourceLength == 0) {
             record.addAttribute(Attribute.SOURCE, new SourceString(""));
             record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
@@ -457,6 +462,26 @@ public class TopQueriesService {
             OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
         } else {
             record.addAttribute(Attribute.SOURCE, new SourceString(sourceString));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+        }
+    }
+
+    /**
+     * Sets a SQL/PPL query's text as its record's query_text, cut to {@code maxSourceLength} as a DSL
+     * source is, with source_truncated saying whether it was cut. It isn't put in source, which readers
+     * parse as a DSL body. A limit of 0 leaves it empty.
+     *
+     * @param record the query's record
+     * @param queryText the query as written
+     * @param maxSourceLength the most characters kept
+     */
+    public static void setQueryText(final SearchQueryRecord record, final String queryText, final int maxSourceLength) {
+        if (queryText.length() > maxSourceLength) {
+            record.addAttribute(Attribute.QUERY_TEXT, queryText.substring(0, maxSourceLength));
+            record.addAttribute(Attribute.SOURCE_TRUNCATED, true);
+            OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.TOP_N_QUERIES_SOURCE_TRUNCATION);
+        } else {
+            record.addAttribute(Attribute.QUERY_TEXT, queryText);
             record.addAttribute(Attribute.SOURCE_TRUNCATED, false);
         }
     }

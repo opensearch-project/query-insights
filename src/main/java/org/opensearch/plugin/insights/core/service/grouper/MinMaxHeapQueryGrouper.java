@@ -117,6 +117,10 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
         if (groupingType == GroupingType.NONE) {
             throw new IllegalArgumentException("Do not use addQueryToGroup when GroupingType is None");
         }
+        // A SQL/PPL query has no query shape to group by (see addUngrouped).
+        if (hasNoQueryShape(searchQueryRecord)) {
+            return addUngrouped(searchQueryRecord);
+        }
         SearchQueryRecord aggregateSearchQueryRecord;
 
         String groupId = getGroupingId(searchQueryRecord);
@@ -156,6 +160,23 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             addAndPromote(searchQueryRecord, aggregateSearchQueryRecord, groupId);
         }
         return aggregateSearchQueryRecord;
+    }
+
+    /**
+     * Adds a SQL/PPL query as a single query, not a group. It takes a Top N slot only if it beats the
+     * smallest entry, and it's dropped when pushed out, so it never holds one of the groups that
+     * max_groups_excluding_topn allows.
+     */
+    private SearchQueryRecord addUngrouped(final SearchQueryRecord searchQueryRecord) {
+        if (minHeapTopQueriesStore.size() >= topNSize
+            && SearchQueryRecord.compare(searchQueryRecord, minHeapTopQueriesStore.peek(), metricType) <= 0) {
+            return null;
+        }
+        TopQueriesService.setSourceAndTruncation(searchQueryRecord, maxSourceLength);
+        TopQueriesService.setUserInfo(searchQueryRecord);
+        minHeapTopQueriesStore.add(searchQueryRecord);
+        overflow();
+        return searchQueryRecord;
     }
 
     /**
@@ -244,6 +265,10 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
     private void overflow() {
         if (minHeapTopQueriesStore.size() > topNSize) {
             SearchQueryRecord recordMovedFromMinToMax = minHeapTopQueriesStore.poll();
+            // A SQL/PPL query pushed out of Top N is dropped: there's no group for it to come back with.
+            if (hasNoQueryShape(recordMovedFromMinToMax)) {
+                return;
+            }
             maxHeapQueryStore.add(recordMovedFromMinToMax);
             groupIdToAggSearchQueryRecord.put(recordMovedFromMinToMax.getGroupingId(), new Tuple<>(recordMovedFromMinToMax, false));
         }
@@ -298,6 +323,12 @@ public class MinMaxHeapQueryGrouper implements QueryGrouper {
             log.error("Error when setting group id", e);
             return null;
         }
+    }
+
+    /** A SQL/PPL query has no DSL body, so it has no query shape for similarity to group it by. */
+    private static boolean hasNoQueryShape(final SearchQueryRecord searchQueryRecord) {
+        return searchQueryRecord.getSearchSourceBuilder() == null
+            && searchQueryRecord.getAttributes().get(Attribute.QUERY_GROUP_HASHCODE) == null;
     }
 
     /**

@@ -52,6 +52,7 @@ import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueries;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
@@ -227,6 +228,26 @@ final public class QueryInsightsTestUtils {
             attributes.put(Attribute.IS_CANCELLED, random().nextBoolean());
             // Add failed attribute
             attributes.put(Attribute.FAILED, random().nextBoolean());
+            attributes.put(Attribute.QUERY_SOURCE, "PPL");
+            attributes.put(Attribute.QUERY_TEXT, "source=" + randomAlphaOfLengthBetween(5, 10) + " | head 5");
+            attributes.put(
+                Attribute.CHILD_SEARCHES,
+                new ChildSearches(
+                    1,
+                    List.of(
+                        new ChildSearches.Search(
+                            timestamp,
+                            List.of(randomAlphaOfLengthBetween(5, 10)),
+                            randomIntBetween(1, 100),
+                            randomLongBetween(1, 1000),
+                            randomLongBetween(1, 1000),
+                            randomLongBetween(1, 1000),
+                            random().nextBoolean(),
+                            randomAlphaOfLengthBetween(5, 10)
+                        )
+                    )
+                )
+            );
 
             SearchQueryRecord record = new SearchQueryRecord(
                 timestamp,

@@ -144,10 +144,7 @@ public class FinishedQueriesCache {
         }
 
         removeExpiredQueries();
-        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES)
-            .map(fq -> fq.record)
-            .toList();
+        return newest();
     }
 
     /**
@@ -171,6 +168,22 @@ public class FinishedQueriesCache {
                 }
             }
         }
+        store(record, liveQueryId);
+    }
+
+    /**
+     * Captures a finished SQL/PPL query under the id Live Queries listed it under while it ran.
+     * No-op if the cache is disabled or not yet activated by an API request.
+     *
+     * @param record      the finished query's record
+     * @param liveQueryId the query's Live Queries id, {@code nodeId:taskId}
+     */
+    public void capture(SearchQueryRecord record, String liveQueryId) {
+        if (idleTimeoutMs == 0 || stopped.get() || !active.get()) return;
+        store(record, liveQueryId);
+    }
+
+    private void store(SearchQueryRecord record, String liveQueryId) {
         boolean failed = (Boolean) record.getAttributes().getOrDefault(Attribute.FAILED, false);
         boolean cancelled = record.isCancelled();
         String status = cancelled ? "cancelled" : (failed ? "failed" : "completed");
@@ -202,10 +215,15 @@ public class FinishedQueriesCache {
     public List<FinishedQueryRecord> getFinishedQueriesIfActive() {
         if (!active.get()) return List.of();
         removeExpiredQueries();
-        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED), false)
-            .limit(MAX_RETURNED_QUERIES)
-            .map(fq -> fq.record)
-            .toList();
+        return newest();
+    }
+
+    private List<FinishedQueryRecord> newest() {
+        List<FinishedQueryRecord> newestFirst = StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(finishedQueries.descendingIterator(), Spliterator.ORDERED),
+            false
+        ).map(fq -> fq.record).limit(MAX_RETURNED_QUERIES).toList();
+        return newestFirst;
     }
 
     /**

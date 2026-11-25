@@ -40,4 +40,11 @@ public class QueryInsightsSettingsTests extends OpenSearchTestCase {
         Settings update = Settings.builder().put(TOP_N_EXPORTER_TYPE.getKey(), "").build();
         expectThrows(IllegalArgumentException.class, () -> clusterSettings.validate(update, true));
     }
+
+    public void testPplQueriesAreRecordedByDefault() {
+        // The SQL plugin reads this setting by its key.
+        assertEquals("search.insights.top_queries.ppl.enabled", QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED.getKey());
+        assertTrue(QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED.get(Settings.EMPTY));
+        assertTrue(QueryInsightsSettings.TOP_N_PPL_QUERIES_ENABLED.isDynamic());
+    }
 }

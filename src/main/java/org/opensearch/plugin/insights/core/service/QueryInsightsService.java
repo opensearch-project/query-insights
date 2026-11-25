@@ -61,13 +61,17 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
+import org.opensearch.plugin.insights.rules.model.Attribute;
+import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
+import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskManager;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
@@ -150,6 +154,21 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     private LocalIndexLifecycleManager localIndexLifecycleManager;
 
     private final FinishedQueriesCache finishedQueriesCache;
+
+    /**
+     * Searches run by SQL/PPL queries, waiting to be categorized. They're kept in their query's record.
+     * Capped like the records queue; searches past the cap aren't categorized.
+     */
+    private final LinkedBlockingQueue<SearchQueryRecord> childSearchQueue = new LinkedBlockingQueue<>(
+        QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY
+    );
+
+    /** The searches each running SQL/PPL query has finished. */
+    private final ChildSearchTracker childSearches = new ChildSearchTracker();
+    /** A PPL query's marker is this prefix plus its Live Queries id, {@code nodeId:taskId}. */
+    static final String PPL_MARKER_PREFIX = "PPL:";
+
+    private volatile int maxSourceLength = QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH;
     private final ConcurrentHashMap<String, TimestampedUserInfo> liveQueryUserMap = new ConcurrentHashMap<>();
     private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
     private volatile TaskManager taskManager;
@@ -275,14 +294,45 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
     }
 
     /**
+     * Holds a search a SQL/PPL query ran for the query's record, which takes it when the query is
+     * reported. The search isn't ranked on its own.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     * @param search       the search's record
+     */
+    public void addChildSearch(final String parentMarker, final SearchQueryRecord search) {
+        final Object searchType = search.getAttributes().get(Attribute.SEARCH_TYPE);
+        // The search carries the query request's X-Opaque-Id, which the listener keeps in its labels.
+        final Object labels = search.getAttributes().get(Attribute.LABELS);
+        final Object opaqueId = labels instanceof Map<?, ?> byName ? byName.get(Task.X_OPAQUE_ID) : null;
+        childSearches.add(
+            parentMarker,
+            ChildSearches.Search.of(search),
+            searchType == null ? null : searchType.toString(),
+            opaqueId == null ? null : opaqueId.toString()
+        );
+        if (isSearchQueryMetricsFeatureEnabled()) {
+            childSearchQueue.offer(search);
+        }
+    }
+
+    /**
      * Set the maximum source length before truncation
      * @param maxSourceLength maximum length for source strings
      */
     public void setMaxSourceLength(int maxSourceLength) {
+        this.maxSourceLength = maxSourceLength;
         // Update all TopQueriesService instances
         for (TopQueriesService topQueriesService : topQueriesServices.values()) {
             topQueriesService.setMaxSourceLength(maxSourceLength);
         }
+    }
+
+    /**
+     * @return the most characters of a query's source that are kept
+     */
+    public int getMaxSourceLength() {
+        return maxSourceLength;
     }
 
     /**
@@ -304,14 +354,60 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
             }
         }
 
+        final List<SearchQueryRecord> searchesOfQueries = new ArrayList<>();
+        childSearchQueue.drainTo(searchesOfQueries);
         if (searchQueryMetricsEnabled) {
             try {
-                searchQueryCategorizer.consumeRecords(records);
+                // Categorizing reads a search's DSL body, which a SQL/PPL record doesn't have. The searches
+                // the query ran are categorized instead.
+                searchQueryCategorizer.consumeRecords(records.stream().filter(record -> record.getSearchSourceBuilder() != null).toList());
+                searchQueryCategorizer.consumeRecords(searchesOfQueries);
             } catch (Exception e) {
                 OperationalMetricsCounter.getInstance().incrementCounter(OperationalMetric.QUERY_CATEGORIZE_EXCEPTIONS);
                 logger.error("Error while trying to categorize the queries.", e);
             }
         }
+    }
+
+    /**
+     * Leaves the SQL/PPL query with this marker out of Top N and finished queries, because one of its
+     * searches read an index that {@code excluded_indices} names.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     */
+    public void excludeQuery(final String parentMarker) {
+        childSearches.exclude(parentMarker);
+    }
+
+    /**
+     * Removes and returns the searches a SQL/PPL query ran.
+     *
+     * @param parentMarker the query's marker, {@code <source>:<nodeId>:<taskId>}
+     * @return the searches, or {@code null} if none of them ended
+     */
+    public ChildSearchTracker.Tracked takeChildSearches(final String parentMarker) {
+        return parentMarker == null ? null : childSearches.take(parentMarker);
+    }
+
+    /**
+     * Returns how many searches each running PPL query has finished on this node so far, and their cost,
+     * without removing them.
+     *
+     * @param liveQueryIds Live Queries ids, {@code nodeId:taskId}
+     * @return the count and cost by live id, for the queries that have finished searches
+     */
+    public Map<String, FinishedSearches> getFinishedSearchesOfPplQueries(final Collection<String> liveQueryIds) {
+        final Map<String, FinishedSearches> finished = new HashMap<>();
+        if (liveQueryIds == null) {
+            return finished;
+        }
+        for (String liveQueryId : liveQueryIds) {
+            final FinishedSearches soFar = childSearches.get(PPL_MARKER_PREFIX + liveQueryId);
+            if (soFar != null) {
+                finished.put(liveQueryId, soFar);
+            }
+        }
+        return finished;
     }
 
     /**
@@ -612,6 +708,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
         }
 
         finishedQueriesCache.stop();
+        childSearchQueue.clear();
+        childSearches.clear();
         liveQueryUserMap.clear();
 
         FutureUtils.cancel(deleteIndicesScheduledFuture);
