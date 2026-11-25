@@ -114,6 +114,41 @@ public class FinishedQueriesCachePplQueryTests extends OpenSearchTestCase {
         }
     }
 
+    /**
+     * A cache keeps PPL queries only while it's active, so an idle node's cache doesn't fill with
+     * entries nothing evicts. Each test then activates the cache, which keeps what it holds, so an
+     * entry stored while it wasn't collecting would show.
+     */
+    public void testACacheThatWasNeverActivatedKeepsNoPplQuery() {
+        FinishedQueriesCache neverActivated = new FinishedQueriesCache(clusterService, threadPool);
+        try {
+            neverActivated.capture(pplQuery(100L, 1000L, false), "node-1:42");
+
+            neverActivated.activate();
+            assertEquals(List.of(), neverActivated.getFinishedQueriesIfActive());
+        } finally {
+            neverActivated.stop();
+        }
+    }
+
+    public void testAStoppedCacheKeepsNoPplQuery() {
+        cache.stop();
+
+        cache.capture(pplQuery(100L, 1000L, false), "node-1:42");
+
+        cache.activate();
+        assertEquals(List.of(), cache.getFinishedQueriesIfActive());
+    }
+
+    public void testACacheWithAnIdleTimeoutOfZeroKeepsNoPplQuery() {
+        cache.setIdleTimeout(0);
+
+        cache.capture(pplQuery(100L, 1000L, false), "node-1:42");
+
+        cache.setIdleTimeout(TimeValue.timeValueMinutes(5).millis());
+        assertEquals(List.of(), cache.getFinishedQueriesIfActive());
+    }
+
     public void testAQueryKeepsTheCostItArrivesWith() {
         // The query's record already includes its searches' cost, added when it was reported.
         SearchQueryRecord query = pplQuery(110L, 1100L, false);
