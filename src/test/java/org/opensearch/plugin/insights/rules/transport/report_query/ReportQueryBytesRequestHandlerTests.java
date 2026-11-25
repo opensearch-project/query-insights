@@ -31,6 +31,7 @@ import org.opensearch.plugin.insights.core.service.QueryInsightsService;
 import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.ChildSearches;
+import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -95,6 +96,16 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         out.writeString(user);
         out.writeBoolean(failed);
         return out.bytes();
+    }
+
+    public void testTheRecordCarriesTheReportedQuerysFields() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false);
+
+        assertEquals("the query's start", 1_700_000_000_000L, record.getTimestamp());
+        assertEquals("PPL", record.getAttributes().get(Attribute.QUERY_SOURCE));
+        assertEquals("node-1", record.getAttributes().get(Attribute.NODE_ID));
+        // Set as the search listener sets it; the dashboard shows records without it as aggregated.
+        assertEquals(GroupingType.NONE, record.getAttributes().get(Attribute.GROUP_BY));
     }
 
     public void testFailedFlagTrueSetsFailedAttribute() throws Exception {

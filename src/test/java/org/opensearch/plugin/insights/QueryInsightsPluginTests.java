@@ -12,6 +12,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.security.Principal;
@@ -40,6 +42,7 @@ import org.opensearch.plugin.insights.rules.action.health_stats.HealthStatsActio
 import org.opensearch.plugin.insights.rules.action.live_queries.FinishedQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesAction;
 import org.opensearch.plugin.insights.rules.action.live_queries.LiveQueriesUserInfoAction;
+import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.action.settings.GetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.settings.UpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.action.top_queries.TopQueriesAction;
@@ -49,7 +52,9 @@ import org.opensearch.plugin.insights.rules.resthandler.live_queries.RestLiveQue
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestGetQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.settings.RestUpdateQueryInsightsSettingsAction;
 import org.opensearch.plugin.insights.rules.resthandler.top_queries.RestTopQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.live_queries.PplQueryUserFilter;
 import org.opensearch.plugin.insights.rules.transport.live_queries.TransportLiveQueriesAction;
+import org.opensearch.plugin.insights.rules.transport.report_query.ReportQueryBytesRequestHandler;
 import org.opensearch.plugin.insights.settings.QueryCategorizationSettings;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
@@ -63,6 +68,7 @@ import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.TransportService;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.ClusterAdminClient;
@@ -248,6 +254,38 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
         List<RestHandler> restHandlers = queryInsightsPlugin.getRestHandlers(Settings.EMPTY, null, null, null, null, null, null);
         boolean hasLiveQueriesRestHandler = restHandlers.stream().anyMatch(handler -> handler instanceof RestLiveQueriesAction);
         assertTrue("Plugin should register RestLiveQueriesAction", hasLiveQueriesRestHandler);
+    }
+
+    /** The transport service and the Query Insights service arrive in different callbacks, in no fixed order. */
+    public void testTheReportHandlerIsRegisteredWhenTheTransportServiceComesFirst() {
+        TransportService transportService = mock(TransportService.class);
+
+        queryInsightsPlugin.getSeedHostProviders(transportService, null);
+        createComponents();
+
+        verifyReportHandlerRegistered(transportService);
+    }
+
+    public void testTheReportHandlerIsRegisteredWhenTheComponentsComeFirst() {
+        TransportService transportService = mock(TransportService.class);
+
+        createComponents();
+        queryInsightsPlugin.getSeedHostProviders(transportService, null);
+
+        verifyReportHandlerRegistered(transportService);
+    }
+
+    private static void verifyReportHandlerRegistered(TransportService transportService) {
+        verify(transportService, times(1)).registerRequestHandler(
+            eq(ReportQueryBytesAction.NAME),
+            eq(ThreadPool.Names.GENERIC),
+            any(),
+            any(ReportQueryBytesRequestHandler.class)
+        );
+    }
+
+    public void testThePplQueryUserFilterIsAnActionFilter() {
+        assertTrue(queryInsightsPlugin.getActionFilters().stream().anyMatch(PplQueryUserFilter.class::isInstance));
     }
 
 }
