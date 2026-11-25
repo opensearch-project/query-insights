@@ -14,6 +14,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilderVisitor;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
@@ -82,8 +83,9 @@ public final class SearchQueryCategorizer {
     public void categorize(SearchQueryRecord record) {
         SearchSourceBuilder source = record.getSearchSourceBuilder();
         Map<MetricType, Measurement> measurements = record.getMeasurements();
+        String[] indices = (String[]) record.getAttributes().getOrDefault(Attribute.INDICES, new String[0]);
 
-        incrementQueryTypeCounters(source.query(), measurements);
+        incrementQueryTypeCounters(source.query(), measurements, indices);
         incrementQueryAggregationCounters(source.aggregations(), measurements, record.isStreaming());
         incrementQuerySortCounters(source.sorts(), measurements);
     }
@@ -113,11 +115,15 @@ public final class SearchQueryCategorizer {
         );
     }
 
-    private void incrementQueryTypeCounters(QueryBuilder topLevelQueryBuilder, Map<MetricType, Measurement> measurements) {
+    private void incrementQueryTypeCounters(
+        QueryBuilder topLevelQueryBuilder,
+        Map<MetricType, Measurement> measurements,
+        String[] indices
+    ) {
         if (topLevelQueryBuilder == null) {
             return;
         }
-        QueryBuilderVisitor searchQueryVisitor = new SearchQueryCategorizingVisitor(searchQueryCounters, measurements);
+        QueryBuilderVisitor searchQueryVisitor = new SearchQueryCategorizingVisitor(searchQueryCounters, measurements, indices);
         topLevelQueryBuilder.visit(searchQueryVisitor);
     }
 
