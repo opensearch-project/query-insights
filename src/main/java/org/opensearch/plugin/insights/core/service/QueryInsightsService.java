@@ -61,6 +61,7 @@ import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
 import org.opensearch.plugin.insights.core.service.categorizer.SearchQueryCategorizer;
 import org.opensearch.plugin.insights.core.service.recommendations.RecommendationService;
+import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
 import org.opensearch.plugin.insights.rules.model.FinishedSearches;
@@ -296,7 +297,8 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      * @param search       the search's record
      */
     public void addChildSearch(final String parentMarker, final SearchQueryRecord search) {
-        childSearches.add(parentMarker, ChildSearches.Search.of(search));
+        final Object searchType = search.getAttributes().get(Attribute.SEARCH_TYPE);
+        childSearches.add(parentMarker, ChildSearches.Search.of(search), searchType == null ? null : searchType.toString());
         if (isSearchQueryMetricsFeatureEnabled()) {
             childSearchQueue.offer(search);
         }

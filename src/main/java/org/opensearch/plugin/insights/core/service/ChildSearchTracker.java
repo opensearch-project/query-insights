@@ -10,8 +10,10 @@ package org.opensearch.plugin.insights.core.service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
@@ -19,10 +21,11 @@ import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 
 /**
- * The searches each running SQL/PPL query has finished, keyed by the query's marker: their summed CPU
- * and memory, the first {@link ChildSearches#MAX_SEARCHES} of them, and whether one read an excluded
- * index. The query's record takes them when it arrives, and Live Queries reads the totals while the
- * query runs. A query and its searches are coordinated on the same node, so they're complete by then.
+ * The searches each running SQL/PPL query has finished, keyed by the query's marker: their summed CPU,
+ * memory and shards, the indices they read, the first one's search type, the first
+ * {@link ChildSearches#MAX_SEARCHES} of them, and whether one read an excluded index. The query's record
+ * takes them when it arrives, and Live Queries reads the totals while the query runs. A query and its
+ * searches are coordinated on the same node, so they're complete by then.
  */
 public final class ChildSearchTracker {
 
@@ -51,8 +54,19 @@ public final class ChildSearchTracker {
      * @param search the search
      */
     public void add(final String marker, final ChildSearches.Search search) {
+        add(marker, search, null);
+    }
+
+    /**
+     * Adds a finished search to the query with {@code marker}.
+     *
+     * @param marker     the marker of the query that ran the search
+     * @param search     the search
+     * @param searchType the search's type, such as {@code query_then_fetch}, or {@code null} if unknown
+     */
+    public void add(final String marker, final ChildSearches.Search search, final String searchType) {
         final long now = clock.getAsLong();
-        tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).add(search, now));
+        tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).add(search, searchType, now));
         if (tracked.size() > MAX_QUERIES) {
             removeStale(now);
             if (tracked.size() > MAX_QUERIES) {
@@ -135,13 +149,24 @@ public final class ChildSearchTracker {
         private long memoryBytes;
         private int count;
         private final List<ChildSearches.Search> searches = new ArrayList<>();
+        private final Set<String> indices = new LinkedHashSet<>();
+        private long totalShards;
+        private String searchType;
         private boolean excluded;
         private volatile long lastUpdate;
 
-        private Tracked add(final ChildSearches.Search search, final long now) {
+        private Tracked add(final ChildSearches.Search search, final String type, final long now) {
             cpuNanos += search.getCpuNanos();
             memoryBytes += search.getMemoryBytes();
             count++;
+            // Every search counts here, including those past the ones listed.
+            if (search.getIndices() != null) {
+                indices.addAll(search.getIndices());
+            }
+            totalShards += search.getTotalShards();
+            if (searchType == null) {
+                searchType = type;
+            }
             if (searches.size() < ChildSearches.MAX_SEARCHES) {
                 searches.add(search);
             }
@@ -174,6 +199,27 @@ public final class ChildSearchTracker {
          */
         public long getMemoryBytes() {
             return memoryBytes;
+        }
+
+        /**
+         * @return every index the searches read, in the order they were first read
+         */
+        public String[] getIndices() {
+            return indices.toArray(new String[0]);
+        }
+
+        /**
+         * @return the shards the searches ran on, summed
+         */
+        public int getTotalShards() {
+            return (int) Math.min(Integer.MAX_VALUE, totalShards);
+        }
+
+        /**
+         * @return the type of the first search whose type is known, or {@code null}
+         */
+        public String getSearchType() {
+            return searchType;
         }
 
         /**

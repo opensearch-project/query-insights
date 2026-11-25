@@ -202,6 +202,36 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
 
         assertNull(record.getAttributes().get(Attribute.CHILD_SEARCHES));
         assertEquals(1_000L, record.getMeasurement(MetricType.CPU).longValue());
+        // A 3.10 Dashboards reads indices and search_type on every record.
+        assertArrayEquals(new String[0], (String[]) record.getAttributes().get(Attribute.INDICES));
+        assertEquals(0, record.getAttributes().get(Attribute.TOTAL_SHARDS));
+        assertEquals("query_then_fetch", record.getAttributes().get(Attribute.SEARCH_TYPE));
+    }
+
+    public void testTheRecordNamesTheIndicesShardsAndTypeOfItsSearches() throws Exception {
+        final QueryInsightsService service = mock(QueryInsightsService.class);
+        final ChildSearchTracker held = new ChildSearchTracker();
+        held.add("PPL:node-1:42", new ChildSearches.Search(1L, List.of("logs"), 2, 5L, 30L, 300L, false, null), "dfs_query_then_fetch");
+        held.add(
+            "PPL:node-1:42",
+            new ChildSearches.Search(2L, List.of("hosts", "logs"), 3, 6L, 70L, 700L, false, null),
+            "query_then_fetch"
+        );
+        when(service.takeChildSearches("PPL:node-1:42")).thenReturn(held.take("PPL:node-1:42"));
+
+        new ReportQueryBytesRequestHandler(service).messageReceived(
+            new BytesTransportRequest(serializePayload(false), Version.CURRENT),
+            mock(TransportChannel.class),
+            mock(Task.class)
+        );
+
+        final ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        verify(service).addRecord(captor.capture());
+        final Map<Attribute, Object> attributes = captor.getValue().getAttributes();
+        // As on a DSL search's record, so index filters, the heatmap and API users see what it read.
+        assertArrayEquals(new String[] { "logs", "hosts" }, (String[]) attributes.get(Attribute.INDICES));
+        assertEquals(5, attributes.get(Attribute.TOTAL_SHARDS));
+        assertEquals("dfs_query_then_fetch", attributes.get(Attribute.SEARCH_TYPE));
     }
 
     public void testTheFinishedEntryCarriesTheUserWhoRanTheQuery() throws Exception {

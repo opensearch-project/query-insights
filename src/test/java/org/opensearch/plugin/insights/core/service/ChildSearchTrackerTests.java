@@ -132,4 +132,31 @@ public class ChildSearchTrackerTests extends OpenSearchTestCase {
 
         assertEquals(0, tracker.size());
     }
+
+    public void testAQueryKeepsTheIndicesShardsAndTypeOfAllItsSearches() {
+        // The first search's type isn't known; the next one's is.
+        tracker.add("PPL:node-1:1", new ChildSearches.Search(1L, List.of("logs"), 2, 5L, 1L, 1L, false, null), null);
+        for (int i = 1; i < ChildSearches.MAX_SEARCHES; i++) {
+            tracker.add("PPL:node-1:1", new ChildSearches.Search(i, List.of("logs"), 2, 5L, 1L, 1L, false, null), "dfs_query_then_fetch");
+        }
+        // Past the ones listed, so only the totals see this search.
+        tracker.add(
+            "PPL:node-1:1",
+            new ChildSearches.Search(100L, List.of("hosts", "logs"), 3, 5L, 1L, 1L, false, null),
+            "query_then_fetch"
+        );
+
+        ChildSearchTracker.Tracked held = tracker.take("PPL:node-1:1");
+
+        assertEquals(ChildSearches.MAX_SEARCHES, held.toChildSearches().getSearches().size());
+        assertArrayEquals(new String[] { "logs", "hosts" }, held.getIndices());
+        assertEquals(2 * ChildSearches.MAX_SEARCHES + 3, held.getTotalShards());
+        assertEquals("dfs_query_then_fetch", held.getSearchType());
+    }
+
+    public void testAQueryWhoseSearchesHaveNoTypeHasNone() {
+        tracker.add("PPL:node-1:1", search(10L, 100L));
+
+        assertNull(tracker.take("PPL:node-1:1").getSearchType());
+    }
 }

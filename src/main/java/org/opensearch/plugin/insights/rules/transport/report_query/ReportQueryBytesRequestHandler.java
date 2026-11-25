@@ -8,9 +8,11 @@
 package org.opensearch.plugin.insights.rules.transport.report_query;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.action.search.SearchType;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.transport.TransportResponse;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
@@ -32,15 +34,18 @@ import org.opensearch.transport.TransportRequestHandler;
 
 /**
  * Handles the SQL plugin's report of a finished SQL/PPL query (see {@link ReportQueryBytesAction}).
- * It turns the payload into a {@link SearchQueryRecord}, adds the searches the query ran (their cost,
- * and the first of them as {@link Attribute#CHILD_SEARCHES}), and adds it to Top N and the finished
- * queries cache like a DSL search.
+ * It turns the payload into a {@link SearchQueryRecord}, adds the searches the query ran (their
+ * indices, shards, type and cost, and the first of them as {@link Attribute#CHILD_SEARCHES}), and adds
+ * it to Top N and the finished queries cache like a DSL search.
  * <p>
  * Errors are logged, and the sender always gets an empty response, so reporting never fails a query.
  */
 public class ReportQueryBytesRequestHandler implements TransportRequestHandler<BytesTransportRequest> {
 
     private static final Logger logger = LogManager.getLogger(ReportQueryBytesRequestHandler.class);
+
+    /** A search's default type, written as the search listener writes a search's. */
+    static final String DEFAULT_SEARCH_TYPE = SearchType.DEFAULT.toString().toLowerCase(Locale.ROOT);
 
     private final QueryInsightsService queryInsightsService;
 
@@ -80,10 +85,17 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
     }
 
     /**
-     * Adds its searches' CPU and memory to the query's, and lists them in its record, which keeps them
-     * if it makes Top N. Latency already covers the searches.
+     * Gives the query the indices its searches read, their shards and their search type, as a DSL
+     * search's record has. Then adds their CPU and memory to the query's, and lists them in its record,
+     * which keeps them if it makes Top N. Latency already covers the searches. A query that ran none
+     * gets no indices and the default search type, since readers such as an older Dashboards expect
+     * both on every record.
      */
     private static void addItsSearches(final SearchQueryRecord record, final ChildSearchTracker.Tracked searches) {
+        final String searchType = searches == null ? null : searches.getSearchType();
+        record.addAttribute(Attribute.INDICES, searches == null ? new String[0] : searches.getIndices());
+        record.addAttribute(Attribute.TOTAL_SHARDS, searches == null ? 0 : searches.getTotalShards());
+        record.addAttribute(Attribute.SEARCH_TYPE, searchType == null ? DEFAULT_SEARCH_TYPE : searchType);
         if (searches == null) {
             return;
         }
@@ -171,7 +183,7 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
             attributes.put(Attribute.FAILED, failed);
             // Set group_by as the search listener does; the dashboard shows records without it as aggregated.
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
-            // No INDICES: the SQL plugin doesn't resolve them. Each search's record has its own.
+            // Its indices, shards and search type come from its searches when it's recorded (see addItsSearches).
 
             // The user comes as a string, since the thread context doesn't cross the transport call.
             final UserPrincipalContext userPrincipalContext = userInfo == null || userInfo.isEmpty()

@@ -301,6 +301,19 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertNull(queryInsightsService.takeChildSearches(null));
     }
 
+    public void testAQueryGetsItsSearchesIndicesShardsAndType() {
+        SearchQueryRecord search = searchOfQuery(10L, 100L);
+        search.addAttribute(Attribute.SEARCH_TYPE, "dfs_query_then_fetch");
+        queryInsightsService.addChildSearch("PPL:node-1:42", search);
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(20L, 200L));
+
+        ChildSearchTracker.Tracked taken = queryInsightsService.takeChildSearches("PPL:node-1:42");
+
+        assertArrayEquals(new String[] { "logs" }, taken.getIndices());
+        assertEquals(2, taken.getTotalShards());
+        assertEquals("dfs_query_then_fetch", taken.getSearchType());
+    }
+
     public void testAQueryWithASearchOnAnExcludedIndexIsLeftOut() {
         queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(10L, 100L));
         queryInsightsService.excludeQuery("PPL:node-1:42");
