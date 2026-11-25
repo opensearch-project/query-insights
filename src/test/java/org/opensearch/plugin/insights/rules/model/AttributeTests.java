@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights.rules.model;
 
 import java.io.IOException;
+import java.util.Map;
 import org.opensearch.Version;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -135,6 +136,107 @@ public class AttributeTests extends OpenSearchTestCase {
 
         assertTrue("Should handle invalid JSON gracefully", result instanceof SourceString);
         assertNotNull("Should not be null", result);
+    }
+
+    /**
+     * Test that readFromStream returns null for unrecognized attribute names
+     * instead of throwing IllegalArgumentException.
+     */
+    public void testReadFromStreamUnknownAttribute() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.writeString("UNKNOWN_FUTURE_ATTRIBUTE");
+
+        StreamInput in = out.bytes().streamInput();
+        Attribute result = Attribute.readFromStream(in);
+        assertNull("Unrecognized attribute should return null", result);
+    }
+
+    /**
+     * Test that readFromStream still works for known attributes.
+     */
+    public void testReadFromStreamKnownAttribute() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.writeString("source");
+
+        StreamInput in = out.bytes().streamInput();
+        Attribute result = Attribute.readFromStream(in);
+        assertEquals(Attribute.SOURCE, result);
+    }
+
+    /**
+     * Test that readAttributeMap skips unknown attributes while preserving known ones.
+     * Simulates a newer node sending attributes that this node doesn't recognize.
+     */
+    public void testReadAttributeMapSkipsUnknownAttributes() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        // Write a map with 3 entries: known, unknown, known
+        out.writeVInt(3);
+
+        // Entry 1: known attribute (SEARCH_TYPE)
+        out.writeString("search_type");
+        out.writeGenericValue("query_then_fetch");
+
+        // Entry 2: unknown attribute from a future version
+        out.writeString("some_future_attribute");
+        out.writeGenericValue("future_value");
+
+        // Entry 3: known attribute (TOTAL_SHARDS)
+        out.writeString("total_shards");
+        out.writeGenericValue(5);
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertEquals("Should contain only the 2 known attributes", 2, result.size());
+        assertEquals("query_then_fetch", result.get(Attribute.SEARCH_TYPE));
+        assertEquals(5, result.get(Attribute.TOTAL_SHARDS));
+        assertNull("Unknown attribute should not be in map", result.get(null));
+    }
+
+    /**
+     * Test that readAttributeMap handles a map where all attributes are unknown.
+     */
+    public void testReadAttributeMapAllUnknown() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        out.writeVInt(2);
+        out.writeString("future_attr_1");
+        out.writeGenericValue(true);
+        out.writeString("future_attr_2");
+        out.writeGenericValue("some_value");
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertTrue("Map should be empty when all attributes are unknown", result.isEmpty());
+    }
+
+    /**
+     * Test that stream position is correctly maintained after skipping unknown attributes,
+     * allowing subsequent reads to succeed.
+     */
+    public void testStreamPositionAfterSkippingUnknownAttributes() throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+
+        // Write attribute map with an unknown entry
+        out.writeVInt(2);
+        out.writeString("unknown_attr");
+        out.writeGenericValue("skip_me");
+        out.writeString("node_id");
+        out.writeGenericValue("node_123");
+
+        // Write additional data after the map
+        out.writeString("sentinel");
+
+        StreamInput in = out.bytes().streamInput();
+        Map<Attribute, Object> result = Attribute.readAttributeMap(in);
+
+        assertEquals(1, result.size());
+        assertEquals("node_123", result.get(Attribute.NODE_ID));
+
+        // Verify stream position is correct — we can still read the sentinel
+        assertEquals("sentinel", in.readString());
     }
 
 }
