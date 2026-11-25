@@ -16,8 +16,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.Before;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -96,6 +98,20 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         out.writeString(user);
         out.writeBoolean(failed);
         return out.bytes();
+    }
+
+    public void testMarkingTheRecordTopNAddsNoAttribute() throws Exception {
+        final SearchQueryRecord record = ingestRecordFor(false);
+        // As on a DSL search's record: every metric false, in a map of the record's own.
+        assertEquals(SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP, record.getAttributes().get(Attribute.TOP_N_QUERY));
+        final Set<Attribute> before = new HashSet<>(record.getAttributes().keySet());
+
+        // Window rotation marks it while a response may be writing its attributes.
+        record.setTopNTrue(MetricType.LATENCY);
+
+        assertEquals(before, record.getAttributes().keySet());
+        assertEquals(true, ((Map<?, ?>) record.getAttributes().get(Attribute.TOP_N_QUERY)).get("latency"));
+        assertEquals(false, SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP.get("latency"));
     }
 
     public void testTheRecordCarriesTheReportedQuerysFields() throws Exception {

@@ -183,6 +183,9 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
             attributes.put(Attribute.FAILED, failed);
             // Set group_by as the search listener does; the dashboard shows records without it as aggregated.
             attributes.put(Attribute.GROUP_BY, QueryInsightsSettings.DEFAULT_GROUPING_TYPE);
+            // Also as the listener does. Marking it Top N at window rotation then changes only this map,
+            // not the attributes map, which a response may be writing at the time.
+            attributes.put(Attribute.TOP_N_QUERY, new HashMap<>(SearchQueryRecord.DEFAULT_TOP_N_QUERY_MAP));
             // Its indices, shards and search type come from its searches when it's recorded (see addItsSearches).
 
             // The user comes as a string, since the thread context doesn't cross the transport call.
