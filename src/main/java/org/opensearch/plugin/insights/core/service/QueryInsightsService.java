@@ -154,9 +154,12 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
 
     private final FinishedQueriesCache finishedQueriesCache;
 
-    /** Searches run by SQL/PPL queries, waiting to be categorized. They're kept in their query's record. */
+    /**
+     * Searches run by SQL/PPL queries, waiting to be categorized. They're kept in their query's record.
+     * Capped like the records queue; searches past the cap aren't categorized.
+     */
     private final LinkedBlockingQueue<SearchQueryRecord> childSearchQueue = new LinkedBlockingQueue<>(
-        QueryInsightsSettings.CHILD_SEARCH_QUEUE_CAPACITY
+        QueryInsightsSettings.QUERY_RECORD_QUEUE_CAPACITY
     );
 
     /** The searches each running SQL/PPL query has finished. */

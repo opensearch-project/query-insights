@@ -44,8 +44,6 @@ public class QueryInsightsSettings {
      * Time interval for record queue consumer to run
      */
     public static final TimeValue QUERY_RECORD_QUEUE_DRAIN_INTERVAL = new TimeValue(5, TimeUnit.SECONDS);
-    /** Capacity of the queue of searches run by SQL/PPL queries waiting to be categorized; kept apart from the records queue. */
-    public static final int CHILD_SEARCH_QUEUE_CAPACITY = 5000;
     /**
      * Default Values and Settings
      */
