@@ -673,6 +673,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             }
             builder.field(entry.getKey().toString(), entry.getValue());
         }
+        // A SQL/PPL query has no source; its text is in query_text. Dashboards 3.0 to 3.4 run
+        // JSON.parse(JSON.stringify(source)), which fails when the field is missing but not on null.
+        // Its document still has no source (see toXContentForExport).
+        if (!isDsl() && !attributes.containsKey(Attribute.SOURCE)) {
+            builder.nullField(SOURCE);
+        }
         builder.startObject(MEASUREMENTS);
         for (Map.Entry<MetricType, Measurement> entry : measurements.entrySet()) {
             builder.field(entry.getKey().toString());

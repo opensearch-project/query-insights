@@ -113,6 +113,17 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         }
     }
 
+    /** Only a SQL/PPL record gets a null source; a DSL record without one is written as before. */
+    public void testADslRecordWithoutASourceGetsNoNullSource() throws Exception {
+        java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
+        attributes.put(Attribute.NODE_ID, "node-1");
+        SearchQueryRecord record = new SearchQueryRecord(1_700_000_000_000L, new java.util.HashMap<>(), attributes, "dsl-1");
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            assertFalse(parser.map().containsKey("source"));
+        }
+    }
+
     public void testChildSearchesAreLeftOutOfANonVerboseRecord() {
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
@@ -123,7 +134,10 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         assertEquals(childSearches(), record.getAttributes().get(Attribute.CHILD_SEARCHES));
     }
 
-    /** A SQL/PPL query's text is query_text in responses and documents; it never appears as source. */
+    /**
+     * A SQL/PPL query's text is query_text in responses and documents. A response has source as null,
+     * which Dashboards 3.0 to 3.4 parse without failing; the document has no source.
+     */
     public void testAPplQuerysTextIsQueryTextNotSource() throws Exception {
         java.util.Map<Attribute, Object> attributes = new java.util.HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
@@ -134,12 +148,16 @@ public class SearchQueryRecordTests extends OpenSearchTestCase {
         record.toXContentForExport(builder, ToXContent.EMPTY_PARAMS);
         String document = BytesReference.bytes(builder).utf8ToString();
 
-        for (String json : List.of(record.toString(), document)) {
-            try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
-                Map<String, Object> fields = parser.map();
-                assertEquals("source=logs | head 5", fields.get("query_text"));
-                assertFalse(fields.containsKey("source"));
-            }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, record.toString())) {
+            Map<String, Object> response = parser.map();
+            assertEquals("source=logs | head 5", response.get("query_text"));
+            assertTrue("a response has source, as null", response.containsKey("source"));
+            assertNull(response.get("source"));
+        }
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
+            Map<String, Object> stored = parser.map();
+            assertEquals("source=logs | head 5", stored.get("query_text"));
+            assertFalse(stored.containsKey("source"));
         }
         try (XContentParser parser = createParser(JsonXContent.jsonXContent, document)) {
             SearchQueryRecord read = SearchQueryRecord.fromXContent(parser);
