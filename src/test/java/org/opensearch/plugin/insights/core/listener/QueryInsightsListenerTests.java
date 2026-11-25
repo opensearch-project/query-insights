@@ -180,7 +180,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
             // The point in time's task has no headers; the query's marker is in the thread context.
-            threadPool.getThreadContext().putHeader(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42");
+            threadPool.getThreadContext().putHeader(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, localMarker());
             queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
             queryInsightsListener.onRequestFailure(searchPhaseContext, searchRequestContext);
         }
@@ -208,7 +208,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             "n/a",
             () -> "test",
             TaskId.EMPTY_TASK_ID,
-            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42")
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, localMarker())
         );
         when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
         when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
@@ -223,7 +223,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
 
         // It's held for the PPL query's record, not ranked or listed as a finished query on its own.
-        verify(queryInsightsService, times(1)).addChildSearch(eq("PPL:node-1:42"), captor.capture());
+        verify(queryInsightsService, times(1)).addChildSearch(eq(localMarker()), captor.capture());
         verify(queryInsightsService, never()).addRecord(any());
         verify(queryInsightsService, never()).getFinishedQueriesCache();
         assertArrayEquals(new String[] { "logs" }, (String[]) captor.getValue().getAttributes().get(Attribute.INDICES));
@@ -556,7 +556,7 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
             "n/a",
             () -> "test",
             TaskId.EMPTY_TASK_ID,
-            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, "PPL:node-1:42")
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, localMarker())
         );
         when(searchPhaseContext.getTask()).thenReturn(task);
         when(searchRequest.indices()).thenReturn(new String[] { EXCLUDED_INDICES.get(0) });
@@ -567,8 +567,75 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
 
         new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
 
-        verify(queryInsightsService, times(1)).excludeQuery("PPL:node-1:42");
+        verify(queryInsightsService, times(1)).excludeQuery(localMarker());
         verify(queryInsightsService, never()).addChildSearch(any(), any());
+        verify(queryInsightsService, never()).addRecord(any());
+    }
+
+    /** The marker of a PPL query that this test's node runs. */
+    private String localMarker() {
+        return "PPL:" + clusterService.localNode().getId() + ":42";
+    }
+
+    /** Without the security plugin, the header travels with a cross-cluster search. */
+    private static final String MARKER_FROM_ANOTHER_CLUSTER = "PPL:a-node-of-another-cluster:42";
+
+    public void testASearchOfAnotherClustersQueryIsRecordedAsADslSearch() {
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, MARKER_FROM_ANOTHER_CLUSTER)
+        );
+        when(searchRequest.getOrCreateAbsoluteStartMillis()).thenReturn(System.currentTimeMillis());
+        when(searchRequest.searchType()).thenReturn(SearchType.QUERY_THEN_FETCH);
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder().size(100));
+        when(searchRequest.indices()).thenReturn(new String[] { "logs" });
+        when(searchRequestContext.phaseTookMap()).thenReturn(new HashMap<>());
+        when(searchPhaseContext.getRequest()).thenReturn(searchRequest);
+        when(searchPhaseContext.getNumShards()).thenReturn(1);
+        when(searchPhaseContext.getTask()).thenReturn(task);
+
+        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        // This node never sees that query reported, so holding the search would only hide it.
+        verify(queryInsightsService, times(1)).addRecord(any());
+        verify(queryInsightsService, never()).addChildSearch(any(), any());
+    }
+
+    public void testAPointInTimeOfAnotherClustersQueryIsRecorded() {
+        createPointInTimeContext();
+        QueryInsightsListener queryInsightsListener = new QueryInsightsListener(clusterService, queryInsightsService, threadPool);
+        try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+            threadPool.getThreadContext().putHeader(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, MARKER_FROM_ANOTHER_CLUSTER);
+            queryInsightsListener.onRequestEnd(searchPhaseContext, searchRequestContext);
+        }
+
+        verify(queryInsightsService, times(1)).addRecord(any());
+    }
+
+    public void testAnotherClustersQueryIsNotMarkedForASearchOnAnExcludedIndex() {
+        SearchTask task = new SearchTask(
+            0,
+            "n/a",
+            "n/a",
+            () -> "test",
+            TaskId.EMPTY_TASK_ID,
+            Collections.singletonMap(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, MARKER_FROM_ANOTHER_CLUSTER)
+        );
+        when(searchPhaseContext.getTask()).thenReturn(task);
+        when(searchRequest.indices()).thenReturn(new String[] { EXCLUDED_INDICES.get(0) });
+        when(searchRequest.source()).thenReturn(new SearchSourceBuilder());
+        when(searchRequestContext.getSuccessfulSearchShardIndices()).thenReturn(
+            new HashSet<>(List.of(new Index(EXCLUDED_INDICES.get(0), "uuid-1")))
+        );
+
+        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+
+        // It's left out as a DSL search on that index is, and nothing is held for the other query.
+        verify(queryInsightsService, never()).excludeQuery(any());
         verify(queryInsightsService, never()).addRecord(any());
     }
 

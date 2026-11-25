@@ -350,12 +350,28 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             .orElse(false);
     }
 
-    /** The marker of the SQL/PPL query that ran this search, or {@code null} if no such query did. */
-    private static String parentMarkerOf(final SearchPhaseContext context) {
+    /**
+     * The marker of the SQL/PPL query on this node that ran this search, or {@code null} if no such
+     * query did. Without the security plugin, the header travels with a cross-cluster search, so the
+     * remote cluster sees another cluster's marker. That search is recorded there as a DSL search.
+     */
+    private String parentMarkerOf(final SearchPhaseContext context) {
         final String marker = context == null || context.getTask() == null
             ? null
             : context.getTask().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
-        return marker == null || marker.isEmpty() ? null : marker;
+        return isOfAQueryOnThisNode(marker) ? marker : null;
+    }
+
+    /**
+     * Whether a marker, {@code <source>:<nodeId>:<taskId>}, names a query this node runs. The query's
+     * searches are coordinated on its node, which reports it to this one.
+     */
+    private boolean isOfAQueryOnThisNode(final String marker) {
+        if (marker == null || marker.isEmpty()) {
+            return false;
+        }
+        final String[] parts = marker.split(":", -1);
+        return parts.length == 3 && parts[1].equals(clusterService.localNode().getId());
     }
 
     /**
@@ -369,7 +385,7 @@ public final class QueryInsightsListener extends SearchRequestOperationsListener
             return false;
         }
         final String marker = threadPool == null ? null : threadPool.getThreadContext().getHeader(QUERY_INSIGHTS_PARENT_HEADER);
-        return marker != null && !marker.isEmpty();
+        return isOfAQueryOnThisNode(marker);
     }
 
     private boolean matchedExcludedIndices(String indexName) {
