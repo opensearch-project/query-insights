@@ -9,6 +9,7 @@
 package org.opensearch.plugin.insights;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -26,6 +27,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Before;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.search.SearchAction;
+import org.opensearch.action.support.ActionFilter;
+import org.opensearch.action.support.ActionFilterChain;
+import org.opensearch.action.support.ActionRequestMetadata;
+import org.opensearch.action.support.replication.ClusterStateCreationUtils;
+import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.CheckedRunnable;
 import org.opensearch.common.settings.ClusterSettings;
@@ -35,6 +41,7 @@ import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.identity.PluginSubject;
+import org.opensearch.plugin.insights.core.auth.UserPrincipalContext;
 import org.opensearch.plugin.insights.core.exporter.SinkType;
 import org.opensearch.plugin.insights.core.listener.QueryInsightsListener;
 import org.opensearch.plugin.insights.core.service.QueryInsightsService;
@@ -60,6 +67,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.plugins.ActionPlugin;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.rest.RestHandler;
+import org.opensearch.tasks.Task;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.test.ClusterServiceUtils;
@@ -286,6 +294,53 @@ public class QueryInsightsPluginTests extends OpenSearchTestCase {
 
     public void testThePplQueryUserFilterIsAnActionFilter() {
         assertTrue(queryInsightsPlugin.getActionFilters().stream().anyMatch(PplQueryUserFilter.class::isInstance));
+    }
+
+    /** The plugin hands its filter the service it creates, so a running PPL query's user is kept there. */
+    @SuppressWarnings("unchecked")
+    public void testThePplQueryUserFilterKeepsTheUserInThePluginsService() {
+        // The filter names the query by the local node, so this cluster service has one.
+        ClusterSettings clusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        QueryInsightsTestUtils.registerAllQueryInsightsSettings(clusterSettings);
+        ClusterState state = ClusterStateCreationUtils.stateWithActivePrimary("test", true, 1, 0);
+        clusterService = ClusterServiceUtils.createClusterService(threadPool, state.getNodes().getLocalNode(), clusterSettings);
+        ClusterServiceUtils.setState(clusterService, state);
+        try {
+            assertPplQueryUserKept();
+        } finally {
+            clusterService.close();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertPplQueryUserKept() {
+        QueryInsightsService service = (QueryInsightsService) createComponents().get(0);
+        ActionFilter filter = queryInsightsPlugin.getActionFilters().get(0);
+        Task task = mock(Task.class);
+        when(task.getId()).thenReturn(42L);
+        String liveQueryId = QueryInsightsService.buildLiveQueryTaskKey(clusterService.localNode().getId(), 42L);
+        AtomicReference<UserPrincipalContext.UserPrincipalInfo> whileRunning = new AtomicReference<>();
+        ActionFilterChain<ActionRequest, ActionResponse> chain = mock(ActionFilterChain.class);
+        doAnswer(invocation -> {
+            whileRunning.set(service.getLiveQueryUserInfo(liveQueryId));
+            return null;
+        }).when(chain).proceed(any(), anyString(), any(), any());
+
+        try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+            threadPool.getThreadContext().putTransient("_opendistro_security_user_info", "alice|backend1|role1|tenant1");
+            filter.apply(
+                task,
+                // The SQL plugin's PPL query action.
+                "cluster:admin/opensearch/ppl",
+                mock(ActionRequest.class),
+                ActionRequestMetadata.empty(),
+                mock(ActionListener.class),
+                chain
+            );
+        }
+
+        assertNotNull("the user wasn't kept while the query ran", whileRunning.get());
+        assertEquals("alice", whileRunning.get().getUserName());
     }
 
 }

@@ -220,7 +220,15 @@ public class QueryInsightsListenerTests extends OpenSearchTestCase {
         when(searchPhaseContext.getTask()).thenReturn(task);
         ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
 
-        new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(searchPhaseContext, searchRequestContext);
+        // As in production, the marker is in the thread context too, not only on the search's task. Only
+        // the point in time check's action test keeps this search from being taken for a point in time.
+        try (ThreadContext.StoredContext ignored = threadPool.getThreadContext().stashContext()) {
+            threadPool.getThreadContext().putHeader(QueryInsightsListener.QUERY_INSIGHTS_PARENT_HEADER, localMarker());
+            new QueryInsightsListener(clusterService, queryInsightsService, threadPool).onRequestEnd(
+                searchPhaseContext,
+                searchRequestContext
+            );
+        }
 
         // It's held for the PPL query's record, not ranked or listed as a finished query on its own.
         verify(queryInsightsService, times(1)).addChildSearch(eq(localMarker()), captor.capture());
