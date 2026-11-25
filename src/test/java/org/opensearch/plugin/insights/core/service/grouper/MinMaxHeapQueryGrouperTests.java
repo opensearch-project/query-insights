@@ -732,7 +732,8 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         // It stays a single query, not an average over a group.
         assertEquals(GroupingType.NONE, expensive.getAttributes().get(Attribute.GROUP_BY));
         assertEquals(new Measurement(2000L, AggregationType.NONE), expensive.getMeasurements().get(MetricType.LATENCY));
-        assertEquals("source=logs | head 5", ((SourceString) expensive.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("source=logs | head 5", expensive.getAttributes().get(Attribute.QUERY_TEXT));
+        assertNull(expensive.getAttributes().get(Attribute.SOURCE));
     }
 
     public void testAPplQueryPushedOutOfTopNIsDropped() {
@@ -790,7 +791,7 @@ public class MinMaxHeapQueryGrouperTests extends OpenSearchTestCase {
         measurements.put(MetricType.LATENCY, new Measurement(latency));
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
-        attributes.put(Attribute.SOURCE, new SourceString("source=logs | head 5"));
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | head 5");
         attributes.put(Attribute.GROUP_BY, GroupingType.NONE);
         return new SearchQueryRecord(System.currentTimeMillis(), measurements, attributes, null, null, id);
     }

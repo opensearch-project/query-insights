@@ -114,6 +114,12 @@ public enum Attribute {
     /** Query language: DSL, SQL or PPL. */
     QUERY_SOURCE,
 
+    /**
+     * On a SQL/PPL query's record: the query as written, cut to max_source_length. It's kept out of
+     * {@link #SOURCE}, which readers parse as a DSL body.
+     */
+    QUERY_TEXT,
+
     /** On a SQL/PPL query's record: the searches it ran, as {@link ChildSearches}. */
     CHILD_SEARCHES;
 

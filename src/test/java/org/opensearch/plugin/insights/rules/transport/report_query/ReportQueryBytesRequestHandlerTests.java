@@ -33,7 +33,6 @@ import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.tasks.Task;
 import org.opensearch.telemetry.metrics.Counter;
@@ -108,22 +107,26 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         assertEquals(false, record.getAttributes().get(Attribute.FAILED));
     }
 
-    public void testTheQueryTextIsItsSource() throws Exception {
+    public void testTheQueryTextGoesInQueryTextNotSource() throws Exception {
         final SearchQueryRecord record = ingestRecordFor(false);
-        assertEquals("source=my_index | head 10", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("source=my_index | head 10", record.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(false, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        // Readers parse source as a DSL body; a 3.10 Dashboards fails on PPL text there.
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
     }
 
     public void testTheQueryTextIsCutToMaxSourceLength() throws Exception {
         final SearchQueryRecord record = ingestRecordFor(false, 15);
-        assertEquals("source=my_index", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("source=my_index", record.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
     }
 
     public void testAMaxSourceLengthOfZeroHidesTheQueryText() throws Exception {
         final SearchQueryRecord record = ingestRecordFor(false, 0);
-        assertEquals("", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("", record.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
     }
 
     public void testRecordsTheFinishedQueryUnderItsLiveQueryId() throws Exception {

@@ -49,7 +49,11 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     private static final Logger log = LogManager.getLogger(SearchQueryRecord.class);
 
     /** Attributes added for SQL/PPL queries. Older nodes fail on unknown attribute names, so they don't get these. */
-    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(Attribute.QUERY_SOURCE, Attribute.CHILD_SEARCHES);
+    private static final Set<Attribute> QUERY_SOURCE_ATTRIBUTES = EnumSet.of(
+        Attribute.QUERY_SOURCE,
+        Attribute.QUERY_TEXT,
+        Attribute.CHILD_SEARCHES
+    );
     private final long timestamp;
     private final Map<MetricType, Measurement> measurements;
     private final Map<Attribute, Object> attributes;
@@ -161,6 +165,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
     /** Query source field name (DSL/SQL/PPL). */
     public static final String QUERY_SOURCE = "query_source";
 
+    /** SQL/PPL query text field name. */
+    public static final String QUERY_TEXT = "query_text";
+
     /** Child searches field name. */
     public static final String CHILD_SEARCHES = "child_searches";
 
@@ -174,6 +181,7 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         Attribute.TASK_RESOURCE_USAGES,
         Attribute.SOURCE,
         Attribute.PHASE_LATENCY_MAP,
+        Attribute.QUERY_TEXT,
         Attribute.CHILD_SEARCHES };
 
     /**
@@ -444,6 +452,9 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
                         break;
                     case QUERY_SOURCE:
                         attributes.put(Attribute.QUERY_SOURCE, parser.text());
+                        break;
+                    case QUERY_TEXT:
+                        attributes.put(Attribute.QUERY_TEXT, parser.text());
                         break;
                     case CHILD_SEARCHES:
                         attributes.put(Attribute.CHILD_SEARCHES, ChildSearches.fromXContent(parser));
@@ -749,12 +760,8 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
             attributesToWrite = attributes;
         } else {
             attributesToWrite = new HashMap<>(attributes);
+            // A SQL/PPL query's text is in QUERY_TEXT, so an older node gets its record without it.
             attributesToWrite.keySet().removeAll(QUERY_SOURCE_ATTRIBUTES);
-            // Without QUERY_SOURCE, an older node writes a finished query's source as JSON unless it's
-            // marked truncated. A SQL/PPL query's text isn't JSON, so it's marked.
-            if (!isDsl() && attributesToWrite.containsKey(Attribute.SOURCE)) {
-                attributesToWrite.put(Attribute.SOURCE_TRUNCATED, true);
-            }
         }
         out.writeMap(
             attributesToWrite,
@@ -823,8 +830,12 @@ public class SearchQueryRecord implements ToXContentObject, Writeable {
         this.streaming = streaming;
     }
 
-    /** Whether this is a DSL search. Records without a query source are DSL searches. */
-    boolean isDsl() {
+    /**
+     * Whether this is a DSL search. Records without a query source are DSL searches.
+     *
+     * @return {@code false} for a SQL/PPL query, which has no DSL body
+     */
+    public boolean isDsl() {
         final Object querySource = attributes.get(Attribute.QUERY_SOURCE);
         return querySource == null || "DSL".equals(querySource);
     }

@@ -187,7 +187,8 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
                 userPrincipalContext,
                 null
             );
-            // A SQL/PPL query has no SearchSourceBuilder, so its text is the source, cut to max_source_length.
+            // Its text goes in query_text, cut to max_source_length. Readers parse source as a DSL body,
+            // so a SQL/PPL query has none.
             if (queryText != null && queryText.isEmpty() == false) {
                 TopQueriesService.setQueryText(record, queryText, queryInsightsService.getMaxSourceLength());
             }

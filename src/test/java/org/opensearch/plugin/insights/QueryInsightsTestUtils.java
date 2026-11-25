@@ -229,6 +229,7 @@ final public class QueryInsightsTestUtils {
             // Add failed attribute
             attributes.put(Attribute.FAILED, random().nextBoolean());
             attributes.put(Attribute.QUERY_SOURCE, "PPL");
+            attributes.put(Attribute.QUERY_TEXT, "source=" + randomAlphaOfLengthBetween(5, 10) + " | head 5");
             attributes.put(
                 Attribute.CHILD_SEARCHES,
                 new ChildSearches(

@@ -19,6 +19,8 @@ import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.xcontent.json.JsonXContent;
+import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.rules.model.AggregationType;
 import org.opensearch.plugin.insights.rules.model.Attribute;
@@ -92,6 +94,23 @@ public class FinishedQueriesCachePplQueryTests extends OpenSearchTestCase {
             assertEquals(List.of("node-1:42"), ids(finished));
             assertEquals(searches, finished.get(0).getAttributes().get(Attribute.CHILD_SEARCHES));
             assertTrue(finished.get(0).toString().contains("\"child_searches\":{\"count\":2,"));
+        }
+    }
+
+    public void testAQuerysTextIsListedAsQueryTextWithNoSource() throws Exception {
+        SearchQueryRecord query = pplQuery(100L, 1000L, false);
+        query.addAttribute(Attribute.QUERY_TEXT, "source=logs | head 5");
+        query.addAttribute(Attribute.SOURCE_TRUNCATED, false);
+
+        cache.capture(query, "node-1:42");
+
+        // Readers parse source as JSON; a 3.10 Dashboards fails on PPL text there.
+        for (List<FinishedQueryRecord> finished : List.of(cache.getFinishedQueries(), cache.getFinishedQueriesIfActive())) {
+            try (XContentParser parser = createParser(JsonXContent.jsonXContent, finished.get(0).toString())) {
+                Map<String, Object> fields = parser.map();
+                assertEquals("source=logs | head 5", fields.get("query_text"));
+                assertFalse(fields.containsKey("source"));
+            }
         }
     }
 

@@ -33,6 +33,7 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
 
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | head 5");
         attributes.put(Attribute.CHILD_SEARCHES, CHILD_SEARCHES);
         attributes.put(Attribute.NODE_ID, "node-1");
 
@@ -47,6 +48,7 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
         // NODE_ID is kept; the new attributes are dropped.
         assertEquals("node-1", out.getAttributes().get(Attribute.NODE_ID));
         assertNull(out.getAttributes().get(Attribute.QUERY_SOURCE));
+        assertNull(out.getAttributes().get(Attribute.QUERY_TEXT));
         assertNull(out.getAttributes().get(Attribute.CHILD_SEARCHES));
     }
 
@@ -56,21 +58,19 @@ public class QuerySourceBwcTests extends OpenSearchTestCase {
         SearchQueryRecord out = roundTrip(record, Version.V_3_11_0);
 
         assertEquals("PPL", out.getAttributes().get(Attribute.QUERY_SOURCE));
+        assertEquals("source=logs | head 5", out.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(CHILD_SEARCHES, out.getAttributes().get(Attribute.CHILD_SEARCHES));
     }
 
-    public void testOldNodesReadAPplQuerysTextAsTextNotJson() throws IOException {
+    public void testOldNodesGetAPplQueryWithoutItsTextOrASource() throws IOException {
         SearchQueryRecord ppl = recordWithQuerySourceAttributes();
-        ppl.addAttribute(Attribute.SOURCE, new SourceString("source=logs | head 5"));
         ppl.addAttribute(Attribute.SOURCE_TRUNCATED, false);
 
-        // Without query_source, a 3.10 node would write the text as JSON unless it's marked truncated.
+        // A 3.10 node writes source as JSON, so the text isn't moved there for it.
         SearchQueryRecord toOldNode = roundTrip(ppl, Version.V_3_10_0);
-        assertEquals("source=logs | head 5", ((SourceString) toOldNode.getAttributes().get(Attribute.SOURCE)).getValue());
-        assertEquals(true, toOldNode.getAttributes().get(Attribute.SOURCE_TRUNCATED));
-
-        assertEquals(false, roundTrip(ppl, Version.V_3_11_0).getAttributes().get(Attribute.SOURCE_TRUNCATED));
-        assertEquals(false, ppl.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertNull(toOldNode.getAttributes().get(Attribute.QUERY_TEXT));
+        assertNull(toOldNode.getAttributes().get(Attribute.SOURCE));
+        assertEquals(false, toOldNode.getAttributes().get(Attribute.SOURCE_TRUNCATED));
     }
 
     public void testOldNodesGetADslSourceAsItIs() throws IOException {

@@ -77,9 +77,8 @@ public class FinishedQueryRecord extends SearchQueryRecord {
     private void serializeAttribute(XContentBuilder builder, Params params, Attribute key, Object value) throws IOException {
         if (value instanceof SourceString ss) {
             // Truncated source is not valid JSON — write as a plain string to avoid parse errors.
-            // A SQL/PPL query's text isn't JSON either.
             Boolean truncated = (Boolean) getAttributes().get(Attribute.SOURCE_TRUNCATED);
-            if ((truncated != null && truncated) || !isDsl()) {
+            if (truncated != null && truncated) {
                 builder.field(key.toString(), ss.getValue());
             } else {
                 builder.rawField(key.toString(), new BytesArray(ss.getValue()).streamInput(), XContentType.JSON);

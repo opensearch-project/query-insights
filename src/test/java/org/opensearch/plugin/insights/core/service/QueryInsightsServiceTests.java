@@ -86,7 +86,6 @@ import org.opensearch.plugin.insights.rules.model.GroupingType;
 import org.opensearch.plugin.insights.rules.model.Measurement;
 import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
-import org.opensearch.plugin.insights.rules.model.SourceString;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
@@ -371,11 +370,11 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         return measurements;
     }
 
-    /** A reported PPL query's record: its text is its source, and it has no SearchSourceBuilder. */
+    /** A reported PPL query's record: its text is in query_text, and it has no SearchSourceBuilder. */
     private static SearchQueryRecord pplQuery(long timestamp) {
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
-        attributes.put(Attribute.SOURCE, new SourceString("source=logs | stats count()"));
+        attributes.put(Attribute.QUERY_TEXT, "source=logs | stats count()");
         return new SearchQueryRecord(timestamp, measurements(100L, 1000L), attributes, null, null, UUID.randomUUID().toString());
     }
 

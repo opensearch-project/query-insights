@@ -18,19 +18,20 @@ import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
-/** A search's source is written as a JSON object; a SQL/PPL query's text as a string. */
+/** A search's source is written as a JSON object; a SQL/PPL query's text as query_text, a string. */
 public class FinishedQueryRecordTests extends OpenSearchTestCase {
 
-    public void testPplQueryTextIsWrittenAsAString() throws IOException {
+    public void testPplQueryTextIsWrittenAsQueryText() throws IOException {
         String text = "source=logs | where status = 500 | stats count() by host";
         Map<Attribute, Object> attributes = new HashMap<>();
         attributes.put(Attribute.QUERY_SOURCE, "PPL");
-        attributes.put(Attribute.SOURCE, new SourceString(text));
+        attributes.put(Attribute.QUERY_TEXT, text);
         attributes.put(Attribute.SOURCE_TRUNCATED, false);
 
         Map<String, Object> json = toMap(finished(attributes, "node-1:42"));
 
-        assertEquals(text, json.get("source"));
+        assertEquals(text, json.get("query_text"));
+        assertFalse(json.containsKey("source"));
         assertEquals("node-1:42", json.get("id"));
     }
 

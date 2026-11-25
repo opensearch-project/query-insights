@@ -1035,31 +1035,43 @@ public class TopQueriesServiceTests extends OpenSearchTestCase {
     public void testQueryTextIsTruncatedLikeADslSource() {
         String text = "source=logs | head 5";
 
-        SearchQueryRecord hidden = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-hidden");
+        SearchQueryRecord hidden = pplRecord("ppl-hidden");
         TopQueriesService.setQueryText(hidden, text, 0);
-        assertEquals("", ((SourceString) hidden.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("", hidden.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(true, hidden.getAttributes().get(Attribute.SOURCE_TRUNCATED));
 
-        SearchQueryRecord cut = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-cut");
+        SearchQueryRecord cut = pplRecord("ppl-cut");
         TopQueriesService.setQueryText(cut, text, 11);
-        assertEquals("source=logs", ((SourceString) cut.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals("source=logs", cut.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(true, cut.getAttributes().get(Attribute.SOURCE_TRUNCATED));
 
-        SearchQueryRecord whole = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-whole");
+        SearchQueryRecord whole = pplRecord("ppl-whole");
         TopQueriesService.setQueryText(whole, text, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
-        assertEquals(text, ((SourceString) whole.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertEquals(text, whole.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(false, whole.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+
+        for (SearchQueryRecord record : List.of(hidden, cut, whole)) {
+            assertNull(record.getAttributes().get(Attribute.SOURCE));
+        }
     }
 
-    public void testSetSourceAndTruncationKeepsAQueryTextSource() {
-        SearchQueryRecord record = createRecordWithSource(null, System.currentTimeMillis(), 100L, "ppl-1");
+    public void testSetSourceAndTruncationGivesAPplQueryNoSource() {
+        SearchQueryRecord record = pplRecord("ppl-1");
         TopQueriesService.setQueryText(record, "source=logs | head 5", 11);
 
-        // The grouping path calls this for every record; the truncated text stays as it was set.
+        // The grouping path calls this for every record; a PPL query keeps its text and gets no source.
         TopQueriesService.setSourceAndTruncation(record, QueryInsightsSettings.DEFAULT_MAX_SOURCE_LENGTH);
 
-        assertEquals("source=logs", ((SourceString) record.getAttributes().get(Attribute.SOURCE)).getValue());
+        assertNull(record.getAttributes().get(Attribute.SOURCE));
+        assertEquals("source=logs", record.getAttributes().get(Attribute.QUERY_TEXT));
         assertEquals(true, record.getAttributes().get(Attribute.SOURCE_TRUNCATED));
+    }
+
+    /** A reported PPL query's record: no SearchSourceBuilder, and PPL as its query source. */
+    private SearchQueryRecord pplRecord(String id) {
+        SearchQueryRecord record = createRecordWithSource(null, System.currentTimeMillis(), 100L, id);
+        record.addAttribute(Attribute.QUERY_SOURCE, "PPL");
+        return record;
     }
 
     public void testUnserializableSourceDoesNotBlockSubsequentConsumeRecords() {
