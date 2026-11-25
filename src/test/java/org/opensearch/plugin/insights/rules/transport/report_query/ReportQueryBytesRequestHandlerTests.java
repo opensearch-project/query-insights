@@ -233,6 +233,27 @@ public class ReportQueryBytesRequestHandlerTests extends OpenSearchTestCase {
         assertArrayEquals(new String[0], (String[]) record.getAttributes().get(Attribute.INDICES));
         assertEquals(0, record.getAttributes().get(Attribute.TOTAL_SHARDS));
         assertEquals("query_then_fetch", record.getAttributes().get(Attribute.SEARCH_TYPE));
+        // Labels too, empty, as on a DSL search's record without an X-Opaque-Id.
+        assertEquals(Map.of(), record.getAttributes().get(Attribute.LABELS));
+    }
+
+    public void testTheRecordKeepsTheOpaqueIdOfItsRequest() throws Exception {
+        final QueryInsightsService service = mock(QueryInsightsService.class);
+        final ChildSearchTracker held = new ChildSearchTracker();
+        final ChildSearches.Search search = new ChildSearches.Search(1L, List.of("logs"), 1, 5L, 30L, 300L, false, null);
+        // Each search the query ran has the request's X-Opaque-Id.
+        held.add("PPL:node-1:42", search, "query_then_fetch", "dashboards-app");
+        when(service.takeChildSearches("PPL:node-1:42")).thenReturn(held.take("PPL:node-1:42"));
+
+        new ReportQueryBytesRequestHandler(service).messageReceived(
+            new BytesTransportRequest(serializePayload(false), Version.CURRENT),
+            mock(TransportChannel.class),
+            mock(Task.class)
+        );
+
+        final ArgumentCaptor<SearchQueryRecord> captor = ArgumentCaptor.forClass(SearchQueryRecord.class);
+        verify(service).addRecord(captor.capture());
+        assertEquals(Map.of(Task.X_OPAQUE_ID, "dashboards-app"), captor.getValue().getAttributes().get(Attribute.LABELS));
     }
 
     public void testTheRecordNamesTheIndicesShardsAndTypeOfItsSearches() throws Exception {

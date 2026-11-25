@@ -71,6 +71,7 @@ import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
+import org.opensearch.tasks.Task;
 import org.opensearch.tasks.TaskManager;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.threadpool.Scheduler;
@@ -301,7 +302,15 @@ public class QueryInsightsService extends AbstractLifecycleComponent {
      */
     public void addChildSearch(final String parentMarker, final SearchQueryRecord search) {
         final Object searchType = search.getAttributes().get(Attribute.SEARCH_TYPE);
-        childSearches.add(parentMarker, ChildSearches.Search.of(search), searchType == null ? null : searchType.toString());
+        // The search carries the query request's X-Opaque-Id, which the listener keeps in its labels.
+        final Object labels = search.getAttributes().get(Attribute.LABELS);
+        final Object opaqueId = labels instanceof Map<?, ?> byName ? byName.get(Task.X_OPAQUE_ID) : null;
+        childSearches.add(
+            parentMarker,
+            ChildSearches.Search.of(search),
+            searchType == null ? null : searchType.toString(),
+            opaqueId == null ? null : opaqueId.toString()
+        );
         if (isSearchQueryMetricsFeatureEnabled()) {
             childSearchQueue.offer(search);
         }

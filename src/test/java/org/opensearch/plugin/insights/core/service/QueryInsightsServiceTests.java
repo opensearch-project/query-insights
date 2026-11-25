@@ -92,6 +92,7 @@ import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.tasks.Task;
 import org.opensearch.telemetry.metrics.Counter;
 import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
@@ -312,6 +313,16 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "logs" }, taken.getIndices());
         assertEquals(2, taken.getTotalShards());
         assertEquals("dfs_query_then_fetch", taken.getSearchType());
+    }
+
+    public void testAQueryGetsTheOpaqueIdItsSearchesCarry() {
+        // The listener keeps a search's X-Opaque-Id, which it has from the query's request, in its labels.
+        SearchQueryRecord search = searchOfQuery(10L, 100L);
+        search.addAttribute(Attribute.LABELS, new HashMap<>(Map.of(Task.X_OPAQUE_ID, "dashboards-app")));
+        queryInsightsService.addChildSearch("PPL:node-1:42", searchOfQuery(5L, 50L));
+        queryInsightsService.addChildSearch("PPL:node-1:42", search);
+
+        assertEquals("dashboards-app", queryInsightsService.takeChildSearches("PPL:node-1:42").getOpaqueId());
     }
 
     public void testAQueryWithASearchOnAnExcludedIndexIsLeftOut() {

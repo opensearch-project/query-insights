@@ -158,5 +158,15 @@ public class ChildSearchTrackerTests extends OpenSearchTestCase {
         tracker.add("PPL:node-1:1", search(10L, 100L));
 
         assertNull(tracker.take("PPL:node-1:1").getSearchType());
+        tracker.add("PPL:node-1:2", search(10L, 100L));
+        assertNull("nor an opaque id", tracker.take("PPL:node-1:2").getOpaqueId());
+    }
+
+    public void testAQueryKeepsTheFirstOpaqueIdItsSearchesCarry() {
+        tracker.add("PPL:node-1:1", search(10L, 100L), "query_then_fetch", null);
+        tracker.add("PPL:node-1:1", search(10L, 100L), "query_then_fetch", "dashboards-app");
+        tracker.add("PPL:node-1:1", search(10L, 100L), "query_then_fetch", "another-app");
+
+        assertEquals("dashboards-app", tracker.take("PPL:node-1:1").getOpaqueId());
     }
 }

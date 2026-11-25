@@ -85,17 +85,22 @@ public class ReportQueryBytesRequestHandler implements TransportRequestHandler<B
     }
 
     /**
-     * Gives the query the indices its searches read, their shards and their search type, as a DSL
-     * search's record has. Then adds their CPU and memory to the query's, and lists them in its record,
-     * which keeps them if it makes Top N. Latency already covers the searches. A query that ran none
-     * gets no indices and the default search type, since readers such as an older Dashboards expect
-     * both on every record.
+     * Gives the query the indices its searches read, their shards and search type, and the
+     * X-Opaque-Id they carry from its request, as a DSL search's record has. Then adds their CPU and
+     * memory to the query's, and lists them in its record, which keeps them if it makes Top N. Latency
+     * already covers the searches. A query that ran none gets no indices, the default search type and
+     * empty labels, since readers such as an older Dashboards expect them on every record.
      */
     private static void addItsSearches(final SearchQueryRecord record, final ChildSearchTracker.Tracked searches) {
         final String searchType = searches == null ? null : searches.getSearchType();
         record.addAttribute(Attribute.INDICES, searches == null ? new String[0] : searches.getIndices());
         record.addAttribute(Attribute.TOTAL_SHARDS, searches == null ? 0 : searches.getTotalShards());
         record.addAttribute(Attribute.SEARCH_TYPE, searchType == null ? DEFAULT_SEARCH_TYPE : searchType);
+        final Map<String, Object> labels = new HashMap<>();
+        if (searches != null && searches.getOpaqueId() != null) {
+            labels.put(Task.X_OPAQUE_ID, searches.getOpaqueId());
+        }
+        record.addAttribute(Attribute.LABELS, labels);
         if (searches == null) {
             return;
         }

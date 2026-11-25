@@ -22,7 +22,7 @@ import org.opensearch.plugin.insights.rules.model.FinishedSearches;
 
 /**
  * The searches each running SQL/PPL query has finished, keyed by the query's marker: their summed CPU,
- * memory and shards, the indices they read, the first one's search type, the first
+ * memory and shards, the indices they read, the first one's search type and X-Opaque-Id, the first
  * {@link ChildSearches#MAX_SEARCHES} of them, and whether one read an excluded index. The query's record
  * takes them when it arrives, and Live Queries reads the totals while the query runs. A query and its
  * searches are coordinated on the same node, so they're complete by then.
@@ -65,8 +65,20 @@ public final class ChildSearchTracker {
      * @param searchType the search's type, such as {@code query_then_fetch}, or {@code null} if unknown
      */
     public void add(final String marker, final ChildSearches.Search search, final String searchType) {
+        add(marker, search, searchType, null);
+    }
+
+    /**
+     * Adds a finished search to the query with {@code marker}.
+     *
+     * @param marker     the marker of the query that ran the search
+     * @param search     the search
+     * @param searchType the search's type, such as {@code query_then_fetch}, or {@code null} if unknown
+     * @param opaqueId   the search's {@code X-Opaque-Id}, which it has from the query's request, or {@code null}
+     */
+    public void add(final String marker, final ChildSearches.Search search, final String searchType, final String opaqueId) {
         final long now = clock.getAsLong();
-        tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).add(search, searchType, now));
+        tracked.compute(marker, (k, held) -> (held == null ? new Tracked() : held).add(search, searchType, opaqueId, now));
         if (tracked.size() > MAX_QUERIES) {
             removeStale(now);
             if (tracked.size() > MAX_QUERIES) {
@@ -152,10 +164,11 @@ public final class ChildSearchTracker {
         private final Set<String> indices = new LinkedHashSet<>();
         private long totalShards;
         private String searchType;
+        private String opaqueId;
         private boolean excluded;
         private volatile long lastUpdate;
 
-        private Tracked add(final ChildSearches.Search search, final String type, final long now) {
+        private Tracked add(final ChildSearches.Search search, final String type, final String searchOpaqueId, final long now) {
             cpuNanos += search.getCpuNanos();
             memoryBytes += search.getMemoryBytes();
             count++;
@@ -166,6 +179,9 @@ public final class ChildSearchTracker {
             totalShards += search.getTotalShards();
             if (searchType == null) {
                 searchType = type;
+            }
+            if (opaqueId == null) {
+                opaqueId = searchOpaqueId;
             }
             if (searches.size() < ChildSearches.MAX_SEARCHES) {
                 searches.add(search);
@@ -220,6 +236,13 @@ public final class ChildSearchTracker {
          */
         public String getSearchType() {
             return searchType;
+        }
+
+        /**
+         * @return the {@code X-Opaque-Id} of the first search that had one, or {@code null}
+         */
+        public String getOpaqueId() {
+            return opaqueId;
         }
 
         /**
