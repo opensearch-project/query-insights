@@ -60,12 +60,14 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.metadata.Metadata;
 import org.opensearch.cluster.routing.RoutingTable;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.action.ActionListener;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.plugin.insights.QueryInsightsTestUtils;
 import org.opensearch.plugin.insights.core.auth.UserPrincipalContext.UserPrincipalInfo;
@@ -78,6 +80,7 @@ import org.opensearch.plugin.insights.core.metrics.OperationalMetricsCounter;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReader;
 import org.opensearch.plugin.insights.core.reader.QueryInsightsReaderFactory;
 import org.opensearch.plugin.insights.core.service.categorizer.QueryShapeGenerator;
+import org.opensearch.plugin.insights.rules.action.report_query.ReportQueryBytesAction;
 import org.opensearch.plugin.insights.rules.model.Attribute;
 import org.opensearch.plugin.insights.rules.model.ChildSearches;
 import org.opensearch.plugin.insights.rules.model.FilterByMode;
@@ -88,6 +91,7 @@ import org.opensearch.plugin.insights.rules.model.MetricType;
 import org.opensearch.plugin.insights.rules.model.SearchQueryRecord;
 import org.opensearch.plugin.insights.rules.model.healthStats.QueryInsightsHealthStats;
 import org.opensearch.plugin.insights.rules.model.healthStats.TopQueriesHealthStats;
+import org.opensearch.plugin.insights.rules.transport.report_query.ReportQueryBytesRequestHandler;
 import org.opensearch.plugin.insights.settings.QueryInsightsSettings;
 import org.opensearch.repositories.RepositoriesService;
 import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
@@ -103,6 +107,8 @@ import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.threadpool.ScalingExecutorBuilder;
 import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.BytesTransportRequest;
+import org.opensearch.transport.TransportChannel;
 import org.opensearch.transport.client.AdminClient;
 import org.opensearch.transport.client.Client;
 import org.opensearch.transport.client.ClusterAdminClient;
@@ -313,6 +319,43 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         assertArrayEquals(new String[] { "logs" }, taken.getIndices());
         assertEquals(2, taken.getTotalShards());
         assertEquals("dfs_query_then_fetch", taken.getSearchType());
+    }
+
+    /** The service's max_source_length reaches a reported PPL query's text, as it does a DSL source. */
+    public void testAMaxSourceLengthOfZeroHidesAReportedPplQuerysText() throws Exception {
+        queryInsightsService.setMaxSourceLength(0);
+
+        // Ahead of now, so the record stays in the current window even if a window ends mid-test.
+        new ReportQueryBytesRequestHandler(queryInsightsService).messageReceived(
+            new BytesTransportRequest(pplReport("source=logs | head 5", System.currentTimeMillis() + 60_000), Version.CURRENT),
+            mock(TransportChannel.class),
+            mock(Task.class)
+        );
+        queryInsightsService.drainRecords();
+
+        List<SearchQueryRecord> topN = queryInsightsService.getTopQueriesService(MetricType.LATENCY)
+            .getTopQueriesRecords(false, null, null, null, null);
+        assertEquals(1, topN.size());
+        assertEquals("", topN.get(0).getAttributes().get(Attribute.QUERY_TEXT));
+        assertEquals(true, topN.get(0).getAttributes().get(Attribute.SOURCE_TRUNCATED));
+        assertNull("draining gives it no source", topN.get(0).getAttributes().get(Attribute.SOURCE));
+    }
+
+    /** A PPL query's report, in the field order the SQL plugin writes it. */
+    private static BytesReference pplReport(String queryText, long startMillis) throws IOException {
+        BytesStreamOutput out = new BytesStreamOutput();
+        out.writeVInt(ReportQueryBytesAction.FORMAT_VERSION);
+        out.writeString("PPL");
+        out.writeString("PPL:node-1:42");
+        out.writeString("node-1");
+        out.writeString(queryText);
+        out.writeVLong(startMillis);
+        out.writeVLong(15L);
+        out.writeVLong(1_000L);
+        out.writeVLong(2_048L);
+        out.writeString("");
+        out.writeBoolean(false);
+        return out.bytes();
     }
 
     public void testAQueryGetsTheOpaqueIdItsSearchesCarry() {
