@@ -58,6 +58,11 @@ public final class SearchQueryCounters {
      */
     private final Histogram queryTypeMemoryHistogram;
 
+    /**
+     * Histogram for search doc count (number of hits returned per query)
+     */
+    private final Histogram searchDocCountHistogram;
+
     private final Map<Class<? extends QueryBuilder>, Counter> queryHandlers;
     /**
      * Counter name to Counter object map
@@ -100,6 +105,11 @@ public final class SearchQueryCounters {
             "search.query.type.memory.histogram",
             "Histogram for the memory per query type",
             UNIT_BYTES
+        );
+        this.searchDocCountHistogram = metricsRegistry.createHistogram(
+            "search.query.doc_count.histogram",
+            "Histogram for the number of documents returned per search query",
+            UNIT
         );
         this.queryHandlers = new HashMap<>();
     }
@@ -168,6 +178,14 @@ public final class SearchQueryCounters {
      */
     public Counter getSortCounter() {
         return sortCounter;
+    }
+
+    /**
+     * Record search doc count
+     * @param docCount number of documents returned
+     */
+    public void recordSearchDocCount(int docCount) {
+        searchDocCountHistogram.record(docCount);
     }
 
     /**
