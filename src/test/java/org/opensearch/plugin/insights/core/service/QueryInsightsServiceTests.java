@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -764,16 +765,17 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(null);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(null);
+        // Ignore calls made while constructing the service, since they depend on the default exporter type
+        clearInvocations(queryInsightsExporterFactory, queryInsightsReaderFactory);
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.LOCAL_INDEX);
         // Verify new local index exporter setup
-        // 2 times, one for initialization, one for the above method call
-        verify(queryInsightsExporterFactory, times(2)).createLocalIndexExporter(
+        verify(queryInsightsExporterFactory, times(1)).createLocalIndexExporter(
             eq(TopQueriesService.TOP_QUERIES_EXPORTER_ID),
             anyString(),
             anyString()
         );
-        verify(queryInsightsReaderFactory, times(2)).createLocalIndexReader(
+        verify(queryInsightsReaderFactory, times(1)).createLocalIndexReader(
             eq(TopQueriesService.TOP_QUERIES_READER_ID),
             anyString(),
             eq(namedXContentRegistry),
@@ -810,17 +812,18 @@ public class QueryInsightsServiceTests extends OpenSearchTestCase {
         // Mock current exporter and reader
         when(queryInsightsExporterFactory.getExporter(TopQueriesService.TOP_QUERIES_EXPORTER_ID)).thenReturn(mockDebugExporter);
         when(queryInsightsReaderFactory.getReader(TopQueriesService.TOP_QUERIES_READER_ID)).thenReturn(mockReader);
+        // Ignore calls made while constructing the service, since they depend on the default exporter type
+        clearInvocations(queryInsightsExporterFactory, queryInsightsReaderFactory);
 
         // Execute method
         queryInsightsServiceSpy.setExporterAndReaderType(SinkType.LOCAL_INDEX);
         // Verify new local index exporter setup
-        // 2 times, one for initialization, one for the above method call
-        verify(queryInsightsExporterFactory, times(2)).createLocalIndexExporter(
+        verify(queryInsightsExporterFactory, times(1)).createLocalIndexExporter(
             eq(TopQueriesService.TOP_QUERIES_EXPORTER_ID),
             anyString(),
             anyString()
         );
-        verify(queryInsightsReaderFactory, times(2)).createLocalIndexReader(
+        verify(queryInsightsReaderFactory, times(1)).createLocalIndexReader(
             eq(TopQueriesService.TOP_QUERIES_READER_ID),
             anyString(),
             eq(namedXContentRegistry),
